@@ -15,7 +15,7 @@ type Sleep = (milliseconds: number) => Promise<void>;
 export interface FetchScheduleOptions {
   scheduleDate: string;
   endpoints?: string[];
-  pageSize?: number;
+  limit?: number;
   maxRetries?: number;
   maxPagesPerEndpoint?: number;
   request?: RequestLike;
@@ -84,10 +84,10 @@ function normaliseEndpoint(endpoint: string): string {
   return normalised;
 }
 
-function buildPageUrl(endpoint: string, pageNumber: number, pageSize: number): URL {
+function buildPageUrl(endpoint: string, pageNumber: number, limit: number): URL {
   const url = new URL(`${PBS_API_BASE_URL}/${normaliseEndpoint(endpoint)}`);
   url.searchParams.set("page", String(pageNumber));
-  url.searchParams.set("pageSize", String(pageSize));
+  url.searchParams.set("limit", String(limit));
   return url;
 }
 
@@ -105,29 +105,38 @@ function findNextUrl(payload: JsonValue): string | undefined {
   if (!isObject(payload)) return undefined;
 
   const links = isObject(payload.links) ? payload.links : undefined;
+  const apiLinks = Array.isArray(payload._links) ? payload._links : undefined;
   const pagination = isObject(payload.pagination) ? payload.pagination : undefined;
   const meta = isObject(payload.meta) ? payload.meta : undefined;
+  const apiMeta = isObject(payload._meta) ? payload._meta : undefined;
   const metaPagination = meta && isObject(meta.pagination) ? meta.pagination : undefined;
 
   for (const candidate of [payload.next, links?.next, pagination?.next, meta?.next, metaPagination?.next]) {
     const next = asString(candidate);
     if (next) return next;
   }
+
+  for (const link of apiLinks ?? []) {
+    if (!isObject(link) || link.rel !== "next") continue;
+    const next = asString(link.href);
+    if (next) return next;
+  }
   return undefined;
 }
 
-function getPaginationInfo(payload: JsonValue, pageNumber: number, pageSize: number): PaginationInfo {
+function getPaginationInfo(payload: JsonValue, pageNumber: number, limit: number): PaginationInfo {
   const nextUrl = findNextUrl(payload);
   if (nextUrl) return { hasMore: true, nextUrl };
 
   if (!isObject(payload)) {
-    return { hasMore: Array.isArray(payload) && payload.length >= pageSize };
+    return { hasMore: Array.isArray(payload) && payload.length >= limit };
   }
 
   const pagination = isObject(payload.pagination) ? payload.pagination : undefined;
   const meta = isObject(payload.meta) ? payload.meta : undefined;
+  const apiMeta = isObject(payload._meta) ? payload._meta : undefined;
   const metaPagination = meta && isObject(meta.pagination) ? meta.pagination : undefined;
-  const pageInfo = pagination ?? metaPagination ?? meta;
+  const pageInfo = pagination ?? metaPagination ?? meta ?? apiMeta;
 
   const currentPage = asNumber(pageInfo?.page) ?? asNumber(pageInfo?.current_page) ?? asNumber(pageInfo?.currentPage) ?? pageNumber;
   const totalPages = asNumber(pageInfo?.total_pages) ?? asNumber(pageInfo?.totalPages);
@@ -136,10 +145,16 @@ function getPaginationInfo(payload: JsonValue, pageNumber: number, pageSize: num
   const hasNext = pageInfo?.has_next ?? pageInfo?.hasNext ?? payload.has_next ?? payload.hasNext;
   if (typeof hasNext === "boolean") return { hasMore: hasNext };
 
-  const total = asNumber(pageInfo?.total) ?? asNumber(meta?.total);
-  if (total !== undefined) return { hasMore: currentPage * pageSize < total };
+  const total = asNumber(pageInfo?.total) ?? asNumber(pageInfo?.total_records) ?? asNumber(meta?.total);
+  if (total !== undefined) return { hasMore: currentPage * limit < total };
 
-  return { hasMore: getCollectionLength(payload) >= pageSize };
+  return { hasMore: getCollectionLength(payload) >= limit };
+}
+
+function resolveNextUrl(nextUrl: string): URL {
+  if (/^https?:\/\//i.test(nextUrl)) return new URL(nextUrl);
+  if (nextUrl.startsWith("/api/v3/")) return new URL(`/pbs${nextUrl}`, "https://data-api.health.gov.au");
+  return new URL(nextUrl, `${PBS_API_BASE_URL}/`);
 }
 
 function updateRequestPolicy(policy: RequestPolicy, response: Response): void {
@@ -217,7 +232,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   const {
     scheduleDate,
     endpoints = DEFAULT_ENDPOINTS,
-    pageSize = DEFAULT_PAGE_SIZE,
+    limit = DEFAULT_PAGE_SIZE,
     maxRetries = DEFAULT_MAX_RETRIES,
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
     request = fetch,
@@ -227,7 +242,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
     throw new Error("scheduleDate must use YYYY-MM-DD format");
   }
-  if (!Number.isInteger(pageSize) || pageSize <= 0) throw new Error("pageSize must be a positive integer");
+  if (!Number.isInteger(limit) || limit <= 0) throw new Error("limit must be a positive integer");
   if (!Number.isInteger(maxRetries) || maxRetries < 0) throw new Error("maxRetries must be a non-negative integer");
   if (!Number.isInteger(maxPagesPerEndpoint) || maxPagesPerEndpoint <= 0) {
     throw new Error("maxPagesPerEndpoint must be a positive integer");
@@ -251,7 +266,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
       }
 
-      const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, pageSize);
+      const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit);
       const payload = await fetchPage(url, apiKey, policy, maxRetries, request, sleep);
 
       // Persist the untouched API page before interpreting its records.
@@ -271,10 +286,10 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         records: getCollectionLength(payload),
       });
 
-      const pagination = getPaginationInfo(payload, pageNumber, pageSize);
+      const pagination = getPaginationInfo(payload, pageNumber, limit);
       if (!pagination.hasMore) break;
       pageNumber += 1;
-      nextUrl = pagination.nextUrl ? new URL(pagination.nextUrl, PBS_API_BASE_URL) : undefined;
+      nextUrl = pagination.nextUrl ? resolveNextUrl(pagination.nextUrl) : undefined;
     }
   }
 
