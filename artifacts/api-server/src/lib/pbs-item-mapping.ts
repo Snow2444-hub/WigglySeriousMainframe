@@ -1,5 +1,5 @@
 import { db, drugsTable, pbsItemsTable } from "@workspace/db";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -137,12 +137,17 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
       .insert(pbsItemsTable)
       .values({
         itemCode,
+        pbsCode: itemCode,
         liItemId,
+        scheduleCode: numberField(record, "schedule_code"),
         drugId,
         brandName,
         strength: strengthField(record),
         form: formField(record),
         packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
+        pricingQuantity: numberField(record, "pricing_quantity"),
+        liForm: stringField(record, "li_form"),
+        programCode: stringField(record, "program_code"),
         formulary,
         currentAemp: determinedPrice,
         currentDpmq: dispensedPrice ?? null,
@@ -162,12 +167,17 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
       .onConflictDoUpdate({
         target: pbsItemsTable.itemCode,
         set: {
+          pbsCode: itemCode,
           liItemId,
+          scheduleCode: numberField(record, "schedule_code"),
           drugId,
           brandName,
           strength: strengthField(record),
           form: formField(record),
           packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
+          pricingQuantity: numberField(record, "pricing_quantity"),
+          liForm: stringField(record, "li_form"),
+          programCode: stringField(record, "program_code"),
           formulary,
           currentAemp: determinedPrice,
           currentDpmq: dispensedPrice ?? null,

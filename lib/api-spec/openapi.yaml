@@ -584,8 +584,12 @@ components:
       properties:
         itemCode:
           type: string
+        pbsCode:
+          type: ["string", "null"]
         liItemId:
           type: ["string", "null"]
+        scheduleCode:
+          type: ["integer", "null"]
         drugId:
           type: integer
         brandName:
@@ -595,6 +599,12 @@ components:
         form:
           type: ["string", "null"]
         packSize:
+          type: ["string", "null"]
+        pricingQuantity:
+          type: ["integer", "null"]
+        liForm:
+          type: ["string", "null"]
+        programCode:
           type: ["string", "null"]
         drugName:
           type: string
@@ -637,7 +647,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, drugId, brandName, strength, form, packSize, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, liForm, programCode, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     PriceHistory:
       type: object
       properties:

@@ -10,7 +10,11 @@ import type { PbsItemFormulary } from './pbsItemFormulary';
 export interface PbsItem {
   itemCode: string;
   /** @nullable */
-  liItemId?: string | null;
+  pbsCode: string | null;
+  /** @nullable */
+  liItemId: string | null;
+  /** @nullable */
+  scheduleCode: number | null;
   drugId: number;
   brandName: string;
   /** @nullable */
@@ -19,6 +23,12 @@ export interface PbsItem {
   form: string | null;
   /** @nullable */
   packSize: string | null;
+  /** @nullable */
+  pricingQuantity: number | null;
+  /** @nullable */
+  liForm: string | null;
+  /** @nullable */
+  programCode: string | null;
   drugName: string;
   activeIngredient: string;
   sponsor: string;

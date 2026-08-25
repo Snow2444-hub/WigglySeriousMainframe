@@ -58,12 +58,17 @@ router.get("/drugs/:id", async (req, res): Promise<void> => {
 
 const pbsSelect = {
   itemCode: pbsItemsTable.itemCode,
+  pbsCode: pbsItemsTable.pbsCode,
   liItemId: pbsItemsTable.liItemId,
+  scheduleCode: pbsItemsTable.scheduleCode,
   drugId: pbsItemsTable.drugId,
   brandName: pbsItemsTable.brandName,
   strength: pbsItemsTable.strength,
   form: pbsItemsTable.form,
   packSize: pbsItemsTable.packSize,
+  pricingQuantity: pbsItemsTable.pricingQuantity,
+  liForm: pbsItemsTable.liForm,
+  programCode: pbsItemsTable.programCode,
   formulary: pbsItemsTable.formulary,
   currentAemp: pbsItemsTable.currentAemp,
   currentDpmq: pbsItemsTable.currentDpmq,
