@@ -60,7 +60,7 @@ async function resolveDrugId(input: {
   const [existing] = await db
     .select({ id: drugsTable.id })
     .from(drugsTable)
-    .where(and(eq(drugsTable.name, input.name), eq(drugsTable.activeIngredient, input.activeIngredient)))
+    .where(eq(drugsTable.activeIngredient, input.activeIngredient))
     .limit(1);
   if (existing) return existing.id;
 
@@ -91,7 +91,8 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
   for (const record of recordsFromPayload(payload)) {
     const liItemId = stringField(record, "li_item_id");
     const itemCode = stringField(record, "pbs_code");
-    const drugName = stringField(record, "li_drug_name", "drug_name");
+    const activeIngredient = stringField(record, "active_ingredient", "li_drug_name", "drug_name");
+    const drugName = activeIngredient;
     const brandName = stringField(record, "brand_name") ?? drugName;
     const formulary = itemFormulary(record);
     const determinedPrice = numberField(record, "determined_price", "aemp", "current_aemp");
@@ -111,7 +112,6 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
 
     const firstListedDate = dateField(record, "first_listed_date") ?? scheduleDate;
     const sponsor = stringField(record, "manufacturer_code", "organisation_id") ?? "PBS";
-    const activeIngredient = stringField(record, "drug_name", "li_drug_name") ?? drugName;
     const drugId = await resolveDrugId({
       name: drugName,
       activeIngredient,
@@ -126,6 +126,9 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
         liItemId,
         drugId,
         brandName,
+        strength: stringField(record, "strength", "li_strength"),
+        form: stringField(record, "form", "li_form", "schedule_form"),
+        packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
         formulary,
         currentAemp: determinedPrice,
         currentDpmq: dispensedPrice,
@@ -148,6 +151,9 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
           liItemId,
           drugId,
           brandName,
+          strength: stringField(record, "strength", "li_strength"),
+          form: stringField(record, "form", "li_form", "schedule_form"),
+          packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
           formulary,
           currentAemp: determinedPrice,
           currentDpmq: dispensedPrice,

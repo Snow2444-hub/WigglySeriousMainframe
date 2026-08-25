@@ -33,6 +33,12 @@ export interface PbsItem {
   itemCode: string;
   drugId: number;
   brandName: string;
+  /** @nullable */
+  strength: string | null;
+  /** @nullable */
+  form: string | null;
+  /** @nullable */
+  packSize: string | null;
   drugName: string;
   activeIngredient: string;
   sponsor: string;

@@ -588,6 +588,12 @@ components:
           type: integer
         brandName:
           type: string
+        strength:
+          type: ["string", "null"]
+        form:
+          type: ["string", "null"]
+        packSize:
+          type: ["string", "null"]
         drugName:
           type: string
         activeIngredient:
@@ -629,7 +635,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, drugId, brandName, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, drugId, brandName, strength, form, packSize, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     PriceHistory:
       type: object
       properties:

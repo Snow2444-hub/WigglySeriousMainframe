@@ -28,7 +28,7 @@ function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function executeIngestionRun(runId: number, scheduleDate: string, maxPages?: number): Promise<void> {
+export async function executeIngestionRun(runId: number, scheduleDate: string, maxPages?: number): Promise<void> {
   try {
     await db
       .update(ingestionRunsTable)
