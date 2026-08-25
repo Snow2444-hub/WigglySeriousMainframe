@@ -1,0 +1,140 @@
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  getGetPbsItemQueryKey,
+  getGetDrugQueryKey,
+  getGetDashboardQueryKey,
+  getListPriceHistoryQueryKey,
+  getListStockQueryKey,
+  getHealthCheckQueryKey,
+  type ArtgEntry,
+  type PbsItem,
+  type PharmacyStock,
+  useCreateStock,
+  useDeleteStock,
+  useGetDrug,
+  useGetPbsItem,
+  useGetDashboard,
+  useHealthCheck,
+  useListDrugs,
+  useListArtgEntries,
+  useListPbsItems,
+  useListPriceHistory,
+  useListStock,
+  useUpdateStock,
+} from '@workspace/api-client-react';
+import { Link } from 'wouter';
+import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, ChevronDown, Filter, History, LoaderCircle, PackagePlus, Pencil, Plus, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+
+const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
+const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+
+function StatCard({ label, value, detail, icon: Icon, tone = 'primary' }: { label: string; value: string | number; detail: string; icon: typeof BarChart3; tone?: 'primary' | 'amber' | 'teal' }) {
+  return <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-xs transition-transform hover:-translate-y-1 hover:shadow-md" data-testid={`card-stat-${label.toLowerCase().replaceAll(' ', '-')}`}>
+    <div className={`mb-7 flex h-9 w-9 items-center justify-center rounded-xl ${tone === 'amber' ? 'bg-accent/20 text-accent-foreground' : tone === 'teal' ? 'bg-chart-3/15 text-chart-3' : 'bg-primary/10 text-primary'}`}><Icon className="h-4 w-4" /></div>
+    <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+    <div className="mt-1 flex items-baseline gap-2"><span className="text-3xl font-bold tracking-[-0.06em]" data-testid={`text-stat-${label.toLowerCase().replaceAll(' ', '-')}`}>{value}</span><span className="text-xs text-muted-foreground">{detail}</span></div>
+  </div>;
+}
+
+function Dashboard() {
+  const dashboard = useGetDashboard();
+  const health = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey() } });
+  if (dashboard.isLoading) return <AppShell><PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." /><QueryState kind="loading" /></AppShell>;
+  if (dashboard.isError || !dashboard.data) return <AppShell><PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." /><QueryState kind="error" onRetry={() => dashboard.refetch()} /></AppShell>;
+  const summary = dashboard.data;
+  return <AppShell>
+    <PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." action={<Link href="/stock" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-add-stock"><Plus className="h-4 w-4" /> Add stock record</Link>} />
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard label="Stock units" value={summary.totalStockUnits} detail="on hand" icon={Boxes} />
+      <StatCard label="Stock lines" value={summary.stockLineCount} detail="records" icon={PackagePlus} tone="amber" />
+      <StatCard label="Tracked items" value={summary.trackedItems} detail="PBS items" icon={BookOpen} tone="teal" />
+      <StatCard label="PBS mix" value={`${summary.formularyBreakdown.F1}/${summary.formularyBreakdown.F2}`} detail="F1 / F2" icon={BarChart3} />
+    </div>
+    <div className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
+      <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-recent-stock">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Private workspace</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Recent stock records</h2></div><Link href="/stock" className="flex items-center gap-1 text-xs font-bold text-primary hover:gap-2" data-testid="link-view-all-stock">View all <ArrowRight className="h-3.5 w-3.5" /></Link></div>
+        {summary.recentStock?.length ? <div className="divide-y divide-border">{summary.recentStock.slice(0, 5).map((item, index) => <div key={item.id} className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/45" data-testid={`row-recent-stock-${item.id}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary font-mono text-xs font-bold text-secondary-foreground">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.brandName || 'PBS item'}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{item.itemCode} · added {date(item.purchaseDate)}</p></div><div className="text-right"><p className="font-mono text-sm font-bold">{item.quantity} units</p><p className="mt-0.5 text-xs text-muted-foreground">{money(item.purchasePrice)} each</p></div></div>)}</div> : <div className="p-12"><QueryState kind="empty" /></div>}
+      </section>
+      <section className="rounded-2xl border border-border bg-sidebar p-6 text-sidebar-foreground shadow-sm" data-testid="card-reference-note">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground"><ShieldCheck className="h-5 w-5" /></div>
+        <p className="mt-7 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Reference desk</p>
+        <h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">Know the number before you order.</h2>
+        <p className="mt-3 text-sm leading-relaxed text-sidebar-foreground/65">Search PBS listings, check current AEMP and DPMQ, then trace how a price has moved over time.</p>
+        <p className="mt-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-sidebar-foreground/45"><span className={`h-1.5 w-1.5 rounded-full ${health.data?.status === 'ok' ? 'bg-accent' : health.isError ? 'bg-destructive' : 'bg-sidebar-foreground/40'}`} />{health.data?.status === 'ok' ? 'Reference service online' : health.isError ? 'Reference service unavailable' : 'Checking reference service'}</p>
+        <Link href="/pbs" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sidebar-primary px-4 py-3 text-sm font-bold text-sidebar-primary-foreground hover:-translate-y-0.5" data-testid="link-reference-desk"><Search className="h-4 w-4" /> Open PBS directory</Link>
+      </section>
+    </div>
+  </AppShell>;
+}
+
+function PbsDirectory() {
+  const [search, setSearch] = useState('');
+  const [formulary, setFormulary] = useState('');
+  const [selected, setSelected] = useState<PbsItem | null>(null);
+  const params = useMemo(() => ({ search: search || undefined, formulary: formulary ? formulary as 'F1' | 'F2' : undefined, limit: 100 }), [search, formulary]);
+  const query = useListPbsItems(params);
+  const drugIndex = useListDrugs({ search: search || undefined, limit: 100 });
+  const detail = useGetPbsItem(selected?.itemCode ?? '', { query: { enabled: Boolean(selected), queryKey: getGetPbsItemQueryKey(selected?.itemCode ?? '') } });
+  const drugDetail = useGetDrug(selected?.drugId ?? 0, { query: { enabled: Boolean(selected), queryKey: getGetDrugQueryKey(selected?.drugId ?? 0) } });
+  const history = useListPriceHistory(selected?.itemCode ?? '', { query: { enabled: Boolean(selected), queryKey: getListPriceHistoryQueryKey(selected?.itemCode ?? '') } });
+  const items = query.data ?? [];
+  return <AppShell><PageHeading eyebrow="Reference library / PBS" title="PBS directory" description="Search listing details, current prices and the movement behind them." />
+    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-xs sm:flex-row">
+      <label className="flex min-h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground"><Search className="h-4 w-4 shrink-0" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search item code, brand or drug name" data-testid="input-pbs-search" /></label>
+      <label className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm"><Filter className="h-4 w-4 text-primary" /><select value={formulary} onChange={(e) => setFormulary(e.target.value)} className="bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-pbs-formulary"><option value="">All formularies</option><option value="F1">F1 only</option><option value="F2">F2 only</option></select><ChevronDown className="pointer-events-none -ml-5 h-3.5 w-3.5 text-muted-foreground" /></label>
+    </div>
+    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !items.length ? <QueryState kind="empty" /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="flex justify-between border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground"><span>Medicine / sponsor</span><span>{items.length} listings · {drugIndex.data?.length ?? '—'} medicines</span></div><div className="hidden grid-cols-[1.2fr_1fr_.5fr_.65fr_.65fr] gap-4 border-b border-border bg-muted/20 px-5 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>Item details</span><span>Active ingredient</span><span>Formulary</span><span>AEMP</span><span>DPMQ</span></div><div className="divide-y divide-border">{items.map((item) => <button type="button" key={item.itemCode} onClick={() => setSelected(item)} className="grid w-full gap-2 px-5 py-4 text-left transition-colors hover:bg-secondary/35 md:grid-cols-[1.2fr_1fr_.5fr_.65fr_.65fr] md:items-center md:gap-4" data-testid={`row-pbs-item-${item.itemCode}`}><div><p className="font-mono text-[10px] font-bold text-primary">{item.itemCode}</p><p className="mt-1 text-sm font-bold">{item.brandName || item.drugName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.sponsor}</p></div><p className="text-xs text-muted-foreground md:text-sm">{item.activeIngredient}</p><span className={`w-fit rounded-full px-2 py-1 font-mono text-[10px] font-bold ${item.formulary === 'F1' ? 'bg-primary/10 text-primary' : 'bg-accent/25 text-accent-foreground'}`}>{item.formulary}</span><p className="data-mono text-sm font-bold">{money(item.currentAemp)}</p><p className="data-mono text-sm font-bold">{money(item.currentDpmq)}</p></button>)}</div></div>}
+    {selected && <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="dialog" aria-modal="true" data-testid="dialog-pbs-detail"><button type="button" className="absolute inset-0 cursor-default" aria-label="Close detail" onClick={() => setSelected(null)} data-testid="button-close-pbs-detail" /><div className="relative max-h-[88dvh] w-full max-w-2xl overflow-auto rounded-t-3xl border border-border bg-card p-6 shadow-2xl sm:rounded-3xl"><button type="button" onClick={() => setSelected(null)} className="absolute right-5 top-5 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close" data-testid="button-close-pbs-modal"><X className="h-4 w-4" /></button>{detail.isLoading ? <QueryState kind="loading" /> : detail.isError || !detail.data ? <QueryState kind="error" onRetry={() => detail.refetch()} /> : <><div className="pr-10"><span className="font-mono text-[11px] font-bold text-primary">{detail.data.itemCode}</span><h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">{detail.data.brandName || detail.data.drugName}</h2><p className="mt-1 text-sm text-muted-foreground">{detail.data.activeIngredient} · {detail.data.sponsor}</p><p className="mt-2 text-xs text-muted-foreground">PBS drug listed {drugDetail.data?.firstPbsListingDate ? date(drugDetail.data.firstPbsListingDate) : '—'}</p></div><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">AEMP</p><p className="mt-1 font-mono text-sm font-bold">{money(detail.data.currentAemp)}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">DPMQ</p><p className="mt-1 font-mono text-sm font-bold">{money(detail.data.currentDpmq)}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Formulary</p><p className="mt-1 font-mono text-sm font-bold">{detail.data.formulary}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Updated</p><p className="mt-1 font-mono text-sm font-bold">{date(detail.data.lastUpdated)}</p></div></div><div className="mt-7 flex items-center gap-2 border-b border-border pb-3"><History className="h-4 w-4 text-primary" /><h3 className="text-sm font-bold">Price history</h3></div>{history.isLoading ? <div className="py-6"><QueryState kind="loading" /></div> : history.data?.length ? <div className="divide-y divide-border">{history.data.map((entry) => <div key={`${entry.itemCode}-${entry.priceDate}`} className="grid grid-cols-[1fr_auto_auto] gap-4 py-3 text-sm"><span className="text-muted-foreground">{date(entry.priceDate)}</span><span className="data-mono font-bold">{money(entry.aemp)}</span><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${entry.reductionType ? 'bg-chart-3/15 text-chart-3' : 'bg-muted text-muted-foreground'}`}>{entry.reductionType || 'No change'}</span></div>)}</div> : <p className="py-6 text-sm text-muted-foreground">No recorded price movements for this item.</p>}</>}</div></div>}
+  </AppShell>;
+}
+
+function ArtgDirectory() {
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('');
+  const params = useMemo(() => ({ search: search || undefined, status: status || undefined }), [search, status]);
+  const query = useListArtgEntries(params);
+  const entries = query.data ?? [];
+  return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Keep registration status and sponsor details close while you validate a product." />
+    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-xs sm:flex-row"><label className="flex min-h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm"><Filter className="h-4 w-4 text-primary" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="Registered">Registered</option><option value="Cancelled">Cancelled</option></select></label></div>
+    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !entries.length ? <QueryState kind="empty" /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.65fr_1.4fr_1fr_1fr_.75fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>ARTG ID</span><span>Product</span><span>Ingredient</span><span>Sponsor</span><span>Status</span></div><div className="divide-y divide-border">{entries.map((entry: ArtgEntry) => <div key={entry.artgId} className="grid gap-2 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.65fr_1.4fr_1fr_1fr_.75fr] md:items-center md:gap-4" data-testid={`row-artg-${entry.artgId}`}><div className="font-mono text-xs font-bold text-primary">{entry.artgId}</div><div><p className="text-sm font-bold">{entry.productName}</p><p className="mt-0.5 text-xs text-muted-foreground">Registered {date(entry.registrationDate)}</p></div><p className="text-xs text-muted-foreground md:text-sm">{entry.activeIngredient}</p><p className="text-xs text-muted-foreground md:text-sm">{entry.sponsor}</p><span className={`w-fit rounded-full px-2.5 py-1 text-[10px] font-bold ${entry.status.toLowerCase() === 'active' ? 'bg-chart-3/15 text-chart-3' : 'bg-destructive/10 text-destructive'}`}>{entry.status}</span></div>)}</div></div>}
+  </AppShell>;
+}
+
+type StockForm = { itemCode: string; quantity: string; purchasePrice: string; purchaseDate: string };
+const blankStock: StockForm = { itemCode: '', quantity: '0', purchasePrice: '0', purchaseDate: new Date().toISOString().slice(0, 10) };
+
+function StockDialog({ initial, onClose, onSaved }: { initial?: PharmacyStock; onClose: () => void; onSaved: (message: string) => void }) {
+  const [form, setForm] = useState<StockForm>(initial ? { itemCode: initial.itemCode, quantity: String(initial.quantity), purchasePrice: String(initial.purchasePrice), purchaseDate: initial.purchaseDate.slice(0, 10) } : blankStock);
+  const [error, setError] = useState('');
+  const create = useCreateStock();
+  const update = useUpdateStock();
+  const pending = create.isPending || update.isPending;
+  const set = (key: keyof StockForm, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = () => {
+    if (!form.itemCode.trim() || Number(form.quantity) < 0 || Number(form.purchasePrice) < 0 || !form.purchaseDate) { setError('Enter an item code, non-negative quantity and price, and a purchase date.'); return; }
+    const data = { itemCode: form.itemCode.trim(), quantity: Number(form.quantity), purchasePrice: Number(form.purchasePrice), purchaseDate: form.purchaseDate };
+    const options = { onSuccess: () => { onSaved(initial ? 'Stock record updated.' : 'Stock record added.'); onClose(); }, onError: () => setError('The record could not be saved. Please try again.') };
+    if (initial) update.mutate({ id: initial.id, data }, options); else create.mutate({ data }, options);
+  };
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="dialog" aria-modal="true" data-testid="dialog-stock-form"><button type="button" className="absolute inset-0 cursor-default" onClick={onClose} aria-label="Close form" data-testid="button-close-stock-backdrop" /><div className="relative w-full max-w-lg rounded-t-3xl border border-border bg-card p-6 shadow-2xl sm:rounded-3xl"><button type="button" onClick={onClose} className="absolute right-5 top-5 rounded-lg p-2 text-muted-foreground hover:bg-muted" aria-label="Close" data-testid="button-close-stock-form"><X className="h-4 w-4" /></button><p className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-primary">{initial ? 'Edit private record' : 'New private record'}</p><h2 className="mt-2 pr-8 text-2xl font-bold tracking-[-0.05em]">{initial ? 'Update stock' : 'Add stock'}</h2><p className="mt-1 text-sm text-muted-foreground">Only your signed-in pharmacy can see these records.</p><div className="mt-6 space-y-4"><label className="block"><span className="mb-1.5 block text-xs font-bold">PBS item code</span><input value={form.itemCode} onChange={(e) => set('itemCode', e.target.value)} placeholder="e.g. 1234K" className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-item-code" /></label><div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-1.5 block text-xs font-bold">Quantity</span><input type="number" min="0" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-quantity" /></label><label className="block"><span className="mb-1.5 block text-xs font-bold">Purchase price (AUD)</span><input type="number" min="0" step="0.01" value={form.purchasePrice} onChange={(e) => set('purchasePrice', e.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-price" /></label></div><label className="block"><span className="mb-1.5 block text-xs font-bold">Purchase date</span><input type="date" value={form.purchaseDate} onChange={(e) => set('purchaseDate', e.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-date" /></label></div>{error && <p className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive" data-testid="status-stock-form-error">{error}</p>}<div className="mt-7 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted" data-testid="button-cancel-stock">Cancel</button><button type="button" onClick={submit} disabled={pending} className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:-translate-y-0.5 disabled:opacity-50" data-testid="button-save-stock">{pending && <LoaderCircle className="h-4 w-4 animate-spin" />}{initial ? 'Save changes' : 'Add record'}</button></div></div></div>;
+}
+
+function StockPage() {
+  const queryClient = useQueryClient();
+  const stock = useListStock();
+  const remove = useDeleteStock();
+  const [dialog, setDialog] = useState<'new' | PharmacyStock | null>(null);
+  const [notice, setNotice] = useState('');
+  const rows = stock.data ?? [];
+  const saved = (message: string) => { setNotice(message); queryClient.invalidateQueries({ queryKey: getListStockQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); window.setTimeout(() => setNotice(''), 3200); };
+  const deleteRow = (row: PharmacyStock) => { if (window.confirm(`Delete the stock record for ${row.itemCode}?`)) remove.mutate({ id: row.id }, { onSuccess: () => saved('Stock record deleted.'), onError: () => setNotice('Could not delete that record.') }); };
+  return <AppShell><PageHeading eyebrow="Private workspace / stock" title="Stock records" description="A private, current view of what is on hand — kept separate from public reference data." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
+    {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-stock-success"><Check className="h-4 w-4" />{notice}</div>}
+    {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add your first private record to start tracking quantities and purchase prices.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[1.2fr_.55fr_.7fr_.75fr_auto] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>Item / brand</span><span>Quantity</span><span>Purchase price</span><span>Purchased</span><span /></div><div className="divide-y divide-border">{rows.map((row) => <div key={row.id} className="grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[1.2fr_.55fr_.7fr_.75fr_auto] md:items-center md:gap-4" data-testid={`row-stock-${row.id}`}><div><p className="font-mono text-[10px] font-bold text-primary">{row.itemCode}</p><p className="mt-1 text-sm font-bold">{row.brandName || 'Private stock item'}</p></div><p className="text-sm font-bold"><span className="md:hidden text-xs font-normal text-muted-foreground">Qty </span>{row.quantity}</p><p className="data-mono text-sm font-bold">{money(row.purchasePrice)}</p><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" />{date(row.purchaseDate)}</p><div className="flex gap-1 md:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.itemCode}`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.itemCode}`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>)}</div></div>}
+    {dialog && <StockDialog initial={dialog === 'new' ? undefined : dialog} onClose={() => setDialog(null)} onSaved={saved} />}
+  </AppShell>;
+}
+
+export { Dashboard, PbsDirectory, ArtgDirectory, StockPage };

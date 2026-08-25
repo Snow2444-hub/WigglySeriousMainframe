@@ -1,0 +1,22 @@
+Create a Scheduled Deployment that runs monthly (on the 2nd of each month, since the PBS schedule updates on the 1st) to ingest the full PBS schedule into our local Postgres.
+
+API details:
+- Base URL: https://data-api.health.gov.au/pbs/api/v3
+- Auth: send a "Subscription-Key" header. Store the key in Replit Secrets as PBS_SUBSCRIPTION_KEY (this is the shared public key, not a personal one).
+- The API is relational: one endpoint per table. Fetch the items endpoint for pricing (AEMP, DPMQ), plus item-amt and any endpoints needed to resolve brand/formulary details.
+
+Rate limiting is strict and shared with all other public users, so the job must:
+- Wait a minimum of 20 seconds between every request
+- Read the x-rate-limit-limit, x-rate-limit-remaining and x-rate-limit-reset response headers and back off accordingly
+- Retry with exponential backoff on HTTP 429 or 5xx, rather than failing the whole run
+- Use the API's pagination to walk through large result sets page by page
+- Be resumable: record progress (last successful page/endpoint) in a table so an interrupted run can pick up where it left off rather than restarting
+
+Ingestion logic:
+- Write each fetched schedule into a raw staging table first, tagged with the schedule date, so we keep an unmodified copy of what the API returned
+- Then upsert into pbs_items, and for each item code compare AEMP and DPMQ against the most recent price_history row
+- Where a price has changed, insert a new price_history row with the new values and the schedule effective date
+- Where an item code appears that we haven't seen before, insert it and flag it as a new listing (this may indicate a new brand entering, which matters for F1 to F2 transitions)
+- Where an item code has disappeared from the schedule, flag it as delisted rather than deleting it
+
+Also add a manual "run now" trigger in the admin UI so I can kick off an ingestion outside the schedule, and log each run (start time, end time, records processed, errors) to an ingestion_runs table.

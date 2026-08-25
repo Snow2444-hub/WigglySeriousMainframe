@@ -10,6 +10,16 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Pharmacy dashboard summaries
+  - name: drugs
+    description: PBS drug reference data
+  - name: pbs
+    description: PBS item and price information
+  - name: artg
+    description: ARTG registration data
+  - name: stock
+    description: Private pharmacy stock records
 paths:
   /healthz:
     get:
@@ -24,7 +34,291 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get pharmacy dashboard summary
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /drugs:
+    get:
+      operationId: listDrugs
+      tags: [drugs]
+      summary: List PBS drugs
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by drug name, active ingredient, or sponsor
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Drug records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Drug"
+  /drugs/{id}:
+    get:
+      operationId: getDrug
+      tags: [drugs]
+      summary: Get a PBS drug
+      parameters:
+        - $ref: "#/components/parameters/DrugId"
+      responses:
+        "200":
+          description: Drug record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Drug"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /pbs-items:
+    get:
+      operationId: listPbsItems
+      tags: [pbs]
+      summary: List PBS items
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by item code, brand name, or drug name
+        - name: formulary
+          in: query
+          schema:
+            type: string
+            enum: [F1, F2]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: PBS item records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PbsItem"
+  /pbs-items/{itemCode}:
+    get:
+      operationId: getPbsItem
+      tags: [pbs]
+      summary: Get a PBS item
+      parameters:
+        - $ref: "#/components/parameters/ItemCode"
+      responses:
+        "200":
+          description: PBS item record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbsItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /pbs-items/{itemCode}/price-history:
+    get:
+      operationId: listPriceHistory
+      tags: [pbs]
+      summary: List price history for a PBS item
+      parameters:
+        - $ref: "#/components/parameters/ItemCode"
+      responses:
+        "200":
+          description: Historical prices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PriceHistory"
+  /artg-entries:
+    get:
+      operationId: listArtgEntries
+      tags: [artg]
+      summary: List ARTG registrations
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by ARTG ID, active ingredient, sponsor, or product name
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ARTG records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtgEntry"
+  /stock:
+    get:
+      operationId: listStock
+      tags: [stock]
+      summary: List the signed-in user's stock
+      responses:
+        "200":
+          description: Private stock records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PharmacyStock"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createStock
+      tags: [stock]
+      summary: Add a stock record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyStockInput"
+      responses:
+        "201":
+          description: Created stock record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PharmacyStock"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /stock/{id}:
+    patch:
+      operationId: updateStock
+      tags: [stock]
+      summary: Update a stock record
+      parameters:
+        - $ref: "#/components/parameters/StockId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyStockUpdate"
+      responses:
+        "200":
+          description: Updated stock record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PharmacyStock"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteStock
+      tags: [stock]
+      summary: Delete a stock record
+      parameters:
+        - $ref: "#/components/parameters/StockId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
+  parameters:
+    DrugId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    ItemCode:
+      name: itemCode
+      in: path
+      required: true
+      schema:
+        type: string
+    StockId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +327,155 @@ components:
           type: string
       required:
         - status
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Drug:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        activeIngredient:
+          type: string
+        sponsor:
+          type: string
+        firstPbsListingDate:
+          type: string
+          format: date
+      required: [id, name, activeIngredient, sponsor, firstPbsListingDate]
+    PbsItem:
+      type: object
+      properties:
+        itemCode:
+          type: string
+        drugId:
+          type: integer
+        brandName:
+          type: string
+        drugName:
+          type: string
+        activeIngredient:
+          type: string
+        sponsor:
+          type: string
+        formulary:
+          type: string
+          enum: [F1, F2]
+        currentAemp:
+          type: number
+        currentDpmq:
+          type: number
+        lastUpdated:
+          type: string
+          format: date
+      required: [itemCode, drugId, brandName, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated]
+    PriceHistory:
+      type: object
+      properties:
+        itemCode:
+          type: string
+        priceDate:
+          type: string
+          format: date
+        aemp:
+          type: number
+        dpmq:
+          type: number
+        reductionType:
+          type: ["string", "null"]
+      required: [itemCode, priceDate, aemp, dpmq, reductionType]
+    ArtgEntry:
+      type: object
+      properties:
+        artgId:
+          type: string
+        activeIngredient:
+          type: string
+        sponsor:
+          type: string
+        registrationDate:
+          type: string
+          format: date
+        productName:
+          type: string
+        status:
+          type: string
+      required: [artgId, activeIngredient, sponsor, registrationDate, productName, status]
+    PharmacyStock:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        itemCode:
+          type: string
+        brandName:
+          type: string
+        quantity:
+          type: integer
+        purchasePrice:
+          type: number
+        purchaseDate:
+          type: string
+          format: date
+      required: [id, userId, itemCode, brandName, quantity, purchasePrice, purchaseDate]
+    PharmacyStockInput:
+      type: object
+      properties:
+        itemCode:
+          type: string
+          minLength: 1
+        quantity:
+          type: integer
+          minimum: 0
+        purchasePrice:
+          type: number
+          minimum: 0
+        purchaseDate:
+          type: string
+          format: date
+      required: [itemCode, quantity, purchasePrice, purchaseDate]
+    PharmacyStockUpdate:
+      type: object
+      properties:
+        itemCode:
+          type: string
+          minLength: 1
+        quantity:
+          type: integer
+          minimum: 0
+        purchasePrice:
+          type: number
+          minimum: 0
+        purchaseDate:
+          type: string
+          format: date
+    DashboardSummary:
+      type: object
+      properties:
+        totalStockUnits:
+          type: integer
+        stockLineCount:
+          type: integer
+        trackedItems:
+          type: integer
+        formularyBreakdown:
+          type: object
+          properties:
+            F1:
+              type: integer
+            F2:
+              type: integer
+          required: [F1, F2]
+        recentStock:
+          type: array
+          items:
+            $ref: "#/components/schemas/PharmacyStock"
+      required: [totalStockUnits, stockLineCount, trackedItems, formularyBreakdown, recentStock]
 

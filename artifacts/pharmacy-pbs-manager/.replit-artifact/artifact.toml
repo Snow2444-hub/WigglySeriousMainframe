@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Pharmacy PBS Manager"
+description = "A secure pharmacy operations app for browsing PBS medicine data, viewing ARTG registrations and price history, and managing each pharmacy user's private stock records."
+version = "1.0.0"
+id = "artifacts/pharmacy-pbs-manager"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22888
+
+[services.development]
+run = "pnpm --filter @workspace/pharmacy-pbs-manager run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/pharmacy-pbs-manager", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/pharmacy-pbs-manager/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22888"
+BASE_PATH = "/"

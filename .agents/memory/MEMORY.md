@@ -1,0 +1,1 @@
+- [OpenAPI Zod compatibility](openapi-zod-compatibility.md) — Orval’s current Zod output requires a Zod 4 runtime when contracts use integer schemas.
