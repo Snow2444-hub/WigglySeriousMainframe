@@ -16,7 +16,8 @@ import { Redirect, Route, Switch, useLocation, Router as WouterRouter } from "wo
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ArtgDirectory, Dashboard, PbsDirectory, StockPage } from "@/pages/pages";
+import { ArtgDirectory, AdminPage, Dashboard, PbsDirectory, StockPage } from "@/pages/pages";
+import { AdminGuard } from "@/components/admin-guard";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -175,6 +176,7 @@ function Router() {
     <Route path="/pbs" component={() => <Protected><PbsDirectory /></Protected>} />
     <Route path="/artg" component={() => <Protected><ArtgDirectory /></Protected>} />
     <Route path="/stock" component={() => <Protected><StockPage /></Protected>} />
+    <Route path="/admin" component={() => <Protected><AdminGuard><AdminPage /></AdminGuard></Protected>} />
     <Route component={NotFound} />
   </Switch></RoutedErrorBoundary>;
 }

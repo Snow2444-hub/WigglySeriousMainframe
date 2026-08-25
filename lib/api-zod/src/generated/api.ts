@@ -250,3 +250,45 @@ export const DeleteStockParams = zod.object({
 export const DeleteStockResponse = zod.void()
 
 
+/**
+ * @summary List recent PBS ingestion runs
+ */
+export const ListAdminIngestionRunsResponseItem = zod.object({
+  "id": zod.int(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "recordsProcessed": zod.int(),
+  "errorMessage": zod.string().nullable()
+})
+export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsResponseItem)
+
+
+/**
+ * @summary Start a PBS ingestion run
+ */
+export const TriggerAdminIngestionResponse = zod.object({
+  "id": zod.int(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "recordsProcessed": zod.int(),
+  "errorMessage": zod.string().nullable()
+})
+
+
+/**
+ * @summary Get the current PBS ingestion run
+ */
+export const GetCurrentAdminIngestionRunResponse = zod.object({
+  "currentRun": zod.union([zod.object({
+  "id": zod.int(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "recordsProcessed": zod.int(),
+  "errorMessage": zod.string().nullable()
+}),zod.null()])
+})
+
+

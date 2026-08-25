@@ -103,6 +103,31 @@ export interface DashboardSummary {
   recentStock: PharmacyStock[];
 }
 
+export type AdminIngestionRunStatus = typeof AdminIngestionRunStatus[keyof typeof AdminIngestionRunStatus];
+
+
+export const AdminIngestionRunStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface AdminIngestionRun {
+  id: number;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  status: AdminIngestionRunStatus;
+  recordsProcessed: number;
+  /** @nullable */
+  errorMessage: string | null;
+}
+
+export interface CurrentAdminIngestionRun {
+  currentRun: AdminIngestionRun | null;
+}
+
 export type ListDrugsParams = {
 /**
  * Search by drug name, active ingredient, or sponsor

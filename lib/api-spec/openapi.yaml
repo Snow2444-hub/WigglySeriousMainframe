@@ -20,6 +20,8 @@ tags:
     description: ARTG registration data
   - name: stock
     description: Private pharmacy stock records
+  - name: admin
+    description: Administrator ingestion controls
 paths:
   /healthz:
     get:
@@ -299,6 +301,85 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/ingestion-runs:
+    get:
+      operationId: listAdminIngestionRuns
+      tags: [admin]
+      summary: List recent PBS ingestion runs
+      responses:
+        "200":
+          description: Recent ingestion runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminIngestionRun"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: triggerAdminIngestion
+      tags: [admin]
+      summary: Start a PBS ingestion run
+      responses:
+        "202":
+          description: Ingestion run accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminIngestionRun"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: An ingestion run is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/ingestion-runs/current:
+    get:
+      operationId: getCurrentAdminIngestionRun
+      tags: [admin]
+      summary: Get the current PBS ingestion run
+      responses:
+        "200":
+          description: Current ingestion run, if one is active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CurrentAdminIngestionRun"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     DrugId:
@@ -478,4 +559,31 @@ components:
           items:
             $ref: "#/components/schemas/PharmacyStock"
       required: [totalStockUnits, stockLineCount, trackedItems, formularyBreakdown, recentStock]
+    AdminIngestionRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        recordsProcessed:
+          type: integer
+        errorMessage:
+          type: ["string", "null"]
+      required: [id, startedAt, finishedAt, status, recordsProcessed, errorMessage]
+    CurrentAdminIngestionRun:
+      type: object
+      properties:
+        currentRun:
+          oneOf:
+            - $ref: "#/components/schemas/AdminIngestionRun"
+            - type: "null"
+      required: [currentRun]
 

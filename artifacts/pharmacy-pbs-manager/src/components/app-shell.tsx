@@ -11,9 +11,11 @@ import {
   LogOut,
   Menu,
   PackageSearch,
+  Settings2,
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { useCurrentRole } from '@/components/admin-guard';
 
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: Activity },
@@ -44,7 +46,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const { signOut } = useClerk();
   const { user } = useUser();
+  const roleQuery = useCurrentRole();
   const initials = (user?.firstName?.[0] ?? user?.emailAddresses?.[0]?.emailAddress?.[0] ?? 'P').toUpperCase();
+  const visibleNavItems = roleQuery.data?.role === 'admin'
+    ? [...navItems, { href: '/admin', label: 'Data updates', icon: Settings2 }]
+    : navItems;
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground md:flex">
@@ -57,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="mb-3 px-3 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-foreground/45">Workspace</div>
         <nav className="space-y-1" aria-label="Primary navigation">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const active = location === item.href;
             const Icon = item.icon;
             return (

@@ -1,13 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
+  getGetCurrentAdminIngestionRunQueryKey,
   getGetPbsItemQueryKey,
   getGetDrugQueryKey,
   getGetDashboardQueryKey,
+  getListAdminIngestionRunsQueryKey,
   getListPriceHistoryQueryKey,
   getListStockQueryKey,
   getHealthCheckQueryKey,
+  type AdminIngestionRun,
   type ArtgEntry,
+  useGetCurrentAdminIngestionRun,
+  useListAdminIngestionRuns,
   type PbsItem,
   type PharmacyStock,
   useCreateStock,
@@ -21,10 +26,11 @@ import {
   useListPbsItems,
   useListPriceHistory,
   useListStock,
+  useTriggerAdminIngestion,
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
-import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, ChevronDown, Filter, History, LoaderCircle, PackagePlus, Pencil, Plus, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -137,4 +143,107 @@ function StockPage() {
   </AppShell>;
 }
 
-export { Dashboard, PbsDirectory, ArtgDirectory, StockPage };
+function formatDateTime(value: string | null): string {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? '—'
+    : new Intl.DateTimeFormat('en-AU', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(parsed);
+}
+
+function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
+  const styles = {
+    queued: 'bg-accent/25 text-accent-foreground',
+    running: 'bg-primary/10 text-primary',
+    completed: 'bg-chart-3/15 text-chart-3',
+    failed: 'bg-destructive/10 text-destructive',
+  } as const;
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] ${styles[status]}`}>{status}</span>;
+}
+
+function AdminPage() {
+  const queryClient = useQueryClient();
+  const [notice, setNotice] = useState('');
+  const runs = useListAdminIngestionRuns({
+    query: {
+      queryKey: getListAdminIngestionRunsQueryKey(),
+      refetchInterval: 15_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const current = useGetCurrentAdminIngestionRun({
+    query: {
+      queryKey: getGetCurrentAdminIngestionRunQueryKey(),
+      refetchInterval: 5_000,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const trigger = useTriggerAdminIngestion();
+  const activeRun = current.data?.currentRun;
+
+  const refresh = () => {
+    void Promise.all([runs.refetch(), current.refetch()]);
+  };
+
+  const startIngestion = () => {
+    setNotice('');
+    trigger.mutate(undefined, {
+      onSuccess: (run) => {
+        setNotice(`Ingestion run #${run.id} has been queued.`);
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListAdminIngestionRunsQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getGetCurrentAdminIngestionRunQueryKey() }),
+        ]);
+      },
+    });
+  };
+
+  return <AppShell>
+    <PageHeading
+      eyebrow="Administration / reference data"
+      title="PBS data updates"
+      description="Start a controlled schedule fetch and monitor the raw reference-data ingestion lifecycle."
+      action={<div className="flex flex-wrap gap-2">
+        <button type="button" onClick={refresh} disabled={runs.isFetching || current.isFetching} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-bold text-foreground hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-55" data-testid="button-refresh-ingestion-runs"><RefreshCw className={`h-4 w-4 ${runs.isFetching || current.isFetching ? 'animate-spin' : ''}`} /> Refresh</button>
+        <button type="button" onClick={startIngestion} disabled={trigger.isPending || Boolean(activeRun)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-55" data-testid="button-trigger-ingestion"><Play className="h-4 w-4" />{trigger.isPending ? 'Starting…' : activeRun ? 'Run in progress' : 'Start ingestion'}</button>
+      </div>}
+    />
+
+    {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-ingestion-success"><Check className="h-4 w-4" />{notice}</div>}
+    {trigger.isError && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{trigger.error.message || 'The ingestion run could not be started.'}</div>}
+
+    <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="card-current-ingestion">
+      <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Current run</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Live ingestion progress</h2></div>
+        {activeRun ? <IngestionStatus status={activeRun.status} /> : <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Idle</span>}
+      </div>
+      {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-3">
+        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Run ID</p><p className="mt-2 font-mono text-lg font-bold">#{activeRun.id}</p></div>
+        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Records staged</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-records-processed">{activeRun.recordsProcessed.toLocaleString('en-AU')}</p></div>
+        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Started</p><p className="mt-2 text-sm font-bold">{formatDateTime(activeRun.startedAt)}</p></div>
+      </div> : <div className="flex items-start gap-4 p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><DatabaseZap className="h-5 w-5" /></span><div><h3 className="font-bold">No ingestion is running.</h3><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Start a run when you are ready to fetch the latest PBS schedule into raw staging. Progress refreshes automatically while a run is active.</p></div></div>}
+    </section>
+
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-ingestion-history">
+      <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Operational history</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Recent ingestion runs</h2></div><span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{runs.data?.length ?? 0} shown</span></div>
+      {runs.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : runs.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => runs.refetch()} /></div> : !runs.data?.length ? <div className="p-10 text-center"><DatabaseZap className="mx-auto h-8 w-8 text-muted-foreground/50" /><h3 className="mt-3 font-bold">No runs have been recorded.</h3><p className="mt-1 text-sm text-muted-foreground">The first manual ingestion will appear here as soon as it starts.</p></div> : <div className="divide-y divide-border">
+        <div className="hidden grid-cols-[.5fr_1fr_.8fr_.85fr_1fr] gap-4 bg-muted/35 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>Run</span><span>Status</span><span>Records</span><span>Started</span><span>Finished / issue</span></div>
+        {runs.data.map((run) => <div key={run.id} className="grid gap-3 px-5 py-4 text-sm transition-colors hover:bg-secondary/25 md:grid-cols-[.5fr_1fr_.8fr_.85fr_1fr] md:items-center md:gap-4" data-testid={`row-ingestion-run-${run.id}`}>
+          <span className="font-mono font-bold text-primary">#{run.id}</span>
+          <IngestionStatus status={run.status} />
+          <span className="font-mono font-bold">{run.recordsProcessed.toLocaleString('en-AU')}</span>
+          <span className="text-xs text-muted-foreground">{formatDateTime(run.startedAt)}</span>
+          <span className={`text-xs ${run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{run.errorMessage ? <span className="inline-flex items-start gap-1.5"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{run.errorMessage}</span> : run.finishedAt ? <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-chart-3" />{formatDateTime(run.finishedAt)}</span> : 'In progress'}</span>
+        </div>)}
+      </div>}
+    </section>
+  </AppShell>;
+}
+
+export { Dashboard, PbsDirectory, ArtgDirectory, StockPage, AdminPage };

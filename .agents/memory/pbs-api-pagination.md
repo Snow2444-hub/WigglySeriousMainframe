@@ -7,4 +7,4 @@ The PBS v3 `items` endpoint accepts `page` and `limit` query parameters. It retu
 
 **Why:** The API rejects the common `pageSize` parameter, and resolving its relative next URL against the API base without preserving the `/pbs` prefix targets the wrong path.
 
-**How to apply:** Use `limit`, inspect `_links` entries with `rel: "next"`, and resolve `/api/v3/...` links against `https://data-api.health.gov.au/pbs`.
+**How to apply:** Use `limit`, inspect `_links` entries with `rel: "next"`, and resolve `/api/v3/...` links against `https://data-api.health.gov.au/pbs`. Validate every returned continuation URL remains HTTPS on `data-api.health.gov.au` under `/pbs/api/v3/` before sending the subscription-key header.

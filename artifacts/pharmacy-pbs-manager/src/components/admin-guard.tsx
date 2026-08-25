@@ -2,24 +2,29 @@ import { useAuth } from "@clerk/react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-type RoleResponse = {
+export type RoleResponse = {
   id: string;
   role: "user" | "admin";
 };
 
-async function getCurrentRole(): Promise<RoleResponse> {
+export async function getCurrentRole(): Promise<RoleResponse> {
   const response = await fetch("/api/me", { credentials: "include" });
   if (!response.ok) throw new Error("Unable to load the current user role");
   return response.json() as Promise<RoleResponse>;
 }
 
-export function AdminGuard({ children }: { children: ReactNode }) {
+export function useCurrentRole() {
   const { isLoaded, isSignedIn } = useAuth();
-  const roleQuery = useQuery({
+  return useQuery({
     queryKey: ["current-user-role"],
     queryFn: getCurrentRole,
     enabled: isLoaded && isSignedIn === true,
   });
+}
+
+export function AdminGuard({ children }: { children: ReactNode }) {
+  const { isLoaded } = useAuth();
+  const roleQuery = useCurrentRole();
 
   if (!isLoaded || roleQuery.isLoading) {
     return <div className="flex min-h-[240px] items-center justify-center"><div className="w-56 space-y-3"><div className="skeleton-bar h-3 rounded bg-muted" /><div className="skeleton-bar h-10 rounded-xl bg-muted" /></div></div>;

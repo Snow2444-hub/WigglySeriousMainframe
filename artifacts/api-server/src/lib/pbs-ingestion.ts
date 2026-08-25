@@ -1,6 +1,8 @@
 import { db, rawScheduleStagingTable } from "@workspace/db";
 
 const PBS_API_BASE_URL = "https://data-api.health.gov.au/pbs/api/v3";
+const PBS_API_ORIGIN = new URL(PBS_API_BASE_URL).origin;
+const PBS_API_PATH_PREFIX = new URL(PBS_API_BASE_URL).pathname;
 const MIN_REQUEST_GAP_MS = 20_000;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_RETRIES = 5;
@@ -20,6 +22,7 @@ export interface FetchScheduleOptions {
   maxPagesPerEndpoint?: number;
   request?: RequestLike;
   sleep?: Sleep;
+  onPage?: (page: FetchedSchedulePage) => void | Promise<void>;
 }
 
 export interface FetchedSchedulePage {
@@ -152,9 +155,21 @@ function getPaginationInfo(payload: JsonValue, pageNumber: number, limit: number
 }
 
 function resolveNextUrl(nextUrl: string): URL {
-  if (/^https?:\/\//i.test(nextUrl)) return new URL(nextUrl);
-  if (nextUrl.startsWith("/api/v3/")) return new URL(`/pbs${nextUrl}`, "https://data-api.health.gov.au");
-  return new URL(nextUrl, `${PBS_API_BASE_URL}/`);
+  const resolved = /^https?:\/\//i.test(nextUrl)
+    ? new URL(nextUrl)
+    : nextUrl.startsWith("/api/v3/")
+      ? new URL(`/pbs${nextUrl}`, PBS_API_ORIGIN)
+      : new URL(nextUrl, `${PBS_API_BASE_URL}/`);
+
+  if (
+    resolved.protocol !== "https:" ||
+    resolved.origin !== PBS_API_ORIGIN ||
+    !resolved.pathname.startsWith(`${PBS_API_PATH_PREFIX}/`)
+  ) {
+    throw new Error("PBS API returned a pagination link outside the configured PBS API");
+  }
+
+  return resolved;
 }
 
 function updateRequestPolicy(policy: RequestPolicy, response: Response): void {
@@ -237,6 +252,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
     request = fetch,
     sleep = defaultSleep,
+    onPage,
   } = options;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
@@ -280,11 +296,13 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         })
         .onConflictDoNothing();
 
-      fetchedPages.push({
+      const page = {
         endpoint,
         pageNumber,
         records: getCollectionLength(payload),
-      });
+      };
+      fetchedPages.push(page);
+      await onPage?.(page);
 
       const pagination = getPaginationInfo(payload, pageNumber, limit);
       if (!pagination.hasMore) break;

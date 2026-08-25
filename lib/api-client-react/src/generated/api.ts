@@ -20,7 +20,9 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminIngestionRun,
   ArtgEntry,
+  CurrentAdminIngestionRun,
   DashboardSummary,
   Drug,
   Error,
@@ -990,4 +992,223 @@ export const useDeleteStock = <TError = ErrorType<Error>,
       > => {
       return useMutation(getDeleteStockMutationOptions(options));
     }
+
+export const getListAdminIngestionRunsUrl = () => {
+
+
+
+
+  return `/api/admin/ingestion-runs`
+}
+
+/**
+ * @summary List recent PBS ingestion runs
+ */
+export const listAdminIngestionRuns = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminIngestionRun[]> => {
+
+  return customFetch<AdminIngestionRun[]>(getListAdminIngestionRunsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminIngestionRunsQueryKey = () => {
+    return [
+    `/api/admin/ingestion-runs`
+    ] as const;
+    }
+
+
+export const getListAdminIngestionRunsQueryOptions = <TData = Awaited<ReturnType<typeof listAdminIngestionRuns>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminIngestionRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminIngestionRunsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminIngestionRuns>>> = ({ signal }) => listAdminIngestionRuns({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminIngestionRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminIngestionRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminIngestionRuns>>>
+export type ListAdminIngestionRunsQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List recent PBS ingestion runs
+ */
+
+export function useListAdminIngestionRuns<TData = Awaited<ReturnType<typeof listAdminIngestionRuns>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminIngestionRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminIngestionRunsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getTriggerAdminIngestionUrl = () => {
+
+
+
+
+  return `/api/admin/ingestion-runs`
+}
+
+/**
+ * @summary Start a PBS ingestion run
+ */
+export const triggerAdminIngestion = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminIngestionRun> => {
+
+  return customFetch<AdminIngestionRun>(getTriggerAdminIngestionUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getTriggerAdminIngestionMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext> => {
+
+const mutationKey = ['triggerAdminIngestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof triggerAdminIngestion>>, void> = () => {
+
+
+          return  triggerAdminIngestion(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type TriggerAdminIngestionMutationResult = NonNullable<Awaited<ReturnType<typeof triggerAdminIngestion>>>
+
+    export type TriggerAdminIngestionMutationError = ErrorType<Error>
+
+    /**
+ * @summary Start a PBS ingestion run
+ */
+export const useTriggerAdminIngestion = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof triggerAdminIngestion>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getTriggerAdminIngestionMutationOptions(options));
+    }
+
+export const getGetCurrentAdminIngestionRunUrl = () => {
+
+
+
+
+  return `/api/admin/ingestion-runs/current`
+}
+
+/**
+ * @summary Get the current PBS ingestion run
+ */
+export const getCurrentAdminIngestionRun = async ( options?: Parameters<typeof customFetch>[1]): Promise<CurrentAdminIngestionRun> => {
+
+  return customFetch<CurrentAdminIngestionRun>(getGetCurrentAdminIngestionRunUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCurrentAdminIngestionRunQueryKey = () => {
+    return [
+    `/api/admin/ingestion-runs/current`
+    ] as const;
+    }
+
+
+export const getGetCurrentAdminIngestionRunQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentAdminIngestionRunQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>> = ({ signal }) => getCurrentAdminIngestionRun({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCurrentAdminIngestionRunQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>>
+export type GetCurrentAdminIngestionRunQueryError = ErrorType<Error>
+
+
+/**
+ * @summary Get the current PBS ingestion run
+ */
+
+export function useGetCurrentAdminIngestionRun<TData = Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentAdminIngestionRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCurrentAdminIngestionRunQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
 
