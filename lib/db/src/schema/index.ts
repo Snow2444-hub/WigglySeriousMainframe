@@ -22,3 +22,5 @@ export * from "./pbs-items";
 export * from "./price-history";
 export * from "./artg-entries";
 export * from "./pharmacy-stock";
+export * from "./raw-schedule-staging";
+export * from "./ingestion-runs";

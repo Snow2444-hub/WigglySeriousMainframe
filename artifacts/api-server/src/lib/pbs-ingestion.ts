@@ -1,0 +1,282 @@
+import { db, rawScheduleStagingTable } from "@workspace/db";
+
+const PBS_API_BASE_URL = "https://data-api.health.gov.au/pbs/api/v3";
+const MIN_REQUEST_GAP_MS = 20_000;
+const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_MAX_RETRIES = 5;
+const DEFAULT_MAX_PAGES_PER_ENDPOINT = 10_000;
+const DEFAULT_ENDPOINTS = ["items", "item-amt"];
+
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = { [key: string]: JsonValue };
+type RequestLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+type Sleep = (milliseconds: number) => Promise<void>;
+
+export interface FetchScheduleOptions {
+  scheduleDate: string;
+  endpoints?: string[];
+  pageSize?: number;
+  maxRetries?: number;
+  maxPagesPerEndpoint?: number;
+  request?: RequestLike;
+  sleep?: Sleep;
+}
+
+export interface FetchedSchedulePage {
+  endpoint: string;
+  pageNumber: number;
+  records: number;
+}
+
+interface PaginationInfo {
+  hasMore: boolean;
+  nextUrl?: string;
+}
+
+interface RequestPolicy {
+  nextRequestAt: number;
+}
+
+const defaultSleep: Sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function isObject(value: JsonValue | unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asNumber(value: JsonValue | undefined): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function asString(value: JsonValue | undefined): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function parsePositiveInteger(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function parseDelayHeader(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+
+  // Rate-limit reset headers are commonly either seconds from now or Unix seconds.
+  if (parsed >= 1_000_000_000) return Math.max(0, parsed * 1_000 - Date.now());
+  return parsed * 1_000;
+}
+
+function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : undefined;
+}
+
+function normaliseEndpoint(endpoint: string): string {
+  const normalised = endpoint.trim().replace(/^\/+|\/+$/g, "");
+  if (!normalised) throw new Error("PBS endpoint cannot be empty");
+  if (normalised.includes("://")) throw new Error("PBS endpoints must be relative to the configured PBS API base URL");
+  return normalised;
+}
+
+function buildPageUrl(endpoint: string, pageNumber: number, pageSize: number): URL {
+  const url = new URL(`${PBS_API_BASE_URL}/${normaliseEndpoint(endpoint)}`);
+  url.searchParams.set("page", String(pageNumber));
+  url.searchParams.set("pageSize", String(pageSize));
+  return url;
+}
+
+function getCollectionLength(payload: JsonValue): number {
+  if (Array.isArray(payload)) return payload.length;
+  if (!isObject(payload)) return 0;
+
+  for (const key of ["data", "items", "results", "records"]) {
+    if (Array.isArray(payload[key])) return payload[key].length;
+  }
+  return 0;
+}
+
+function findNextUrl(payload: JsonValue): string | undefined {
+  if (!isObject(payload)) return undefined;
+
+  const links = isObject(payload.links) ? payload.links : undefined;
+  const pagination = isObject(payload.pagination) ? payload.pagination : undefined;
+  const meta = isObject(payload.meta) ? payload.meta : undefined;
+  const metaPagination = meta && isObject(meta.pagination) ? meta.pagination : undefined;
+
+  for (const candidate of [payload.next, links?.next, pagination?.next, meta?.next, metaPagination?.next]) {
+    const next = asString(candidate);
+    if (next) return next;
+  }
+  return undefined;
+}
+
+function getPaginationInfo(payload: JsonValue, pageNumber: number, pageSize: number): PaginationInfo {
+  const nextUrl = findNextUrl(payload);
+  if (nextUrl) return { hasMore: true, nextUrl };
+
+  if (!isObject(payload)) {
+    return { hasMore: Array.isArray(payload) && payload.length >= pageSize };
+  }
+
+  const pagination = isObject(payload.pagination) ? payload.pagination : undefined;
+  const meta = isObject(payload.meta) ? payload.meta : undefined;
+  const metaPagination = meta && isObject(meta.pagination) ? meta.pagination : undefined;
+  const pageInfo = pagination ?? metaPagination ?? meta;
+
+  const currentPage = asNumber(pageInfo?.page) ?? asNumber(pageInfo?.current_page) ?? asNumber(pageInfo?.currentPage) ?? pageNumber;
+  const totalPages = asNumber(pageInfo?.total_pages) ?? asNumber(pageInfo?.totalPages);
+  if (totalPages !== undefined) return { hasMore: currentPage < totalPages };
+
+  const hasNext = pageInfo?.has_next ?? pageInfo?.hasNext ?? payload.has_next ?? payload.hasNext;
+  if (typeof hasNext === "boolean") return { hasMore: hasNext };
+
+  const total = asNumber(pageInfo?.total) ?? asNumber(meta?.total);
+  if (total !== undefined) return { hasMore: currentPage * pageSize < total };
+
+  return { hasMore: getCollectionLength(payload) >= pageSize };
+}
+
+function updateRequestPolicy(policy: RequestPolicy, response: Response): void {
+  const now = Date.now();
+  policy.nextRequestAt = Math.max(policy.nextRequestAt, now + MIN_REQUEST_GAP_MS);
+
+  const remaining = parsePositiveInteger(response.headers.get("x-rate-limit-remaining"));
+  const resetDelay = parseDelayHeader(response.headers.get("x-rate-limit-reset"));
+  if (remaining === 0 && resetDelay !== undefined) {
+    policy.nextRequestAt = Math.max(policy.nextRequestAt, now + resetDelay);
+  }
+}
+
+async function waitForRequestSlot(policy: RequestPolicy, sleep: Sleep): Promise<void> {
+  const delay = policy.nextRequestAt - Date.now();
+  if (delay > 0) await sleep(delay);
+}
+
+async function fetchPage(
+  url: URL,
+  apiKey: string,
+  policy: RequestPolicy,
+  maxRetries: number,
+  request: RequestLike,
+  sleep: Sleep,
+): Promise<JsonValue> {
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    await waitForRequestSlot(policy, sleep);
+
+    let response: Response;
+    try {
+      response = await request(url, {
+        headers: {
+          Accept: "application/json",
+          "Subscription-Key": apiKey,
+        },
+      });
+    } catch (error) {
+      policy.nextRequestAt = Math.max(policy.nextRequestAt, Date.now() + MIN_REQUEST_GAP_MS);
+      if (attempt === maxRetries) throw error;
+      await sleep(Math.min(300_000, 1_000 * 2 ** attempt));
+      continue;
+    }
+
+    updateRequestPolicy(policy, response);
+    const retryable = response.status === 429 || response.status >= 500;
+    if (retryable && attempt < maxRetries) {
+      const exponentialDelay = Math.min(300_000, 1_000 * 2 ** attempt);
+      const retryAfterDelay = parseRetryAfter(response.headers.get("retry-after")) ?? 0;
+      policy.nextRequestAt = Math.max(policy.nextRequestAt, Date.now() + retryAfterDelay);
+      await sleep(Math.max(exponentialDelay, retryAfterDelay));
+      continue;
+    }
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(`PBS API request failed (${response.status}) for ${url.pathname}: ${responseText.slice(0, 500)}`);
+    }
+
+    return (await response.json()) as JsonValue;
+  }
+
+  throw new Error(`PBS API request exhausted retries for ${url.pathname}`);
+}
+
+/**
+ * Fetches every page for the configured PBS schedule endpoints.
+ *
+ * The response is inserted into raw_schedule_staging immediately after JSON
+ * decoding and before any domain-specific parsing or upsert logic. This
+ * function intentionally does not parse or mutate PBS reference tables; that
+ * belongs to the later ingestion phase.
+ */
+export async function fetchSchedule(options: FetchScheduleOptions): Promise<FetchedSchedulePage[]> {
+  const {
+    scheduleDate,
+    endpoints = DEFAULT_ENDPOINTS,
+    pageSize = DEFAULT_PAGE_SIZE,
+    maxRetries = DEFAULT_MAX_RETRIES,
+    maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
+    request = fetch,
+    sleep = defaultSleep,
+  } = options;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
+    throw new Error("scheduleDate must use YYYY-MM-DD format");
+  }
+  if (!Number.isInteger(pageSize) || pageSize <= 0) throw new Error("pageSize must be a positive integer");
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) throw new Error("maxRetries must be a non-negative integer");
+  if (!Number.isInteger(maxPagesPerEndpoint) || maxPagesPerEndpoint <= 0) {
+    throw new Error("maxPagesPerEndpoint must be a positive integer");
+  }
+
+  const apiKey = process.env.PBS_SUBSCRIPTION_KEY;
+  if (!apiKey) {
+    throw new Error("PBS_SUBSCRIPTION_KEY is not configured in Replit Secrets");
+  }
+
+  const policy: RequestPolicy = { nextRequestAt: 0 };
+  const fetchedPages: FetchedSchedulePage[] = [];
+
+  for (const configuredEndpoint of endpoints) {
+    const endpoint = normaliseEndpoint(configuredEndpoint);
+    let pageNumber = 1;
+    let nextUrl: URL | undefined;
+
+    while (true) {
+      if (pageNumber > maxPagesPerEndpoint) {
+        throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
+      }
+
+      const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, pageSize);
+      const payload = await fetchPage(url, apiKey, policy, maxRetries, request, sleep);
+
+      // Persist the untouched API page before interpreting its records.
+      await db
+        .insert(rawScheduleStagingTable)
+        .values({
+          scheduleDate,
+          endpoint,
+          pageNumber,
+          payload,
+        })
+        .onConflictDoNothing();
+
+      fetchedPages.push({
+        endpoint,
+        pageNumber,
+        records: getCollectionLength(payload),
+      });
+
+      const pagination = getPaginationInfo(payload, pageNumber, pageSize);
+      if (!pagination.hasMore) break;
+      pageNumber += 1;
+      nextUrl = pagination.nextUrl ? new URL(pagination.nextUrl, PBS_API_BASE_URL) : undefined;
+    }
+  }
+
+  return fetchedPages;
+}
