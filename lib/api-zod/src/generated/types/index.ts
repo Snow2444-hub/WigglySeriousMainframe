@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './adminIngestionInput';
 export * from './adminIngestionRun';
 export * from './adminIngestionRunStatus';
 export * from './artgEntry';

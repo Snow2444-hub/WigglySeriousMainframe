@@ -331,6 +331,12 @@ paths:
       operationId: triggerAdminIngestion
       tags: [admin]
       summary: Start a PBS ingestion run
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminIngestionInput"
       responses:
         "202":
           description: Ingestion run accepted
@@ -346,6 +352,12 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          description: Invalid ingestion options
           content:
             application/json:
               schema:
@@ -578,6 +590,14 @@ components:
         errorMessage:
           type: ["string", "null"]
       required: [id, startedAt, finishedAt, status, recordsProcessed, errorMessage]
+    AdminIngestionInput:
+      type: object
+      properties:
+        maxPages:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: Optional total page cap across all configured PBS endpoints; omit for the full schedule.
     CurrentAdminIngestionRun:
       type: object
       properties:

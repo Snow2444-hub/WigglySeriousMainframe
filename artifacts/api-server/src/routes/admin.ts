@@ -4,6 +4,7 @@ import { db, ingestionRunsTable } from "@workspace/db";
 import {
   GetCurrentAdminIngestionRunResponse,
   ListAdminIngestionRunsResponse,
+  TriggerAdminIngestionBody,
   TriggerAdminIngestionResponse,
 } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
@@ -18,7 +19,7 @@ function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-async function executeIngestionRun(runId: number, scheduleDate: string): Promise<void> {
+async function executeIngestionRun(runId: number, scheduleDate: string, maxPages?: number): Promise<void> {
   try {
     await db
       .update(ingestionRunsTable)
@@ -28,6 +29,7 @@ async function executeIngestionRun(runId: number, scheduleDate: string): Promise
     let recordsProcessed = 0;
     const pages = await fetchSchedule({
       scheduleDate,
+      maxPages,
       onPage: async (page) => {
         recordsProcessed += page.records;
         await db
@@ -101,7 +103,13 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
   res.json(GetCurrentAdminIngestionRunResponse.parse({ currentRun: run ?? null }));
 });
 
-router.post("/admin/ingestion-runs", requireAdmin, async (_req, res): Promise<void> => {
+router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<void> => {
+  const parsedBody = TriggerAdminIngestionBody.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    res.status(400).json({ error: parsedBody.error.message });
+    return;
+  }
+
   const acquisition = await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
 
@@ -130,7 +138,7 @@ router.post("/admin/ingestion-runs", requireAdmin, async (_req, res): Promise<vo
 
   const { run } = acquisition;
   const scheduleDate = currentScheduleDate();
-  void executeIngestionRun(run.id, scheduleDate);
+  void executeIngestionRun(run.id, scheduleDate, parsedBody.data.maxPages);
   res.status(202).json(TriggerAdminIngestionResponse.parse(run));
 });
 

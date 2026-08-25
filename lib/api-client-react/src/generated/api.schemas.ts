@@ -124,6 +124,15 @@ export interface AdminIngestionRun {
   errorMessage: string | null;
 }
 
+export interface AdminIngestionInput {
+  /**
+     * Optional total page cap across all configured PBS endpoints; omit for the full schedule.
+     * @minimum 1
+     * @maximum 10000
+     */
+  maxPages?: number;
+}
+
 export interface CurrentAdminIngestionRun {
   currentRun: AdminIngestionRun | null;
 }

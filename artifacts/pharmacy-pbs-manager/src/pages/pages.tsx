@@ -170,6 +170,8 @@ function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
 function AdminPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState('');
+  const [maxPages, setMaxPages] = useState('');
+  const [inputError, setInputError] = useState('');
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -193,9 +195,18 @@ function AdminPage() {
 
   const startIngestion = () => {
     setNotice('');
-    trigger.mutate(undefined, {
+    setInputError('');
+    const requestedMaxPages = maxPages.trim() ? Number(maxPages) : undefined;
+    if (requestedMaxPages !== undefined && (!Number.isInteger(requestedMaxPages) || requestedMaxPages < 1 || requestedMaxPages > 10_000)) {
+      setInputError('Enter a whole number from 1 to 10,000, or leave the cap blank for the full schedule.');
+      return;
+    }
+
+    trigger.mutate({ data: requestedMaxPages === undefined ? {} : { maxPages: requestedMaxPages } }, {
       onSuccess: (run) => {
-        setNotice(`Ingestion run #${run.id} has been queued.`);
+        setNotice(requestedMaxPages === undefined
+          ? `Ingestion run #${run.id} has been queued for the full schedule.`
+          : `Test ingestion run #${run.id} has been queued with a ${requestedMaxPages}-page cap.`);
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: getListAdminIngestionRunsQueryKey() }),
           queryClient.invalidateQueries({ queryKey: getGetCurrentAdminIngestionRunQueryKey() }),
@@ -209,14 +220,21 @@ function AdminPage() {
       eyebrow="Administration / reference data"
       title="PBS data updates"
       description="Start a controlled schedule fetch and monitor the raw reference-data ingestion lifecycle."
-      action={<div className="flex flex-wrap gap-2">
-        <button type="button" onClick={refresh} disabled={runs.isFetching || current.isFetching} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-bold text-foreground hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-55" data-testid="button-refresh-ingestion-runs"><RefreshCw className={`h-4 w-4 ${runs.isFetching || current.isFetching ? 'animate-spin' : ''}`} /> Refresh</button>
-        <button type="button" onClick={startIngestion} disabled={trigger.isPending || Boolean(activeRun)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-55" data-testid="button-trigger-ingestion"><Play className="h-4 w-4" />{trigger.isPending ? 'Starting…' : activeRun ? 'Run in progress' : 'Start ingestion'}</button>
+      action={<div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
+        <label className="min-w-[150px]">
+          <span className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Test page cap</span>
+          <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="Full schedule" aria-describedby="max-pages-help" className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55 sm:w-[150px]" data-testid="input-max-pages" />
+          <span id="max-pages-help" className="mt-1 block text-[10px] text-muted-foreground">Blank fetches every page.</span>
+        </label>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={refresh} disabled={runs.isFetching || current.isFetching} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-bold text-foreground hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-55" data-testid="button-refresh-ingestion-runs"><RefreshCw className={`h-4 w-4 ${runs.isFetching || current.isFetching ? 'animate-spin' : ''}`} /> Refresh</button>
+          <button type="button" onClick={startIngestion} disabled={trigger.isPending || Boolean(activeRun)} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-55" data-testid="button-trigger-ingestion"><Play className="h-4 w-4" />{trigger.isPending ? 'Starting…' : activeRun ? 'Run in progress' : 'Start ingestion'}</button>
+        </div>
       </div>}
     />
 
     {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-ingestion-success"><Check className="h-4 w-4" />{notice}</div>}
-    {trigger.isError && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{trigger.error.message || 'The ingestion run could not be started.'}</div>}
+    {(inputError || trigger.isError) && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{inputError || trigger.error?.message || 'The ingestion run could not be started.'}</div>}
 
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="card-current-ingestion">
       <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

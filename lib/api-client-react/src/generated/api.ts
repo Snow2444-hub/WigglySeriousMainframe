@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdminIngestionInput,
   AdminIngestionRun,
   ArtgEntry,
   CurrentAdminIngestionRun,
@@ -136,12 +137,6 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
   return withQueryKey(query, queryOptions.queryKey);
 }
 
-
-
-
-
-
-
 export const getGetDashboardUrl = () => {
 
 
@@ -212,13 +207,6 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getListDrugsUrl = (params?: ListDrugsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -296,12 +284,6 @@ export function useListDrugs<TData = Awaited<ReturnType<typeof listDrugs>>, TErr
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
 
 export const getGetDrugUrl = (id: number,) => {
 
@@ -1081,14 +1063,14 @@ export const getTriggerAdminIngestionUrl = () => {
 /**
  * @summary Start a PBS ingestion run
  */
-export const triggerAdminIngestion = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminIngestionRun> => {
+export const triggerAdminIngestion = async (adminIngestionInput?: AdminIngestionInput, options?: Parameters<typeof customFetch>[1]): Promise<AdminIngestionRun> => {
 
   return customFetch<AdminIngestionRun>(getTriggerAdminIngestionUrl(),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(adminIngestionInput)
   }
 );}
 
@@ -1097,8 +1079,8 @@ export const triggerAdminIngestion = async ( options?: Parameters<typeof customF
 
 
 export const getTriggerAdminIngestionMutationOptions = <TError = ErrorType<Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,{data?: BodyType<AdminIngestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,{data?: BodyType<AdminIngestionInput>}, TContext> => {
 
 const mutationKey = ['triggerAdminIngestion'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -1110,10 +1092,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof triggerAdminIngestion>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof triggerAdminIngestion>>, {data?: BodyType<AdminIngestionInput>}> = (props) => {
+          const {data} = props ?? {};
 
-
-          return  triggerAdminIngestion(requestOptions)
+          return  triggerAdminIngestion(data,requestOptions)
         }
 
 
@@ -1124,18 +1106,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type TriggerAdminIngestionMutationResult = NonNullable<Awaited<ReturnType<typeof triggerAdminIngestion>>>
-
+    export type TriggerAdminIngestionMutationBody = BodyType<AdminIngestionInput> | undefined
     export type TriggerAdminIngestionMutationError = ErrorType<Error>
 
     /**
  * @summary Start a PBS ingestion run
  */
 export const useTriggerAdminIngestion = <TError = ErrorType<Error>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof triggerAdminIngestion>>, TError,{data?: BodyType<AdminIngestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof triggerAdminIngestion>>,
         TError,
-        void,
+        {data?: BodyType<AdminIngestionInput>},
         TContext
       > => {
       return useMutation(getTriggerAdminIngestionMutationOptions(options));

@@ -20,6 +20,7 @@ export interface FetchScheduleOptions {
   limit?: number;
   maxRetries?: number;
   maxPagesPerEndpoint?: number;
+  maxPages?: number;
   request?: RequestLike;
   sleep?: Sleep;
   onPage?: (page: FetchedSchedulePage) => void | Promise<void>;
@@ -250,6 +251,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     limit = DEFAULT_PAGE_SIZE,
     maxRetries = DEFAULT_MAX_RETRIES,
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
+    maxPages,
     request = fetch,
     sleep = defaultSleep,
     onPage,
@@ -262,6 +264,9 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   if (!Number.isInteger(maxRetries) || maxRetries < 0) throw new Error("maxRetries must be a non-negative integer");
   if (!Number.isInteger(maxPagesPerEndpoint) || maxPagesPerEndpoint <= 0) {
     throw new Error("maxPagesPerEndpoint must be a positive integer");
+  }
+  if (maxPages !== undefined && (!Number.isInteger(maxPages) || maxPages <= 0)) {
+    throw new Error("maxPages must be a positive integer");
   }
 
   const apiKey = process.env.PBS_SUBSCRIPTION_KEY;
@@ -303,6 +308,10 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
       };
       fetchedPages.push(page);
       await onPage?.(page);
+
+      if (maxPages !== undefined && fetchedPages.length >= maxPages) {
+        return fetchedPages;
+      }
 
       const pagination = getPaginationInfo(payload, pageNumber, limit);
       if (!pagination.hasMore) break;

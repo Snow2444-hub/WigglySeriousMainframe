@@ -267,6 +267,14 @@ export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsRe
 /**
  * @summary Start a PBS ingestion run
  */
+export const triggerAdminIngestionBodyMaxPagesMax = 10000;
+
+
+
+export const TriggerAdminIngestionBody = zod.object({
+  "maxPages": zod.int().min(1).max(triggerAdminIngestionBodyMaxPagesMax).optional().describe('Optional total page cap across all configured PBS endpoints; omit for the full schedule.')
+})
+
 export const TriggerAdminIngestionResponse = zod.object({
   "id": zod.int(),
   "startedAt": zod.coerce.date(),
