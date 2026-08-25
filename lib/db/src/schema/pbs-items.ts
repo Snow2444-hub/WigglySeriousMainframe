@@ -15,7 +15,7 @@ export const pbsItemsTable = pgTable("pbs_items", {
   packSize: text("pack_size"),
   formulary: formularyEnum("formulary").notNull(),
   currentAemp: numeric("current_aemp", { precision: 10, scale: 2, mode: "number" }).notNull(),
-  currentDpmq: numeric("current_dpmq", { precision: 10, scale: 2, mode: "number" }).notNull(),
+  currentDpmq: numeric("current_dpmq", { precision: 10, scale: 2, mode: "number" }),
   lastUpdated: date("last_updated", { mode: "string" }).notNull(),
   firstListedDate: date("first_listed_date", { mode: "string" }),
   weightedAvgDisclosedPrice: numeric("weighted_avg_disclosed_price", {

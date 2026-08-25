@@ -9,6 +9,8 @@ import type { PbsItemFormulary } from './pbsItemFormulary';
 
 export interface PbsItem {
   itemCode: string;
+  /** @nullable */
+  liItemId?: string | null;
   drugId: number;
   brandName: string;
   /** @nullable */
@@ -22,7 +24,8 @@ export interface PbsItem {
   sponsor: string;
   formulary: PbsItemFormulary;
   currentAemp: number;
-  currentDpmq: number;
+  /** @nullable */
+  currentDpmq: number | null;
   lastUpdated: Date;
   /** @nullable */
   firstListedDate: Date | null;

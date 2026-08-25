@@ -19,7 +19,9 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function start(): Promise<void> {
   await recoverInterruptedIngestionRuns();
-  await seedReferenceData();
+  if (process.env.SEED_REFERENCE_DATA === "true") {
+    await seedReferenceData();
+  }
   app.listen(port, (err) => {
     if (err) {
       logger.error({ err }, "Error listening on port");

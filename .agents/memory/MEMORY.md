@@ -2,4 +2,5 @@
 - [TypeScript project reference cache](typescript-project-reference-cache.md) — New shared exports may require a forced project-reference rebuild before consumers see them.
 - [PBS API pagination](pbs-api-pagination.md) — PBS v3 pages use `page` and `limit`, expose next links under `_links`, and return metadata under `_meta`.
 - [PBS ATC relationship ingestion](pbs-atc-relationship-ingestion.md) — ATC filters apply to the relationship endpoint; item records require a second lookup by `li_item_id`.
+- [PBS item pricing](pbs-item-pricing.md) — `/items` exposes determined, claimed, and proportional prices but not DPMQ; preserve DPMQ as null.
 - [Generated query polling](generated-query-polling.md) — Passing custom options to this Orval React Query output requires its generated query key explicitly.

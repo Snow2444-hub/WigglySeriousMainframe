@@ -46,6 +46,7 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
     }
 
     let recordsProcessed = 0;
+    let recordsReturned = 0;
     let pagesFetched = 0;
     const requestUrls = new Set<string>();
     const atcItemIds = new Set<string>();
@@ -55,9 +56,10 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
         .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
         .where(eq(ingestionRunsTable.id, runId));
     };
-    const handlePage = async (page: { url: string }) => {
+    const handlePage = async (page: { url: string; records: number }) => {
       requestUrls.add(page.url);
       pagesFetched += 1;
+      recordsReturned += page.records;
       await persistProgress();
     };
     const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
@@ -89,6 +91,9 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
         })
       : [];
     const pages = [...initialPages, ...relatedItemPages];
+    if (recordsReturned > 0 && recordsProcessed === 0) {
+      throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
+    }
 
     await db
       .update(ingestionRunsTable)

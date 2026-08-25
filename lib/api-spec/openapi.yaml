@@ -584,6 +584,8 @@ components:
       properties:
         itemCode:
           type: string
+        liItemId:
+          type: ["string", "null"]
         drugId:
           type: integer
         brandName:
@@ -606,7 +608,7 @@ components:
         currentAemp:
           type: number
         currentDpmq:
-          type: number
+          type: ["number", "null"]
         lastUpdated:
           type: string
           format: date

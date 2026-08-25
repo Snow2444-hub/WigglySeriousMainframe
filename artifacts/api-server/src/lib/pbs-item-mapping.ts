@@ -46,6 +46,21 @@ function dateField(record: JsonRecord, ...keys: string[]): string | undefined {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
+function strengthField(record: JsonRecord): string | undefined {
+  const explicit = stringField(record, "strength", "li_strength");
+  if (explicit) return explicit;
+  const form = stringField(record, "li_form", "schedule_form");
+  return form?.match(/\b\d+(?:\.\d+)?\s*(?:micrograms?|mcg|mg|g|kg|mL|ml|%|IU)\b/i)?.[0];
+}
+
+function formField(record: JsonRecord): string | undefined {
+  const explicit = stringField(record, "form");
+  if (explicit) return explicit;
+  const source = stringField(record, "li_form", "schedule_form");
+  if (!source) return undefined;
+  return source.split(/\s+containing\s+/i)[0]?.trim() || source;
+}
+
 function itemFormulary(record: JsonRecord): "F1" | "F2" | undefined {
   const value = stringField(record, "formulary");
   return value === "F1" || value === "F2" ? value : undefined;
@@ -104,8 +119,7 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
       !drugName ||
       !brandName ||
       !formulary ||
-      determinedPrice === undefined ||
-      dispensedPrice === undefined
+      determinedPrice === undefined
     ) {
       continue;
     }
@@ -126,12 +140,12 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
         liItemId,
         drugId,
         brandName,
-        strength: stringField(record, "strength", "li_strength"),
-        form: stringField(record, "form", "li_form", "schedule_form"),
+        strength: strengthField(record),
+        form: formField(record),
         packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
         formulary,
         currentAemp: determinedPrice,
-        currentDpmq: dispensedPrice,
+        currentDpmq: dispensedPrice ?? null,
         lastUpdated: scheduleDate,
         firstListedDate: dateField(record, "first_listed_date"),
         weightedAvgDisclosedPrice: numberField(record, "weighted_avg_disclosed_price"),
@@ -151,12 +165,12 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
           liItemId,
           drugId,
           brandName,
-          strength: stringField(record, "strength", "li_strength"),
-          form: stringField(record, "form", "li_form", "schedule_form"),
+          strength: strengthField(record),
+          form: formField(record),
           packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
           formulary,
           currentAemp: determinedPrice,
-          currentDpmq: dispensedPrice,
+          currentDpmq: dispensedPrice ?? null,
           lastUpdated: scheduleDate,
           firstListedDate: dateField(record, "first_listed_date"),
           weightedAvgDisclosedPrice: numberField(record, "weighted_avg_disclosed_price"),

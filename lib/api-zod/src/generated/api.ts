@@ -95,6 +95,7 @@ export const ListPbsItemsQueryParams = zod.object({
 
 export const ListPbsItemsResponseItem = zod.object({
   "itemCode": zod.string(),
+  "liItemId": zod.string().nullish(),
   "drugId": zod.int(),
   "brandName": zod.string(),
   "strength": zod.string().nullable(),
@@ -105,7 +106,7 @@ export const ListPbsItemsResponseItem = zod.object({
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
   "currentAemp": zod.number(),
-  "currentDpmq": zod.number(),
+  "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
   "firstListedDate": zod.coerce.date().nullable(),
   "weightedAvgDisclosedPrice": zod.number().nullable(),
@@ -131,6 +132,7 @@ export const GetPbsItemParams = zod.object({
 
 export const GetPbsItemResponse = zod.object({
   "itemCode": zod.string(),
+  "liItemId": zod.string().nullish(),
   "drugId": zod.int(),
   "brandName": zod.string(),
   "strength": zod.string().nullable(),
@@ -141,7 +143,7 @@ export const GetPbsItemResponse = zod.object({
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
   "currentAemp": zod.number(),
-  "currentDpmq": zod.number(),
+  "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
   "firstListedDate": zod.coerce.date().nullable(),
   "weightedAvgDisclosedPrice": zod.number().nullable(),
