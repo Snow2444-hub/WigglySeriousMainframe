@@ -14,6 +14,8 @@ export interface AdminIngestionRun {
   finishedAt: Date | null;
   status: AdminIngestionRunStatus;
   recordsProcessed: number;
+  pagesFetched: number;
+  requestUrls: string[];
   /** @nullable */
   errorMessage: string | null;
 }

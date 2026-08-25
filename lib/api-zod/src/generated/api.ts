@@ -103,7 +103,18 @@ export const ListPbsItemsResponseItem = zod.object({
   "formulary": zod.enum(['F1', 'F2']),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number(),
-  "lastUpdated": zod.coerce.date()
+  "lastUpdated": zod.coerce.date(),
+  "firstListedDate": zod.coerce.date().nullable(),
+  "weightedAvgDisclosedPrice": zod.number().nullable(),
+  "originatorBrandIndicator": zod.string().nullable(),
+  "brandSubstitutionGroupId": zod.string().nullable(),
+  "advancedNoticeDate": zod.coerce.date().nullable(),
+  "nonEffectiveDate": zod.coerce.date().nullable(),
+  "determinedPrice": zod.number().nullable(),
+  "claimedPrice": zod.number().nullable(),
+  "proportionalPrice": zod.number().nullable(),
+  "therapeuticGroupId": zod.string().nullable(),
+  "innovatorIndicator": zod.string().nullable()
 })
 export const ListPbsItemsResponse = zod.array(ListPbsItemsResponseItem)
 
@@ -125,7 +136,18 @@ export const GetPbsItemResponse = zod.object({
   "formulary": zod.enum(['F1', 'F2']),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number(),
-  "lastUpdated": zod.coerce.date()
+  "lastUpdated": zod.coerce.date(),
+  "firstListedDate": zod.coerce.date().nullable(),
+  "weightedAvgDisclosedPrice": zod.number().nullable(),
+  "originatorBrandIndicator": zod.string().nullable(),
+  "brandSubstitutionGroupId": zod.string().nullable(),
+  "advancedNoticeDate": zod.coerce.date().nullable(),
+  "nonEffectiveDate": zod.coerce.date().nullable(),
+  "determinedPrice": zod.number().nullable(),
+  "claimedPrice": zod.number().nullable(),
+  "proportionalPrice": zod.number().nullable(),
+  "therapeuticGroupId": zod.string().nullable(),
+  "innovatorIndicator": zod.string().nullable()
 })
 
 
@@ -259,6 +281,8 @@ export const ListAdminIngestionRunsResponseItem = zod.object({
   "finishedAt": zod.coerce.date().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed']),
   "recordsProcessed": zod.int(),
+  "pagesFetched": zod.int(),
+  "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable()
 })
 export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsResponseItem)
@@ -281,6 +305,8 @@ export const TriggerAdminIngestionResponse = zod.object({
   "finishedAt": zod.coerce.date().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed']),
   "recordsProcessed": zod.int(),
+  "pagesFetched": zod.int(),
+  "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable()
 })
 
@@ -295,8 +321,84 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "finishedAt": zod.coerce.date().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed']),
   "recordsProcessed": zod.int(),
+  "pagesFetched": zod.int(),
+  "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable()
 }),zod.null()])
 })
+
+
+/**
+ * @summary List PBS ingestion watchlist entries
+ */
+export const ListPbsWatchlistEntriesResponseItem = zod.object({
+  "id": zod.int(),
+  "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']),
+  "filterValue": zod.string(),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListPbsWatchlistEntriesResponse = zod.array(ListPbsWatchlistEntriesResponseItem)
+
+
+/**
+ * @summary Add a PBS ingestion watchlist entry
+ */
+export const createPbsWatchlistEntryBodyFilterValueMax = 120;
+
+export const createPbsWatchlistEntryBodyEnabledDefault = true;
+
+export const CreatePbsWatchlistEntryBody = zod.object({
+  "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']),
+  "filterValue": zod.string().min(1).max(createPbsWatchlistEntryBodyFilterValueMax),
+  "enabled": zod.boolean().default(createPbsWatchlistEntryBodyEnabledDefault)
+})
+
+export const CreatePbsWatchlistEntryResponse = zod.object({
+  "id": zod.int(),
+  "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']),
+  "filterValue": zod.string(),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a PBS ingestion watchlist entry
+ */
+export const UpdatePbsWatchlistEntryParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const updatePbsWatchlistEntryBodyFilterValueMax = 120;
+
+
+
+export const UpdatePbsWatchlistEntryBody = zod.object({
+  "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']).optional(),
+  "filterValue": zod.string().min(1).max(updatePbsWatchlistEntryBodyFilterValueMax).optional(),
+  "enabled": zod.boolean().optional()
+})
+
+export const UpdatePbsWatchlistEntryResponse = zod.object({
+  "id": zod.int(),
+  "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']),
+  "filterValue": zod.string(),
+  "enabled": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Delete a PBS ingestion watchlist entry
+ */
+export const DeletePbsWatchlistEntryParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const DeletePbsWatchlistEntryResponse = zod.void()
 
 

@@ -39,6 +39,7 @@ export async function seedReferenceData(): Promise<void> {
     .values([
       {
         itemCode: "1234K",
+        liItemId: "seed-1234K",
         drugId: 1,
         brandName: "Crestor",
         formulary: "F1",
@@ -48,6 +49,7 @@ export async function seedReferenceData(): Promise<void> {
       },
       {
         itemCode: "5678R",
+        liItemId: "seed-5678R",
         drugId: 2,
         brandName: "Eliquis",
         formulary: "F1",
@@ -57,6 +59,7 @@ export async function seedReferenceData(): Promise<void> {
       },
       {
         itemCode: "9012W",
+        liItemId: "seed-9012W",
         drugId: 3,
         brandName: "Jardiance",
         formulary: "F2",
@@ -66,6 +69,7 @@ export async function seedReferenceData(): Promise<void> {
       },
       {
         itemCode: "3456B",
+        liItemId: "seed-3456B",
         drugId: 1,
         brandName: "Rosuvastatin Generic",
         formulary: "F2",

@@ -32,6 +32,9 @@ import type {
   ListDrugsParams,
   ListPbsItemsParams,
   PbsItem,
+  PbsWatchlistEntry,
+  PbsWatchlistEntryInput,
+  PbsWatchlistEntryUpdate,
   PharmacyStock,
   PharmacyStockInput,
   PharmacyStockUpdate,
@@ -137,6 +140,12 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+
+
+
+
+
+
 export const getGetDashboardUrl = () => {
 
 
@@ -207,6 +216,13 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getListDrugsUrl = (params?: ListDrugsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -284,6 +300,12 @@ export function useListDrugs<TData = Awaited<ReturnType<typeof listDrugs>>, TErr
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
 
 export const getGetDrugUrl = (id: number,) => {
 
@@ -1193,4 +1215,301 @@ export function useGetCurrentAdminIngestionRun<TData = Awaited<ReturnType<typeof
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export const getListPbsWatchlistEntriesUrl = () => {
+
+
+
+
+  return `/api/admin/pbs-watchlist`
+}
+
+/**
+ * @summary List PBS ingestion watchlist entries
+ */
+export const listPbsWatchlistEntries = async ( options?: Parameters<typeof customFetch>[1]): Promise<PbsWatchlistEntry[]> => {
+
+  return customFetch<PbsWatchlistEntry[]>(getListPbsWatchlistEntriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPbsWatchlistEntriesQueryKey = () => {
+    return [
+    `/api/admin/pbs-watchlist`
+    ] as const;
+    }
+
+
+export const getListPbsWatchlistEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listPbsWatchlistEntries>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPbsWatchlistEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPbsWatchlistEntriesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPbsWatchlistEntries>>> = ({ signal }) => listPbsWatchlistEntries({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPbsWatchlistEntries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPbsWatchlistEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listPbsWatchlistEntries>>>
+export type ListPbsWatchlistEntriesQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List PBS ingestion watchlist entries
+ */
+
+export function useListPbsWatchlistEntries<TData = Awaited<ReturnType<typeof listPbsWatchlistEntries>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPbsWatchlistEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPbsWatchlistEntriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePbsWatchlistEntryUrl = () => {
+
+
+
+
+  return `/api/admin/pbs-watchlist`
+}
+
+/**
+ * @summary Add a PBS ingestion watchlist entry
+ */
+export const createPbsWatchlistEntry = async (pbsWatchlistEntryInput: PbsWatchlistEntryInput, options?: Parameters<typeof customFetch>[1]): Promise<PbsWatchlistEntry> => {
+
+  return customFetch<PbsWatchlistEntry>(getCreatePbsWatchlistEntryUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pbsWatchlistEntryInput)
+  }
+);}
+
+
+
+
+
+export const getCreatePbsWatchlistEntryMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPbsWatchlistEntry>>, TError,{data: BodyType<PbsWatchlistEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPbsWatchlistEntry>>, TError,{data: BodyType<PbsWatchlistEntryInput>}, TContext> => {
+
+const mutationKey = ['createPbsWatchlistEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPbsWatchlistEntry>>, {data: BodyType<PbsWatchlistEntryInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPbsWatchlistEntry(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePbsWatchlistEntryMutationResult = NonNullable<Awaited<ReturnType<typeof createPbsWatchlistEntry>>>
+    export type CreatePbsWatchlistEntryMutationBody = BodyType<PbsWatchlistEntryInput>
+    export type CreatePbsWatchlistEntryMutationError = ErrorType<Error>
+
+    /**
+ * @summary Add a PBS ingestion watchlist entry
+ */
+export const useCreatePbsWatchlistEntry = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPbsWatchlistEntry>>, TError,{data: BodyType<PbsWatchlistEntryInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPbsWatchlistEntry>>,
+        TError,
+        {data: BodyType<PbsWatchlistEntryInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePbsWatchlistEntryMutationOptions(options));
+    }
+
+export const getUpdatePbsWatchlistEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/pbs-watchlist/${id}`
+}
+
+/**
+ * @summary Update a PBS ingestion watchlist entry
+ */
+export const updatePbsWatchlistEntry = async (id: number,
+    pbsWatchlistEntryUpdate: PbsWatchlistEntryUpdate, options?: Parameters<typeof customFetch>[1]): Promise<PbsWatchlistEntry> => {
+
+  return customFetch<PbsWatchlistEntry>(getUpdatePbsWatchlistEntryUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pbsWatchlistEntryUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdatePbsWatchlistEntryMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePbsWatchlistEntry>>, TError,{id: number;data: BodyType<PbsWatchlistEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePbsWatchlistEntry>>, TError,{id: number;data: BodyType<PbsWatchlistEntryUpdate>}, TContext> => {
+
+const mutationKey = ['updatePbsWatchlistEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePbsWatchlistEntry>>, {id: number;data: BodyType<PbsWatchlistEntryUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updatePbsWatchlistEntry(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePbsWatchlistEntryMutationResult = NonNullable<Awaited<ReturnType<typeof updatePbsWatchlistEntry>>>
+    export type UpdatePbsWatchlistEntryMutationBody = BodyType<PbsWatchlistEntryUpdate>
+    export type UpdatePbsWatchlistEntryMutationError = ErrorType<Error>
+
+    /**
+ * @summary Update a PBS ingestion watchlist entry
+ */
+export const useUpdatePbsWatchlistEntry = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePbsWatchlistEntry>>, TError,{id: number;data: BodyType<PbsWatchlistEntryUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePbsWatchlistEntry>>,
+        TError,
+        {id: number;data: BodyType<PbsWatchlistEntryUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdatePbsWatchlistEntryMutationOptions(options));
+    }
+
+export const getDeletePbsWatchlistEntryUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/pbs-watchlist/${id}`
+}
+
+/**
+ * @summary Delete a PBS ingestion watchlist entry
+ */
+export const deletePbsWatchlistEntry = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeletePbsWatchlistEntryUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeletePbsWatchlistEntryMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePbsWatchlistEntry>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePbsWatchlistEntry>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deletePbsWatchlistEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePbsWatchlistEntry>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deletePbsWatchlistEntry(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePbsWatchlistEntryMutationResult = NonNullable<Awaited<ReturnType<typeof deletePbsWatchlistEntry>>>
+
+    export type DeletePbsWatchlistEntryMutationError = ErrorType<Error>
+
+    /**
+ * @summary Delete a PBS ingestion watchlist entry
+ */
+export const useDeletePbsWatchlistEntry = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePbsWatchlistEntry>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePbsWatchlistEntry>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeletePbsWatchlistEntryMutationOptions(options));
+    }
 

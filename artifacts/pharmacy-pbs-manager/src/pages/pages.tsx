@@ -6,27 +6,33 @@ import {
   getGetDrugQueryKey,
   getGetDashboardQueryKey,
   getListAdminIngestionRunsQueryKey,
+  getListPbsWatchlistEntriesQueryKey,
   getListPriceHistoryQueryKey,
   getListStockQueryKey,
   getHealthCheckQueryKey,
   type AdminIngestionRun,
   type ArtgEntry,
-  useGetCurrentAdminIngestionRun,
-  useListAdminIngestionRuns,
   type PbsItem,
+  type PbsWatchlistEntry,
   type PharmacyStock,
+  useCreatePbsWatchlistEntry,
   useCreateStock,
+  useDeletePbsWatchlistEntry,
   useDeleteStock,
+  useGetCurrentAdminIngestionRun,
   useGetDrug,
   useGetPbsItem,
   useGetDashboard,
   useHealthCheck,
-  useListDrugs,
+  useListAdminIngestionRuns,
   useListArtgEntries,
+  useListDrugs,
   useListPbsItems,
+  useListPbsWatchlistEntries,
   useListPriceHistory,
   useListStock,
   useTriggerAdminIngestion,
+  useUpdatePbsWatchlistEntry,
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
@@ -172,6 +178,8 @@ function AdminPage() {
   const [notice, setNotice] = useState('');
   const [maxPages, setMaxPages] = useState('');
   const [inputError, setInputError] = useState('');
+  const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('atc_code');
+  const [watchlistValue, setWatchlistValue] = useState('');
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -187,10 +195,60 @@ function AdminPage() {
     },
   });
   const trigger = useTriggerAdminIngestion();
+  const watchlist = useListPbsWatchlistEntries({
+    query: { queryKey: getListPbsWatchlistEntriesQueryKey(), refetchOnWindowFocus: true },
+  });
+  const createWatchlistEntry = useCreatePbsWatchlistEntry();
+  const updateWatchlistEntry = useUpdatePbsWatchlistEntry();
+  const deleteWatchlistEntry = useDeletePbsWatchlistEntry();
   const activeRun = current.data?.currentRun;
 
   const refresh = () => {
-    void Promise.all([runs.refetch(), current.refetch()]);
+    void Promise.all([runs.refetch(), current.refetch(), watchlist.refetch()]);
+  };
+
+  const refreshWatchlist = () => {
+    void queryClient.invalidateQueries({ queryKey: getListPbsWatchlistEntriesQueryKey() });
+  };
+
+  const addWatchlistEntry = () => {
+    const filterValue = watchlistValue.trim();
+    if (!filterValue) {
+      setInputError('Enter a PBS watchlist value before adding it.');
+      return;
+    }
+    setInputError('');
+    createWatchlistEntry.mutate(
+      { data: { filterType: watchlistType, filterValue, enabled: true } },
+      {
+        onSuccess: () => {
+          setWatchlistValue('');
+          refreshWatchlist();
+        },
+        onError: () => setInputError('The PBS watchlist entry could not be saved.'),
+      },
+    );
+  };
+
+  const toggleWatchlistEntry = (entry: PbsWatchlistEntry) => {
+    updateWatchlistEntry.mutate(
+      { id: entry.id, data: { enabled: !entry.enabled } },
+      {
+        onSuccess: refreshWatchlist,
+        onError: () => setInputError('The PBS watchlist entry could not be updated.'),
+      },
+    );
+  };
+
+  const removeWatchlistEntry = (entry: PbsWatchlistEntry) => {
+    if (!window.confirm(`Remove the ${entry.filterType} watchlist entry “${entry.filterValue}”?`)) return;
+    deleteWatchlistEntry.mutate(
+      { id: entry.id },
+      {
+        onSuccess: refreshWatchlist,
+        onError: () => setInputError('The PBS watchlist entry could not be removed.'),
+      },
+    );
   };
 
   const startIngestion = () => {
@@ -205,7 +263,7 @@ function AdminPage() {
     trigger.mutate({ data: requestedMaxPages === undefined ? {} : { maxPages: requestedMaxPages } }, {
       onSuccess: (run) => {
         setNotice(requestedMaxPages === undefined
-          ? `Ingestion run #${run.id} has been queued for the full schedule.`
+          ? `Ingestion run #${run.id} has been queued for the enabled watchlist.`
           : `Test ingestion run #${run.id} has been queued with a ${requestedMaxPages}-page cap.`);
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: getListAdminIngestionRunsQueryKey() }),
@@ -224,7 +282,7 @@ function AdminPage() {
         <label className="min-w-[150px]">
           <span className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Test page cap</span>
           <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="Full schedule" aria-describedby="max-pages-help" className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55 sm:w-[150px]" data-testid="input-max-pages" />
-          <span id="max-pages-help" className="mt-1 block text-[10px] text-muted-foreground">Blank fetches every page.</span>
+          <span id="max-pages-help" className="mt-1 block text-[10px] text-muted-foreground">Blank fetches every matching page.</span>
         </label>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={refresh} disabled={runs.isFetching || current.isFetching} className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-bold text-foreground hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-55" data-testid="button-refresh-ingestion-runs"><RefreshCw className={`h-4 w-4 ${runs.isFetching || current.isFetching ? 'animate-spin' : ''}`} /> Refresh</button>
@@ -236,14 +294,31 @@ function AdminPage() {
     {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-ingestion-success"><Check className="h-4 w-4" />{notice}</div>}
     {(inputError || trigger.isError) && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{inputError || trigger.error?.message || 'The ingestion run could not be started.'}</div>}
 
+    <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-pbs-watchlist">
+      <div className="border-b border-border px-5 py-4">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">PBS ingestion scope</p>
+        <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Enabled watchlist</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Each enabled entry creates a filtered latest-schedule request. An empty watchlist never falls back to a full download.</p>
+      </div>
+      <div className="flex flex-col gap-3 border-b border-border bg-muted/20 p-4 sm:flex-row">
+        <select value={watchlistType} onChange={(event) => setWatchlistType(event.target.value as PbsWatchlistEntry['filterType'])} className="h-11 rounded-xl border border-input bg-background px-3 text-sm font-semibold outline-none focus:border-primary" data-testid="select-watchlist-filter-type">
+          <option value="atc_code">ATC code</option><option value="brand_name">Brand name</option><option value="drug_name">Drug name</option><option value="pbs_code">PBS code</option><option value="formulary">Formulary</option><option value="program_code">Program code</option>
+        </select>
+        <input value={watchlistValue} onChange={(event) => setWatchlistValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addWatchlistEntry(); }} placeholder={watchlistType === 'atc_code' ? 'e.g. N06BA' : 'Filter value'} className="h-11 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-watchlist-filter-value" />
+        <button type="button" onClick={addWatchlistEntry} disabled={createWatchlistEntry.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-add-watchlist-entry"><Plus className="h-4 w-4" />Add filter</button>
+      </div>
+      {watchlist.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : watchlist.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => watchlist.refetch()} /></div> : !watchlist.data?.length ? <p className="p-5 text-sm text-muted-foreground">No filters configured. Add an enabled entry before starting an ingestion.</p> : <div className="divide-y divide-border">{watchlist.data.map((entry) => <div key={entry.id} className="flex flex-wrap items-center gap-3 px-5 py-3" data-testid={`row-watchlist-entry-${entry.id}`}><span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] font-bold text-muted-foreground">{entry.filterType}</span><span className="min-w-0 flex-1 truncate font-mono text-sm font-bold">{entry.filterValue}</span><button type="button" onClick={() => toggleWatchlistEntry(entry)} disabled={updateWatchlistEntry.isPending} className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.08em] ${entry.enabled ? 'bg-chart-3/15 text-chart-3' : 'bg-muted text-muted-foreground'}`} data-testid={`button-toggle-watchlist-${entry.id}`}>{entry.enabled ? 'Enabled' : 'Disabled'}</button><button type="button" onClick={() => removeWatchlistEntry(entry)} disabled={deleteWatchlistEntry.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Remove ${entry.filterValue}`} data-testid={`button-delete-watchlist-${entry.id}`}><Trash2 className="h-4 w-4" /></button></div>)}</div>}
+    </section>
+
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="card-current-ingestion">
       <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Current run</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Live ingestion progress</h2></div>
         {activeRun ? <IngestionStatus status={activeRun.status} /> : <span className="rounded-full bg-muted px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Idle</span>}
       </div>
-      {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-3">
+      {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-4">
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Run ID</p><p className="mt-2 font-mono text-lg font-bold">#{activeRun.id}</p></div>
-        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Records staged</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-records-processed">{activeRun.recordsProcessed.toLocaleString('en-AU')}</p></div>
+        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Items mapped</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-records-processed">{activeRun.recordsProcessed.toLocaleString('en-AU')}</p></div>
+        <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Pages fetched</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-pages-fetched">{activeRun.pagesFetched.toLocaleString('en-AU')}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Started</p><p className="mt-2 text-sm font-bold">{formatDateTime(activeRun.startedAt)}</p></div>
       </div> : <div className="flex items-start gap-4 p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><DatabaseZap className="h-5 w-5" /></span><div><h3 className="font-bold">No ingestion is running.</h3><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Start a run when you are ready to fetch the latest PBS schedule into raw staging. Progress refreshes automatically while a run is active.</p></div></div>}
     </section>

@@ -40,6 +40,28 @@ export interface PbsItem {
   currentAemp: number;
   currentDpmq: number;
   lastUpdated: string;
+  /** @nullable */
+  firstListedDate: string | null;
+  /** @nullable */
+  weightedAvgDisclosedPrice: number | null;
+  /** @nullable */
+  originatorBrandIndicator: string | null;
+  /** @nullable */
+  brandSubstitutionGroupId: string | null;
+  /** @nullable */
+  advancedNoticeDate: string | null;
+  /** @nullable */
+  nonEffectiveDate: string | null;
+  /** @nullable */
+  determinedPrice: number | null;
+  /** @nullable */
+  claimedPrice: number | null;
+  /** @nullable */
+  proportionalPrice: number | null;
+  /** @nullable */
+  therapeuticGroupId: string | null;
+  /** @nullable */
+  innovatorIndicator: string | null;
 }
 
 export interface PriceHistory {
@@ -120,6 +142,8 @@ export interface AdminIngestionRun {
   finishedAt: string | null;
   status: AdminIngestionRunStatus;
   recordsProcessed: number;
+  pagesFetched: number;
+  requestUrls: string[];
   /** @nullable */
   errorMessage: string | null;
 }
@@ -135,6 +159,71 @@ export interface AdminIngestionInput {
 
 export interface CurrentAdminIngestionRun {
   currentRun: AdminIngestionRun | null;
+}
+
+export type PbsWatchlistEntryFilterType = typeof PbsWatchlistEntryFilterType[keyof typeof PbsWatchlistEntryFilterType];
+
+
+export const PbsWatchlistEntryFilterType = {
+  brand_name: 'brand_name',
+  drug_name: 'drug_name',
+  pbs_code: 'pbs_code',
+  formulary: 'formulary',
+  program_code: 'program_code',
+  atc_code: 'atc_code',
+} as const;
+
+export interface PbsWatchlistEntry {
+  id: number;
+  filterType: PbsWatchlistEntryFilterType;
+  filterValue: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PbsWatchlistEntryInputFilterType = typeof PbsWatchlistEntryInputFilterType[keyof typeof PbsWatchlistEntryInputFilterType];
+
+
+export const PbsWatchlistEntryInputFilterType = {
+  brand_name: 'brand_name',
+  drug_name: 'drug_name',
+  pbs_code: 'pbs_code',
+  formulary: 'formulary',
+  program_code: 'program_code',
+  atc_code: 'atc_code',
+} as const;
+
+export interface PbsWatchlistEntryInput {
+  filterType: PbsWatchlistEntryInputFilterType;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  filterValue: string;
+  enabled?: boolean;
+}
+
+export type PbsWatchlistEntryUpdateFilterType = typeof PbsWatchlistEntryUpdateFilterType[keyof typeof PbsWatchlistEntryUpdateFilterType];
+
+
+export const PbsWatchlistEntryUpdateFilterType = {
+  brand_name: 'brand_name',
+  drug_name: 'drug_name',
+  pbs_code: 'pbs_code',
+  formulary: 'formulary',
+  program_code: 'program_code',
+  atc_code: 'atc_code',
+} as const;
+
+export interface PbsWatchlistEntryUpdate {
+  filterType?: PbsWatchlistEntryUpdateFilterType;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  filterValue?: string;
+  enabled?: boolean;
 }
 
 export type ListDrugsParams = {

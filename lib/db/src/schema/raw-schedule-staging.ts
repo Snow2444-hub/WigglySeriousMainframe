@@ -8,6 +8,7 @@ export const rawScheduleStagingTable = pgTable(
     id: serial("id").primaryKey(),
     scheduleDate: date("schedule_date", { mode: "string" }).notNull(),
     endpoint: text("endpoint").notNull(),
+    requestKey: text("request_key").notNull().default("unfiltered"),
     pageNumber: integer("page_number").notNull(),
     payload: jsonb("payload").$type<unknown>().notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -16,6 +17,7 @@ export const rawScheduleStagingTable = pgTable(
     uniqueIndex("raw_schedule_staging_schedule_endpoint_page_idx").on(
       table.scheduleDate,
       table.endpoint,
+      table.requestKey,
       table.pageNumber,
     ),
   ],

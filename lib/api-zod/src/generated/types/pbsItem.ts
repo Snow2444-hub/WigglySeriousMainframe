@@ -18,4 +18,26 @@ export interface PbsItem {
   currentAemp: number;
   currentDpmq: number;
   lastUpdated: Date;
+  /** @nullable */
+  firstListedDate: Date | null;
+  /** @nullable */
+  weightedAvgDisclosedPrice: number | null;
+  /** @nullable */
+  originatorBrandIndicator: string | null;
+  /** @nullable */
+  brandSubstitutionGroupId: string | null;
+  /** @nullable */
+  advancedNoticeDate: Date | null;
+  /** @nullable */
+  nonEffectiveDate: Date | null;
+  /** @nullable */
+  determinedPrice: number | null;
+  /** @nullable */
+  claimedPrice: number | null;
+  /** @nullable */
+  proportionalPrice: number | null;
+  /** @nullable */
+  therapeuticGroupId: string | null;
+  /** @nullable */
+  innovatorIndicator: string | null;
 }

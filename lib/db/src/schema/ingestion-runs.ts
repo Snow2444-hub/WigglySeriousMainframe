@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const ingestionRunsTable = pgTable("ingestion_runs", {
@@ -8,6 +8,8 @@ export const ingestionRunsTable = pgTable("ingestion_runs", {
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
   status: text("status").notNull(),
   recordsProcessed: integer("records_processed").notNull().default(0),
+  pagesFetched: integer("pages_fetched").notNull().default(0),
+  requestUrls: jsonb("request_urls").$type<string[]>().notNull().default([]),
   errorMessage: text("error_message"),
 });
 

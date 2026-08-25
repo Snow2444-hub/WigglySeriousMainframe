@@ -392,6 +392,138 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/pbs-watchlist:
+    get:
+      operationId: listPbsWatchlistEntries
+      tags: [admin]
+      summary: List PBS ingestion watchlist entries
+      responses:
+        "200":
+          description: PBS watchlist entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PbsWatchlistEntry"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: createPbsWatchlistEntry
+      tags: [admin]
+      summary: Add a PBS ingestion watchlist entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbsWatchlistEntryInput"
+      responses:
+        "201":
+          description: Created watchlist entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbsWatchlistEntry"
+        "400":
+          description: Invalid watchlist entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/pbs-watchlist/{id}:
+    patch:
+      operationId: updatePbsWatchlistEntry
+      tags: [admin]
+      summary: Update a PBS ingestion watchlist entry
+      parameters:
+        - $ref: "#/components/parameters/WatchlistEntryId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PbsWatchlistEntryUpdate"
+      responses:
+        "200":
+          description: Updated watchlist entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PbsWatchlistEntry"
+        "400":
+          description: Invalid watchlist update
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Watchlist entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deletePbsWatchlistEntry
+      tags: [admin]
+      summary: Delete a PBS ingestion watchlist entry
+      parameters:
+        - $ref: "#/components/parameters/WatchlistEntryId"
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Watchlist entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     DrugId:
@@ -407,6 +539,12 @@ components:
       schema:
         type: string
     StockId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    WatchlistEntryId:
       name: id
       in: path
       required: true
@@ -466,7 +604,32 @@ components:
         lastUpdated:
           type: string
           format: date
-      required: [itemCode, drugId, brandName, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated]
+        firstListedDate:
+          type: ["string", "null"]
+          format: date
+        weightedAvgDisclosedPrice:
+          type: ["number", "null"]
+        originatorBrandIndicator:
+          type: ["string", "null"]
+        brandSubstitutionGroupId:
+          type: ["string", "null"]
+        advancedNoticeDate:
+          type: ["string", "null"]
+          format: date
+        nonEffectiveDate:
+          type: ["string", "null"]
+          format: date
+        determinedPrice:
+          type: ["number", "null"]
+        claimedPrice:
+          type: ["number", "null"]
+        proportionalPrice:
+          type: ["number", "null"]
+        therapeuticGroupId:
+          type: ["string", "null"]
+        innovatorIndicator:
+          type: ["string", "null"]
+      required: [itemCode, drugId, brandName, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     PriceHistory:
       type: object
       properties:
@@ -587,9 +750,15 @@ components:
           enum: [queued, running, completed, failed]
         recordsProcessed:
           type: integer
+        pagesFetched:
+          type: integer
+        requestUrls:
+          type: array
+          items:
+            type: string
         errorMessage:
           type: ["string", "null"]
-      required: [id, startedAt, finishedAt, status, recordsProcessed, errorMessage]
+      required: [id, startedAt, finishedAt, status, recordsProcessed, pagesFetched, requestUrls, errorMessage]
     AdminIngestionInput:
       type: object
       properties:
@@ -606,4 +775,49 @@ components:
             - $ref: "#/components/schemas/AdminIngestionRun"
             - type: "null"
       required: [currentRun]
+    PbsWatchlistEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        filterType:
+          type: string
+          enum: [brand_name, drug_name, pbs_code, formulary, program_code, atc_code]
+        filterValue:
+          type: string
+        enabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, filterType, filterValue, enabled, createdAt, updatedAt]
+    PbsWatchlistEntryInput:
+      type: object
+      properties:
+        filterType:
+          type: string
+          enum: [brand_name, drug_name, pbs_code, formulary, program_code, atc_code]
+        filterValue:
+          type: string
+          minLength: 1
+          maxLength: 120
+        enabled:
+          type: boolean
+          default: true
+      required: [filterType, filterValue]
+    PbsWatchlistEntryUpdate:
+      type: object
+      properties:
+        filterType:
+          type: string
+          enum: [brand_name, drug_name, pbs_code, formulary, program_code, atc_code]
+        filterValue:
+          type: string
+          minLength: 1
+          maxLength: 120
+        enabled:
+          type: boolean
 

@@ -1,13 +1,15 @@
 import { db, rawScheduleStagingTable } from "@workspace/db";
+import { logger } from "./logger";
 
 const PBS_API_BASE_URL = "https://data-api.health.gov.au/pbs/api/v3";
 const PBS_API_ORIGIN = new URL(PBS_API_BASE_URL).origin;
 const PBS_API_PATH_PREFIX = new URL(PBS_API_BASE_URL).pathname;
 const MIN_REQUEST_GAP_MS = 20_000;
-const DEFAULT_PAGE_SIZE = 100;
+// The PBS API accepted limit=100000 for the documented N06BA relationship query.
+const DEFAULT_PAGE_SIZE = 100_000;
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_MAX_PAGES_PER_ENDPOINT = 10_000;
-const DEFAULT_ENDPOINTS = ["items", "item-amt"];
+const DEFAULT_ENDPOINTS = ["items"];
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type JsonObject = { [key: string]: JsonValue };
@@ -21,15 +23,29 @@ export interface FetchScheduleOptions {
   maxRetries?: number;
   maxPagesPerEndpoint?: number;
   maxPages?: number;
+  filters?: PbsRequestFilter[];
   request?: RequestLike;
   sleep?: Sleep;
   onPage?: (page: FetchedSchedulePage) => void | Promise<void>;
+  onPayload?: (page: FetchedSchedulePayload) => void | Promise<void>;
+}
+
+export interface PbsRequestFilter {
+  requestKey: string;
+  params: Record<string, string>;
+  endpoint?: string;
 }
 
 export interface FetchedSchedulePage {
   endpoint: string;
+  requestKey: string;
   pageNumber: number;
   records: number;
+  url: string;
+}
+
+export interface FetchedSchedulePayload extends FetchedSchedulePage {
+  payload: JsonValue;
 }
 
 interface PaginationInfo {
@@ -42,6 +58,7 @@ interface RequestPolicy {
 }
 
 const defaultSleep: Sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+const sharedRequestPolicy: RequestPolicy = { nextRequestAt: 0 };
 
 function isObject(value: JsonValue | unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -88,8 +105,17 @@ function normaliseEndpoint(endpoint: string): string {
   return normalised;
 }
 
-function buildPageUrl(endpoint: string, pageNumber: number, limit: number): URL {
+export function buildPageUrl(
+  endpoint: string,
+  pageNumber: number,
+  limit: number,
+  params: Record<string, string> = {},
+): URL {
   const url = new URL(`${PBS_API_BASE_URL}/${normaliseEndpoint(endpoint)}`);
+  url.searchParams.set("get_latest_schedule_only", "true");
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
   url.searchParams.set("page", String(pageNumber));
   url.searchParams.set("limit", String(limit));
   return url;
@@ -230,6 +256,10 @@ async function fetchPage(
       throw new Error(`PBS API request failed (${response.status}) for ${url.pathname}: ${responseText.slice(0, 500)}`);
     }
 
+    if (response.status === 204) {
+      return { data: [] };
+    }
+
     return (await response.json()) as JsonValue;
   }
 
@@ -252,9 +282,11 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     maxRetries = DEFAULT_MAX_RETRIES,
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
     maxPages,
+    filters = [{ requestKey: "unfiltered", params: {} }],
     request = fetch,
     sleep = defaultSleep,
     onPage,
+    onPayload,
   } = options;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
@@ -268,55 +300,70 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   if (maxPages !== undefined && (!Number.isInteger(maxPages) || maxPages <= 0)) {
     throw new Error("maxPages must be a positive integer");
   }
+  if (filters.length === 0) throw new Error("At least one PBS request filter is required");
+  for (const filter of filters) {
+    if (!/^[a-z0-9][a-z0-9:_-]{0,120}$/i.test(filter.requestKey)) {
+      throw new Error("PBS request keys must contain only letters, numbers, colons, underscores, or hyphens");
+    }
+  }
 
   const apiKey = process.env.PBS_SUBSCRIPTION_KEY;
   if (!apiKey) {
     throw new Error("PBS_SUBSCRIPTION_KEY is not configured in Replit Secrets");
   }
 
-  const policy: RequestPolicy = { nextRequestAt: 0 };
   const fetchedPages: FetchedSchedulePage[] = [];
 
-  for (const configuredEndpoint of endpoints) {
-    const endpoint = normaliseEndpoint(configuredEndpoint);
-    let pageNumber = 1;
-    let nextUrl: URL | undefined;
+  for (const filter of filters) {
+    for (const configuredEndpoint of filter.endpoint ? [filter.endpoint] : endpoints) {
+      const endpoint = normaliseEndpoint(configuredEndpoint);
+      let pageNumber = 1;
+      let nextUrl: URL | undefined;
 
-    while (true) {
-      if (pageNumber > maxPagesPerEndpoint) {
-        throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
-      }
+      while (true) {
+        if (pageNumber > maxPagesPerEndpoint) {
+          throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
+        }
 
-      const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit);
-      const payload = await fetchPage(url, apiKey, policy, maxRetries, request, sleep);
+        const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit, filter.params);
+        logger.info(
+          { endpoint, requestKey: filter.requestKey, pageNumber, url: url.toString() },
+          "Requesting PBS schedule page",
+        );
+        const payload = await fetchPage(url, apiKey, sharedRequestPolicy, maxRetries, request, sleep);
 
-      // Persist the untouched API page before interpreting its records.
-      await db
-        .insert(rawScheduleStagingTable)
-        .values({
-          scheduleDate,
+        // Persist the untouched API page before interpreting its records.
+        await db
+          .insert(rawScheduleStagingTable)
+          .values({
+            scheduleDate,
+            endpoint,
+            requestKey: filter.requestKey,
+            pageNumber,
+            payload,
+          })
+          .onConflictDoNothing();
+
+        const page = {
           endpoint,
+          requestKey: filter.requestKey,
           pageNumber,
-          payload,
-        })
-        .onConflictDoNothing();
+          records: getCollectionLength(payload),
+          url: url.toString(),
+        };
+        fetchedPages.push(page);
+        await onPage?.(page);
+        await onPayload?.({ ...page, payload });
 
-      const page = {
-        endpoint,
-        pageNumber,
-        records: getCollectionLength(payload),
-      };
-      fetchedPages.push(page);
-      await onPage?.(page);
+        if (maxPages !== undefined && fetchedPages.length >= maxPages) {
+          return fetchedPages;
+        }
 
-      if (maxPages !== undefined && fetchedPages.length >= maxPages) {
-        return fetchedPages;
+        const pagination = getPaginationInfo(payload, pageNumber, limit);
+        if (!pagination.hasMore) break;
+        pageNumber += 1;
+        nextUrl = pagination.nextUrl ? resolveNextUrl(pagination.nextUrl) : undefined;
       }
-
-      const pagination = getPaginationInfo(payload, pageNumber, limit);
-      if (!pagination.hasMore) break;
-      pageNumber += 1;
-      nextUrl = pagination.nextUrl ? resolveNextUrl(pagination.nextUrl) : undefined;
     }
   }
 
