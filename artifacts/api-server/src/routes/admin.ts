@@ -304,7 +304,10 @@ async function executeBackfillIngestionRun(
             page.payload,
             scheduleDate,
             schedule.effectiveDate,
-            { scheduleCode: schedule.scheduleCode, updateCurrentItem: false },
+            {
+              scheduleCode: schedule.scheduleCode,
+              updateCurrentItem: schedule.effectiveDate === latestEffectiveDate,
+            },
           );
         }
         await persistProgress();

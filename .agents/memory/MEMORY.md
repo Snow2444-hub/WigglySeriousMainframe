@@ -2,7 +2,8 @@
 - [TypeScript project reference cache](typescript-project-reference-cache.md) — New shared exports may require a forced project-reference rebuild before consumers see them.
 - [PBS API pagination](pbs-api-pagination.md) — PBS v3 pages use `page` and `limit`, expose next links under `_links`, and return metadata under `_meta`.
 - [PBS ATC relationship ingestion](pbs-atc-relationship-ingestion.md) — ATC filters apply to the relationship endpoint; item records require a second lookup by `li_item_id`.
-- [PBS item pricing](pbs-item-pricing.md) — `/items` exposes determined, claimed, and proportional prices but not DPMQ; preserve DPMQ as null.
+- [PBS item pricing](pbs-item-pricing.md) — `/items` omits DPMQ and its legacy WADP field is null in future schedules; never infer either value.
 - [PBS parent listing dates](pbs-parent-listing-dates.md) — item dates vary by strength; a parent drug’s first PBS listing date is the earliest across its items.
 - [PBS schedule backfill](pbs-schedule-backfill.md) — historical schedules must be ordered by effective date and fetched with explicit schedule codes.
 - [Generated query polling](generated-query-polling.md) — Passing custom options to this Orval React Query output requires its generated query key explicitly.
+- [API one-off runners](api-one-off-runners.md) — bundle workspace libraries with the API’s esbuild/Pino setup; externalized DB source fails under Node ESM.

@@ -195,7 +195,7 @@ export async function upsertPbsItemsFromPayload(
 
   for (const record of recordsFromPayload(payload)) {
     const liItemId = stringField(record, "li_item_id");
-    const itemCode = stringField(record, "pbs_code");
+    const pbsCode = stringField(record, "pbs_code");
     const activeIngredient = stringField(record, "active_ingredient", "li_drug_name", "drug_name");
     const drugName = activeIngredient;
     const brandName = stringField(record, "brand_name") ?? drugName;
@@ -206,7 +206,7 @@ export async function upsertPbsItemsFromPayload(
 
     if (
       !liItemId ||
-      !itemCode ||
+      !pbsCode ||
       !drugName ||
       !brandName ||
       !formulary ||
@@ -215,6 +215,7 @@ export async function upsertPbsItemsFromPayload(
     ) {
       continue;
     }
+    const itemCode = liItemId;
 
     const firstListedDate = dateField(record, "first_listed_date") ?? scheduleDate;
     const sponsor = stringField(record, "manufacturer_code", "organisation_id") ?? "PBS";
@@ -227,7 +228,7 @@ export async function upsertPbsItemsFromPayload(
 
     const itemValues = {
         itemCode,
-        pbsCode: itemCode,
+        pbsCode,
         liItemId,
         scheduleCode,
         drugId,

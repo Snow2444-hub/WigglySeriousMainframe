@@ -26,5 +26,6 @@ export * from "./raw-schedule-staging";
 export * from "./ingestion-runs";
 export * from "./pbs-watchlist";
 export * from "./reduction-settings";
+export * from "./price-disclosure-settings";
 export * from "./predicted-reductions";
 export * from "./users";

@@ -10,3 +10,9 @@ Treat DPMQ as unavailable when ingesting PBS `/items` records. Store the endpoin
 **How to apply:** Any mapper consuming `/items` must accept a missing DPMQ. If a future source provides a documented DPMQ, populate it directly rather than calculating it from the available prices.
 
 Latest `/items` records include `schedule_code` but not the schedule effective date. Resolve that date from the latest `/schedules` record’s `effective_date` and store both values with price history.
+
+The API v3 data dictionary marks `weighted_avg_disclosed_price` as a legacy Price Disclosure field that will be null in future schedules until removal. Treat a null WADP as unavailable and do not infer it from AEMP changes or other price fields.
+
+**Why:** Real rosuvastatin records across a 13-schedule backfill all supplied null WADP, matching the official dictionary.
+
+**How to apply:** Generate disclosure predictions only when a documented source supplies WADP. Zero predictions is the correct result when this field is null.

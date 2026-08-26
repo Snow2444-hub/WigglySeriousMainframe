@@ -1,0 +1,30 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "QArCiDhL-Z8wwNhJVRTic"
+uri = "file://exports/rosuvastatin-items.csv"
+type = "table"
+title = "Rosuvastatin items"
+description = "All 88 current rosuvastatin listing items, keyed by li_item_id, with PBS code, brand, strength, form, pack, quantity and current price."
+logical_id = "d7734b60-0084-4c43-bd52-c20a05a7081c"
+content_hash = "sha256:8fbb56316d3640712ef68019fa2bd958fcc0633bea9a2dd1554994b1f44b4cd7"
+size = 12116
+mtime_ms = 1787741697492
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/d7734b60-0084-4c43-bd52-c20a05a7081c/8bf65a7f-65f7-442b-b6cd-a600f96f12ec"
+storage_version_token = "1787741698196565"
+content_type = "text/csv"
+
+[[outputs]]
+id = "msb7v70UI_LA0XiNkSyyT"
+uri = "file://exports/rosuvastatin-price-history.csv"
+type = "table"
+title = "Rosuvastatin price history"
+description = "Complete change-only rosuvastatin price history ordered by effective date, brand, strength and item."
+logical_id = "360e26be-7c5f-4db5-bb29-4942acc64dd3"
+content_hash = "sha256:3b1b9fec9b17044f74fbc75c280c9f48e44362fa635910ec64b25e9bab78c057"
+size = 9550
+mtime_ms = 1787741697599
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/360e26be-7c5f-4db5-bb29-4942acc64dd3/2b90a57d-7ca5-4123-a2db-b1628fd4f4a7"
+storage_version_token = "1787741698739920"
+content_type = "text/csv"
