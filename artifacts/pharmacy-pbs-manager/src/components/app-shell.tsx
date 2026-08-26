@@ -99,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
       {open && <button type="button" className="fixed inset-0 z-30 bg-sidebar/25 backdrop-blur-sm md:hidden" onClick={() => setOpen(false)} aria-label="Close navigation" data-testid="button-overlay-close" />}
-      <main className="min-w-0 flex-1">
+      <main className="min-w-0 flex-1 overflow-x-hidden">
         <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-border/80 bg-background/90 px-5 backdrop-blur-md md:px-10">
           <button type="button" className="rounded-xl border border-border bg-card p-2.5 text-muted-foreground hover:text-foreground md:hidden" onClick={() => setOpen(true)} aria-label="Open menu" data-testid="button-open-menu">
             <Menu className="h-5 w-5" />

@@ -1,18 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   getGetCurrentAdminIngestionRunQueryKey,
-  getGetPbsItemQueryKey,
-  getGetDrugQueryKey,
+  getGetScheduleChangeSettingsQueryKey,
   getGetDashboardQueryKey,
   getListAdminIngestionRunsQueryKey,
   getListPbsWatchlistEntriesQueryKey,
-  getListPriceHistoryQueryKey,
   getListStockQueryKey,
   getHealthCheckQueryKey,
   type AdminIngestionRun,
   type ArtgEntry,
-  type PbsItem,
   type PbsWatchlistEntry,
   type PharmacyStock,
   useCreatePbsWatchlistEntry,
@@ -20,19 +17,16 @@ import {
   useDeletePbsWatchlistEntry,
   useDeleteStock,
   useGetCurrentAdminIngestionRun,
-  useGetDrug,
-  useGetPbsItem,
+  useGetScheduleChangeSettings,
   useGetDashboard,
   useHealthCheck,
   useListAdminIngestionRuns,
   useListArtgEntries,
-  useListDrugs,
-  useListPbsItems,
   useListPbsWatchlistEntries,
-  useListPriceHistory,
   useListStock,
   useTriggerAdminIngestion,
   useUpdatePbsWatchlistEntry,
+  useUpdateScheduleChangeSettings,
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
@@ -73,32 +67,11 @@ function Dashboard() {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground"><ShieldCheck className="h-5 w-5" /></div>
         <p className="mt-7 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Reference desk</p>
         <h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">Know the number before you order.</h2>
-        <p className="mt-3 text-sm leading-relaxed text-sidebar-foreground/65">Search PBS listings, check current AEMP and DPMQ, then trace how a price has moved over time.</p>
+        <p className="mt-3 text-sm leading-relaxed text-sidebar-foreground/65">Search PBS listings, check current ex-manufacturer and wholesale prices, then trace how a price has moved over time.</p>
         <p className="mt-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-sidebar-foreground/45"><span className={`h-1.5 w-1.5 rounded-full ${health.data?.status === 'ok' ? 'bg-accent' : health.isError ? 'bg-destructive' : 'bg-sidebar-foreground/40'}`} />{health.data?.status === 'ok' ? 'Reference service online' : health.isError ? 'Reference service unavailable' : 'Checking reference service'}</p>
         <Link href="/pbs" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sidebar-primary px-4 py-3 text-sm font-bold text-sidebar-primary-foreground hover:-translate-y-0.5" data-testid="link-reference-desk"><Search className="h-4 w-4" /> Open PBS directory</Link>
       </section>
     </div>
-  </AppShell>;
-}
-
-function PbsDirectory() {
-  const [search, setSearch] = useState('');
-  const [formulary, setFormulary] = useState('');
-  const [selected, setSelected] = useState<PbsItem | null>(null);
-  const params = useMemo(() => ({ search: search || undefined, formulary: formulary ? formulary as 'F1' | 'F2' : undefined, limit: 100 }), [search, formulary]);
-  const query = useListPbsItems(params);
-  const drugIndex = useListDrugs({ search: search || undefined, limit: 100 });
-  const detail = useGetPbsItem(selected?.itemCode ?? '', { query: { enabled: Boolean(selected), queryKey: getGetPbsItemQueryKey(selected?.itemCode ?? '') } });
-  const drugDetail = useGetDrug(selected?.drugId ?? 0, { query: { enabled: Boolean(selected), queryKey: getGetDrugQueryKey(selected?.drugId ?? 0) } });
-  const history = useListPriceHistory(selected?.itemCode ?? '', { query: { enabled: Boolean(selected), queryKey: getListPriceHistoryQueryKey(selected?.itemCode ?? '') } });
-  const items = query.data ?? [];
-  return <AppShell><PageHeading eyebrow="Reference library / PBS" title="PBS directory" description="Search listing details, current prices and the movement behind them." />
-    <div className="mb-5 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-xs sm:flex-row">
-      <label className="flex min-h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground"><Search className="h-4 w-4 shrink-0" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search item code, brand or drug name" data-testid="input-pbs-search" /></label>
-      <label className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm"><Filter className="h-4 w-4 text-primary" /><select value={formulary} onChange={(e) => setFormulary(e.target.value)} className="bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-pbs-formulary"><option value="">All formularies</option><option value="F1">F1 only</option><option value="F2">F2 only</option></select><ChevronDown className="pointer-events-none -ml-5 h-3.5 w-3.5 text-muted-foreground" /></label>
-    </div>
-    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !items.length ? <QueryState kind="empty" /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="flex justify-between border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground"><span>Medicine / sponsor</span><span>{items.length} listings · {drugIndex.data?.length ?? '—'} medicines</span></div><div className="hidden grid-cols-[1.2fr_1fr_.5fr_.65fr_.65fr] gap-4 border-b border-border bg-muted/20 px-5 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>Item details</span><span>Active ingredient</span><span>Formulary</span><span>AEMP</span><span>DPMQ</span></div><div className="divide-y divide-border">{items.map((item) => <button type="button" key={item.itemCode} onClick={() => setSelected(item)} className="grid w-full gap-2 px-5 py-4 text-left transition-colors hover:bg-secondary/35 md:grid-cols-[1.2fr_1fr_.5fr_.65fr_.65fr] md:items-center md:gap-4" data-testid={`row-pbs-item-${item.itemCode}`}><div><p className="font-mono text-[10px] font-bold text-primary">{item.itemCode}</p><p className="mt-1 text-sm font-bold">{item.brandName || item.drugName}</p><p className="mt-0.5 text-xs text-muted-foreground">{item.sponsor}</p></div><p className="text-xs text-muted-foreground md:text-sm">{item.activeIngredient}</p><span className={`w-fit rounded-full px-2 py-1 font-mono text-[10px] font-bold ${item.formulary === 'F1' ? 'bg-primary/10 text-primary' : 'bg-accent/25 text-accent-foreground'}`}>{item.formulary}</span><p className="data-mono text-sm font-bold">{money(item.currentAemp)}</p><p className="data-mono text-sm font-bold">{item.currentDpmq === null ? 'Not supplied' : money(item.currentDpmq)}</p></button>)}</div></div>}
-    {selected && <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="dialog" aria-modal="true" data-testid="dialog-pbs-detail"><button type="button" className="absolute inset-0 cursor-default" aria-label="Close detail" onClick={() => setSelected(null)} data-testid="button-close-pbs-detail" /><div className="relative max-h-[88dvh] w-full max-w-2xl overflow-auto rounded-t-3xl border border-border bg-card p-6 shadow-2xl sm:rounded-3xl"><button type="button" onClick={() => setSelected(null)} className="absolute right-5 top-5 rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close" data-testid="button-close-pbs-modal"><X className="h-4 w-4" /></button>{detail.isLoading ? <QueryState kind="loading" /> : detail.isError || !detail.data ? <QueryState kind="error" onRetry={() => detail.refetch()} /> : <><div className="pr-10"><span className="font-mono text-[11px] font-bold text-primary">{detail.data.itemCode}</span><h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">{detail.data.brandName || detail.data.drugName}</h2><p className="mt-1 text-sm text-muted-foreground">{detail.data.activeIngredient} · {detail.data.sponsor}</p><p className="mt-2 text-xs text-muted-foreground">PBS drug listed {drugDetail.data?.firstPbsListingDate ? date(drugDetail.data.firstPbsListingDate) : '—'}</p></div><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">AEMP</p><p className="mt-1 font-mono text-sm font-bold">{money(detail.data.currentAemp)}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">DPMQ</p><p className="mt-1 font-mono text-sm font-bold">{detail.data.currentDpmq === null ? 'Not supplied' : money(detail.data.currentDpmq)}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Formulary</p><p className="mt-1 font-mono text-sm font-bold">{detail.data.formulary}</p></div><div className="rounded-xl bg-muted/60 p-3"><p className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Updated</p><p className="mt-1 font-mono text-sm font-bold">{date(detail.data.lastUpdated)}</p></div></div><div className="mt-7 flex items-center gap-2 border-b border-border pb-3"><History className="h-4 w-4 text-primary" /><h3 className="text-sm font-bold">Price history</h3></div>{history.isLoading ? <div className="py-6"><QueryState kind="loading" /></div> : history.data?.length ? <div className="divide-y divide-border">{history.data.map((entry) => <div key={`${entry.itemCode}-${entry.priceDate}`} className="grid grid-cols-[1fr_auto_auto] gap-4 py-3 text-sm"><span className="text-muted-foreground">{date(entry.priceDate)}</span><span className="data-mono font-bold">{money(entry.aemp)}</span><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${entry.reductionType ? 'bg-chart-3/15 text-chart-3' : 'bg-muted text-muted-foreground'}`}>{entry.reductionType || 'No change'}</span></div>)}</div> : <p className="py-6 text-sm text-muted-foreground">No recorded price movements for this item.</p>}</>}</div></div>}
   </AppShell>;
 }
 
@@ -181,6 +154,8 @@ function AdminPage() {
   const [inputError, setInputError] = useState('');
   const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('atc_code');
   const [watchlistValue, setWatchlistValue] = useState('');
+  const [mediumThreshold, setMediumThreshold] = useState('');
+  const [highThreshold, setHighThreshold] = useState('');
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -202,7 +177,17 @@ function AdminPage() {
   const createWatchlistEntry = useCreatePbsWatchlistEntry();
   const updateWatchlistEntry = useUpdatePbsWatchlistEntry();
   const deleteWatchlistEntry = useDeletePbsWatchlistEntry();
+  const significanceSettings = useGetScheduleChangeSettings({
+    query: { queryKey: getGetScheduleChangeSettingsQueryKey() },
+  });
+  const updateSignificanceSettings = useUpdateScheduleChangeSettings();
   const activeRun = current.data?.currentRun;
+
+  useEffect(() => {
+    if (!significanceSettings.data) return;
+    setMediumThreshold(String(significanceSettings.data.mediumReductionPercentage));
+    setHighThreshold(String(significanceSettings.data.highReductionPercentage));
+  }, [significanceSettings.data]);
 
   const refresh = () => {
     void Promise.all([runs.refetch(), current.refetch(), watchlist.refetch()]);
@@ -277,6 +262,34 @@ function AdminPage() {
     });
   };
 
+  const saveSignificanceSettings = () => {
+    const mediumReductionPercentage = Number(mediumThreshold);
+    const highReductionPercentage = Number(highThreshold);
+    if (
+      !Number.isFinite(mediumReductionPercentage) ||
+      !Number.isFinite(highReductionPercentage) ||
+      mediumReductionPercentage <= 0 ||
+      highReductionPercentage <= mediumReductionPercentage ||
+      highReductionPercentage > 100
+    ) {
+      setInputError('Use positive percentages with the medium threshold lower than the high threshold.');
+      return;
+    }
+    setInputError('');
+    updateSignificanceSettings.mutate(
+      { data: { mediumReductionPercentage, highReductionPercentage } },
+      {
+        onSuccess: (settings) => {
+          setMediumThreshold(String(settings.mediumReductionPercentage));
+          setHighThreshold(String(settings.highReductionPercentage));
+          setNotice('Price-change significance thresholds updated and historical changes recalculated.');
+          void queryClient.invalidateQueries({ queryKey: getGetScheduleChangeSettingsQueryKey() });
+        },
+        onError: () => setInputError('The significance thresholds could not be updated.'),
+      },
+    );
+  };
+
   return <AppShell>
     <PageHeading
       eyebrow="Administration / reference data"
@@ -304,6 +317,19 @@ function AdminPage() {
 
     {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-ingestion-success"><Check className="h-4 w-4" />{notice}</div>}
     {(inputError || trigger.isError) && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{inputError || trigger.error?.message || 'The ingestion run could not be started.'}</div>}
+
+    <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-significance-settings">
+      <div className="border-b border-border px-5 py-4">
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Schedule-change alerts</p>
+        <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Price reduction significance</h2>
+        <p className="mt-1 text-sm text-muted-foreground">A reduction above the medium threshold is flagged medium; above the high threshold is flagged high.</p>
+      </div>
+      {significanceSettings.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : significanceSettings.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => significanceSettings.refetch()} /></div> : <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end">
+        <label className="block flex-1"><span className="mb-1.5 block text-xs font-bold">Medium reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={mediumThreshold} onChange={(event) => setMediumThreshold(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-medium-reduction-threshold" /></label>
+        <label className="block flex-1"><span className="mb-1.5 block text-xs font-bold">High reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={highThreshold} onChange={(event) => setHighThreshold(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-high-reduction-threshold" /></label>
+        <button type="button" onClick={saveSignificanceSettings} disabled={updateSignificanceSettings.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-save-significance-settings">{updateSignificanceSettings.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Save thresholds</button>
+      </div>}
+    </section>
 
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-pbs-watchlist">
       <div className="border-b border-border px-5 py-4">
@@ -350,4 +376,4 @@ function AdminPage() {
   </AppShell>;
 }
 
-export { Dashboard, PbsDirectory, ArtgDirectory, StockPage, AdminPage };
+export { Dashboard, ArtgDirectory, StockPage, AdminPage };

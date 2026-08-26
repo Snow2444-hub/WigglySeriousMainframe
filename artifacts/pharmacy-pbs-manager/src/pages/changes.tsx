@@ -176,7 +176,7 @@ export function ChangesPage() {
         </label>
         
         <label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm focus-within:border-destructive focus-within:ring-1 focus-within:ring-destructive/20">
-          <AlertTriangle className={`h-4 w-4 ${significance === 'high' ? 'text-destructive' : 'text-muted-foreground'}`} />
+          <AlertTriangle className={`h-4 w-4 ${significance === 'high' ? 'text-destructive' : significance === 'medium' ? 'text-accent-foreground' : 'text-muted-foreground'}`} />
           <select 
             value={significance} 
             onChange={(e) => setSignificance(e.target.value as ListScheduleChangesSignificance | '')} 
@@ -185,6 +185,7 @@ export function ChangesPage() {
           >
             <option value="">All impact levels</option>
             <option value="high">High impact</option>
+            <option value="medium">Medium impact</option>
             <option value="normal">Normal impact</option>
           </select>
         </label>
@@ -209,7 +210,7 @@ export function ChangesPage() {
             {changes.map((change) => (
               <div 
                 key={change.id} 
-                className={`grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4 ${change.significance === 'high' ? 'bg-destructive/5' : ''}`} 
+                className={`grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4 ${change.significance === 'high' ? 'bg-destructive/5' : change.significance === 'medium' ? 'bg-accent/5' : ''}`} 
                 data-testid={`row-change-${change.id}`}
               >
                 <div>
@@ -226,11 +227,12 @@ export function ChangesPage() {
                 <div>
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
                     change.significance === 'high' ? 'bg-destructive text-destructive-foreground' : 
+                    change.significance === 'medium' ? 'bg-accent/25 text-accent-foreground' :
                     change.changeType.startsWith('new_') ? 'bg-chart-3/15 text-chart-3' :
                     change.changeType === 'delisted' ? 'border border-destructive/30 text-destructive' :
                     'bg-muted text-muted-foreground'
                   }`}>
-                    {change.significance === 'high' && <AlertCircle className="h-3 w-3" />}
+                    {(change.significance === 'high' || change.significance === 'medium') && <AlertCircle className="h-3 w-3" />}
                     {typeLabels[change.changeType] || change.changeType}
                   </span>
                 </div>
@@ -281,6 +283,7 @@ export function ChangesPage() {
                     <div key={change.id} className="relative pl-7" data-testid={`timeline-item-${change.id}`}>
                       <span className={`absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-4 border-card ${
                         change.significance === 'high' ? 'bg-destructive' : 
+                        change.significance === 'medium' ? 'bg-accent' :
                         change.changeType.startsWith('new_') ? 'bg-chart-3' :
                         change.changeType === 'delisted' ? 'bg-muted-foreground' :
                         'bg-primary'
@@ -288,9 +291,9 @@ export function ChangesPage() {
                       
                       <div className="mb-2 flex items-baseline justify-between gap-4">
                         <p className="font-mono text-sm font-bold text-foreground">{date(change.effectiveDate)}</p>
-                        {change.significance === 'high' && (
-                          <span className="flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wider text-destructive">
-                            <AlertCircle className="h-3 w-3" /> High impact
+                        {(change.significance === 'high' || change.significance === 'medium') && (
+                          <span className={`flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wider ${change.significance === 'high' ? 'text-destructive' : 'text-accent-foreground'}`}>
+                            <AlertCircle className="h-3 w-3" /> {change.significance} impact
                           </span>
                         )}
                       </div>

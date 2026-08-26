@@ -11,5 +11,6 @@ export type ListScheduleChangesSignificance = typeof ListScheduleChangesSignific
 
 export const ListScheduleChangesSignificance = {
   normal: 'normal',
+  medium: 'medium',
   high: 'high',
 } as const;

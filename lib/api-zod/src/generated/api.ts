@@ -80,6 +80,108 @@ export const GetDrugResponse = zod.object({
 
 
 /**
+ * @summary List grouped PBS medicines
+ */
+export const ListMedicineDirectoryQueryParams = zod.object({
+  "search": zod.coerce.string().optional().describe('Search by drug, ingredient, brand, PBS code, or LI item ID')
+})
+
+export const listMedicineDirectoryResponseNextPredictedReductionDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListMedicineDirectoryResponseItem = zod.object({
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "activeIngredient": zod.string(),
+  "brandCount": zod.int(),
+  "itemCount": zod.int(),
+  "formulary": zod.string(),
+  "minimumPrice": zod.number(),
+  "maximumPrice": zod.number(),
+  "upcomingPredictedReductionCount": zod.int(),
+  "nextPredictedReductionDate": zod.string().regex(listMedicineDirectoryResponseNextPredictedReductionDateRegExp).nullable(),
+  "recentHighChangeCount": zod.int(),
+  "searchMatchLevel": zod.union([zod.literal('drug'),zod.literal('brand'),zod.literal('item'),zod.literal(null)]).nullable(),
+  "matchedBrandName": zod.string().nullable(),
+  "matchedItemCode": zod.string().nullable()
+})
+export const ListMedicineDirectoryResponse = zod.array(ListMedicineDirectoryResponseItem)
+
+
+/**
+ * @summary List brand summaries for a medicine
+ */
+export const ListMedicineBrandsParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const listMedicineBrandsResponseFirstListedDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listMedicineBrandsResponseLatestChangeDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListMedicineBrandsResponseItem = zod.object({
+  "drugId": zod.int(),
+  "brandName": zod.string(),
+  "itemCount": zod.int(),
+  "formulary": zod.string(),
+  "minimumPrice": zod.number(),
+  "maximumPrice": zod.number(),
+  "isInnovator": zod.boolean(),
+  "firstListedDate": zod.string().regex(listMedicineBrandsResponseFirstListedDateRegExp).nullable(),
+  "changeCount": zod.int(),
+  "highChangeCount": zod.int(),
+  "latestChangeDate": zod.string().regex(listMedicineBrandsResponseLatestChangeDateRegExp).nullable()
+})
+export const ListMedicineBrandsResponse = zod.array(ListMedicineBrandsResponseItem)
+
+
+/**
+ * @summary List PBS items for a medicine brand
+ */
+
+
+
+export const ListMedicineBrandItemsParams = zod.object({
+  "id": zod.coerce.number().int(),
+  "brandName": zod.coerce.string().min(1)
+})
+
+export const ListMedicineBrandItemsResponseItem = zod.object({
+  "itemCode": zod.string(),
+  "pbsCode": zod.string().nullable(),
+  "liItemId": zod.string().nullable(),
+  "scheduleCode": zod.int().nullable(),
+  "drugId": zod.int(),
+  "brandName": zod.string(),
+  "strength": zod.string().nullable(),
+  "form": zod.string().nullable(),
+  "packSize": zod.string().nullable(),
+  "pricingQuantity": zod.int().nullable(),
+  "liForm": zod.string().nullable(),
+  "programCode": zod.string().nullable(),
+  "drugName": zod.string(),
+  "activeIngredient": zod.string(),
+  "sponsor": zod.string(),
+  "formulary": zod.enum(['F1', 'F2']),
+  "currentAemp": zod.number(),
+  "currentDpmq": zod.number().nullable(),
+  "lastUpdated": zod.coerce.date(),
+  "firstListedDate": zod.coerce.date().nullable(),
+  "weightedAvgDisclosedPrice": zod.number().nullable(),
+  "originatorBrandIndicator": zod.string().nullable(),
+  "brandSubstitutionGroupId": zod.string().nullable(),
+  "advancedNoticeDate": zod.coerce.date().nullable(),
+  "nonEffectiveDate": zod.coerce.date().nullable(),
+  "determinedPrice": zod.number().nullable(),
+  "claimedPrice": zod.number().nullable(),
+  "proportionalPrice": zod.number().nullable(),
+  "therapeuticGroupId": zod.string().nullable(),
+  "innovatorIndicator": zod.string().nullable()
+})
+export const ListMedicineBrandItemsResponse = zod.array(ListMedicineBrandItemsResponseItem)
+
+
+/**
  * @summary List PBS items
  */
 export const listPbsItemsQueryLimitDefault = 50;
@@ -190,6 +292,60 @@ export const ListPriceHistoryResponse = zod.array(ListPriceHistoryResponseItem)
 
 
 /**
+ * @summary List predicted reductions for a PBS item
+ */
+export const ListItemPredictedReductionsParams = zod.object({
+  "itemCode": zod.coerce.string()
+})
+
+export const listItemPredictedReductionsResponsePredictedDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListItemPredictedReductionsResponseItem = zod.object({
+  "id": zod.int(),
+  "itemCode": zod.string(),
+  "drugId": zod.int(),
+  "predictedDate": zod.string().regex(listItemPredictedReductionsResponsePredictedDateRegExp),
+  "reductionType": zod.string(),
+  "predictedPercentage": zod.number(),
+  "predictedNewPrice": zod.number(),
+  "confidence": zod.string(),
+  "sourceNote": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+export const ListItemPredictedReductionsResponse = zod.array(ListItemPredictedReductionsResponseItem)
+
+
+/**
+ * @summary List schedule changes for a PBS item
+ */
+export const ListItemScheduleChangesParams = zod.object({
+  "itemCode": zod.coerce.string()
+})
+
+export const listItemScheduleChangesResponseEffectiveDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListItemScheduleChangesResponseItem = zod.object({
+  "id": zod.int(),
+  "scheduleCode": zod.int(),
+  "effectiveDate": zod.string().regex(listItemScheduleChangesResponseEffectiveDateRegExp),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "liItemId": zod.string(),
+  "pbsCode": zod.string().nullable(),
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string().nullable(),
+  "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "significance": zod.enum(['normal', 'medium', 'high']),
+  "notes": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListItemScheduleChangesResponse = zod.array(ListItemScheduleChangesResponseItem)
+
+
+/**
  * @summary List PBS schedule changes
  */
 
@@ -201,7 +357,7 @@ export const listScheduleChangesQueryLimitMax = 500;
 export const ListScheduleChangesQueryParams = zod.object({
   "drugId": zod.coerce.number().int().min(1).optional(),
   "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']).optional(),
-  "significance": zod.enum(['normal', 'high']).optional(),
+  "significance": zod.enum(['normal', 'medium', 'high']).optional(),
   "limit": zod.coerce.number().int().min(1).max(listScheduleChangesQueryLimitMax).default(listScheduleChangesQueryLimitDefault)
 })
 
@@ -220,7 +376,7 @@ export const ListScheduleChangesResponseItem = zod.object({
   "brandName": zod.string().nullable(),
   "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
   "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
-  "significance": zod.enum(['normal', 'high']),
+  "significance": zod.enum(['normal', 'medium', 'high']),
   "notes": zod.string().nullable(),
   "createdAt": zod.coerce.date()
 })
@@ -249,7 +405,7 @@ export const GetDrugScheduleTimelineResponseItem = zod.object({
   "brandName": zod.string().nullable(),
   "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
   "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
-  "significance": zod.enum(['normal', 'high']),
+  "significance": zod.enum(['normal', 'medium', 'high']),
   "notes": zod.string().nullable(),
   "createdAt": zod.coerce.date()
 })
@@ -490,5 +646,36 @@ export const DeletePbsWatchlistEntryParams = zod.object({
 })
 
 export const DeletePbsWatchlistEntryResponse = zod.void()
+
+
+/**
+ * @summary Get schedule-change significance thresholds
+ */
+export const GetScheduleChangeSettingsResponse = zod.object({
+  "mediumReductionPercentage": zod.number(),
+  "highReductionPercentage": zod.number()
+})
+
+
+/**
+ * @summary Update schedule-change significance thresholds
+ */
+export const updateScheduleChangeSettingsBodyMediumReductionPercentageExclusiveMin = 0;
+export const updateScheduleChangeSettingsBodyMediumReductionPercentageMax = 100;
+
+export const updateScheduleChangeSettingsBodyHighReductionPercentageExclusiveMin = 0;
+export const updateScheduleChangeSettingsBodyHighReductionPercentageMax = 100;
+
+
+
+export const UpdateScheduleChangeSettingsBody = zod.object({
+  "mediumReductionPercentage": zod.number().gt(updateScheduleChangeSettingsBodyMediumReductionPercentageExclusiveMin).max(updateScheduleChangeSettingsBodyMediumReductionPercentageMax),
+  "highReductionPercentage": zod.number().gt(updateScheduleChangeSettingsBodyHighReductionPercentageExclusiveMin).max(updateScheduleChangeSettingsBodyHighReductionPercentageMax)
+})
+
+export const UpdateScheduleChangeSettingsResponse = zod.object({
+  "mediumReductionPercentage": zod.number(),
+  "highReductionPercentage": zod.number()
+})
 
 

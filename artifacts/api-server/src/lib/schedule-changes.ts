@@ -1,4 +1,10 @@
-import { db, drugsTable, rawScheduleStagingTable, scheduleChangesTable } from "@workspace/db";
+import {
+  db,
+  drugsTable,
+  rawScheduleStagingTable,
+  scheduleChangesTable,
+  scheduleChangeSettingsTable,
+} from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
 
 type JsonRecord = Record<string, unknown>;
@@ -17,6 +23,97 @@ type ScheduleSnapshot = {
   effectiveDate: string;
   drugs: Map<string, Map<string, SnapshotItem>>;
 };
+
+export type PriceChangeThresholds = {
+  mediumReductionPercentage: number;
+  highReductionPercentage: number;
+};
+
+const PRICE_CHANGE_SETTING_KEY = "price-change-significance";
+const DEFAULT_PRICE_CHANGE_THRESHOLDS: PriceChangeThresholds = {
+  mediumReductionPercentage: 10,
+  highReductionPercentage: 20,
+};
+
+export async function ensureDefaultScheduleChangeSettings(): Promise<void> {
+  await db
+    .insert(scheduleChangeSettingsTable)
+    .values({ settingKey: PRICE_CHANGE_SETTING_KEY, ...DEFAULT_PRICE_CHANGE_THRESHOLDS })
+    .onConflictDoNothing();
+}
+
+export async function getPriceChangeThresholds(): Promise<PriceChangeThresholds> {
+  await ensureDefaultScheduleChangeSettings();
+  const [settings] = await db
+    .select({
+      mediumReductionPercentage: scheduleChangeSettingsTable.mediumReductionPercentage,
+      highReductionPercentage: scheduleChangeSettingsTable.highReductionPercentage,
+    })
+    .from(scheduleChangeSettingsTable)
+    .where(eq(scheduleChangeSettingsTable.settingKey, PRICE_CHANGE_SETTING_KEY))
+    .limit(1);
+  return settings ?? DEFAULT_PRICE_CHANGE_THRESHOLDS;
+}
+
+export function priceChangeSignificance(
+  percentageChange: number | null,
+  thresholds: PriceChangeThresholds,
+): "normal" | "medium" | "high" {
+  if (percentageChange === null || percentageChange >= 0) return "normal";
+  const reductionMagnitude = Math.abs(percentageChange);
+  if (reductionMagnitude > thresholds.highReductionPercentage) return "high";
+  if (reductionMagnitude > thresholds.mediumReductionPercentage) return "medium";
+  return "normal";
+}
+
+function percentageFromValue(value: unknown): number | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const percentage = (value as Record<string, unknown>).percentage_change;
+  return typeof percentage === "number" && Number.isFinite(percentage) ? percentage : null;
+}
+
+export async function recalculatePriceChangeSignificance(): Promise<number> {
+  const [thresholds, changes] = await Promise.all([
+    getPriceChangeThresholds(),
+    db
+      .select({
+        id: scheduleChangesTable.id,
+        newValue: scheduleChangesTable.newValue,
+        significance: scheduleChangesTable.significance,
+      })
+      .from(scheduleChangesTable)
+      .where(eq(scheduleChangesTable.changeType, "price_change")),
+  ]);
+  let updated = 0;
+  for (const change of changes) {
+    const significance = priceChangeSignificance(percentageFromValue(change.newValue), thresholds);
+    if (significance === change.significance) continue;
+    await db
+      .update(scheduleChangesTable)
+      .set({ significance })
+      .where(eq(scheduleChangesTable.id, change.id));
+    updated += 1;
+  }
+  return updated;
+}
+
+export async function updatePriceChangeThresholds(
+  thresholds: PriceChangeThresholds,
+): Promise<PriceChangeThresholds> {
+  await db
+    .insert(scheduleChangeSettingsTable)
+    .values({
+      settingKey: PRICE_CHANGE_SETTING_KEY,
+      ...thresholds,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: scheduleChangeSettingsTable.settingKey,
+      set: { ...thresholds, updatedAt: new Date() },
+    });
+  await recalculatePriceChangeSignificance();
+  return getPriceChangeThresholds();
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -186,6 +283,7 @@ function compareSnapshots(
   previous: ScheduleSnapshot,
   current: ScheduleSnapshot,
   drugIds: Map<string, number>,
+  thresholds: PriceChangeThresholds,
 ) {
   const changes: ReturnType<typeof changeRow>[] = [];
   const drugKeys = new Set([...previous.drugs.keys(), ...current.drugs.keys()]);
@@ -281,6 +379,7 @@ function compareSnapshots(
               determined_price: currentItem.determinedPrice,
               percentage_change: percentage,
             },
+            significance: priceChangeSignificance(percentage, thresholds),
             notes: `Determined price changed from ${money(item.determinedPrice)} to ${money(currentItem.determinedPrice)}${percentage === null ? "." : ` (${percentage.toFixed(2)}%).`}`,
           }),
         );
@@ -312,15 +411,16 @@ function compareSnapshots(
 }
 
 export async function syncScheduleChangesFromStagedData(): Promise<number> {
-  const [drugs, snapshots] = await Promise.all([
+  const [drugs, snapshots, thresholds] = await Promise.all([
     db.select({ id: drugsTable.id, activeIngredient: drugsTable.activeIngredient }).from(drugsTable),
     loadStagedSnapshots(),
+    getPriceChangeThresholds(),
   ]);
   if (snapshots.length < 2) return 0;
 
   const drugIds = new Map(drugs.map((drug) => [normalized(drug.activeIngredient), drug.id]));
   const changes = snapshots.flatMap((snapshot, index) =>
-    index === 0 ? [] : compareSnapshots(snapshots[index - 1], snapshot, drugIds),
+    index === 0 ? [] : compareSnapshots(snapshots[index - 1], snapshot, drugIds, thresholds),
   );
   if (changes.length === 0) return 0;
 

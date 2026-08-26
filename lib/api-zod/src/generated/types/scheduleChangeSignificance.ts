@@ -11,5 +11,6 @@ export type ScheduleChangeSignificance = typeof ScheduleChangeSignificance[keyof
 
 export const ScheduleChangeSignificance = {
   normal: 'normal',
+  medium: 'medium',
   high: 'high',
 } as const;

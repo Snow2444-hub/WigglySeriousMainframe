@@ -103,6 +103,59 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /medicine-directory:
+    get:
+      operationId: listMedicineDirectory
+      tags: [drugs]
+      summary: List grouped PBS medicines
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search by drug, ingredient, brand, PBS code, or LI item ID
+      responses:
+        "200":
+          description: Drug-level medicine summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MedicineDrugSummary"
+  /medicine-drugs/{id}/brands:
+    get:
+      operationId: listMedicineBrands
+      tags: [drugs]
+      summary: List brand summaries for a medicine
+      parameters:
+        - $ref: "#/components/parameters/DrugId"
+      responses:
+        "200":
+          description: Brand-level medicine summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MedicineBrandSummary"
+  /medicine-drugs/{id}/brands/{brandName}/items:
+    get:
+      operationId: listMedicineBrandItems
+      tags: [drugs]
+      summary: List PBS items for a medicine brand
+      parameters:
+        - $ref: "#/components/parameters/DrugId"
+        - $ref: "#/components/parameters/BrandName"
+      responses:
+        "200":
+          description: Item-level PBS listings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PbsItem"
   /pbs-items:
     get:
       operationId: listPbsItems
@@ -171,6 +224,38 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PriceHistory"
+  /pbs-items/{itemCode}/predicted-reductions:
+    get:
+      operationId: listItemPredictedReductions
+      tags: [pbs]
+      summary: List predicted reductions for a PBS item
+      parameters:
+        - $ref: "#/components/parameters/ItemCode"
+      responses:
+        "200":
+          description: Predicted reductions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PredictedReduction"
+  /pbs-items/{itemCode}/schedule-changes:
+    get:
+      operationId: listItemScheduleChanges
+      tags: [changes]
+      summary: List schedule changes for a PBS item
+      parameters:
+        - $ref: "#/components/parameters/ItemCode"
+      responses:
+        "200":
+          description: Item schedule changes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleChange"
   /schedule-changes:
     get:
       operationId: listScheduleChanges
@@ -191,7 +276,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [normal, high]
+            enum: [normal, medium, high]
         - name: limit
           in: query
           schema:
@@ -579,6 +664,65 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/schedule-change-settings:
+    get:
+      operationId: getScheduleChangeSettings
+      tags: [admin]
+      summary: Get schedule-change significance thresholds
+      responses:
+        "200":
+          description: Current threshold settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleChangeSettings"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    patch:
+      operationId: updateScheduleChangeSettings
+      tags: [admin]
+      summary: Update schedule-change significance thresholds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleChangeSettings"
+      responses:
+        "200":
+          description: Updated threshold settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleChangeSettings"
+        "400":
+          description: Invalid thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   parameters:
     DrugId:
@@ -593,6 +737,13 @@ components:
       required: true
       schema:
         type: string
+    BrandName:
+      name: brandName
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
     StockId:
       name: id
       in: path
@@ -634,6 +785,68 @@ components:
           type: string
           format: date
       required: [id, name, activeIngredient, sponsor, firstPbsListingDate]
+    MedicineDrugSummary:
+      type: object
+      properties:
+        drugId:
+          type: integer
+        drugName:
+          type: string
+        activeIngredient:
+          type: string
+        brandCount:
+          type: integer
+        itemCount:
+          type: integer
+        formulary:
+          type: string
+        minimumPrice:
+          type: number
+        maximumPrice:
+          type: number
+        upcomingPredictedReductionCount:
+          type: integer
+        nextPredictedReductionDate:
+          type: ["string", "null"]
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        recentHighChangeCount:
+          type: integer
+        searchMatchLevel:
+          type: ["string", "null"]
+          enum: [drug, brand, item, null]
+        matchedBrandName:
+          type: ["string", "null"]
+        matchedItemCode:
+          type: ["string", "null"]
+      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, recentHighChangeCount, searchMatchLevel, matchedBrandName, matchedItemCode]
+    MedicineBrandSummary:
+      type: object
+      properties:
+        drugId:
+          type: integer
+        brandName:
+          type: string
+        itemCount:
+          type: integer
+        formulary:
+          type: string
+        minimumPrice:
+          type: number
+        maximumPrice:
+          type: number
+        isInnovator:
+          type: boolean
+        firstListedDate:
+          type: ["string", "null"]
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        changeCount:
+          type: integer
+        highChangeCount:
+          type: integer
+        latestChangeDate:
+          type: ["string", "null"]
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      required: [drugId, brandName, itemCount, formulary, minimumPrice, maximumPrice, isInnovator, firstListedDate, changeCount, highChangeCount, latestChangeDate]
     PbsItem:
       type: object
       properties:
@@ -725,6 +938,32 @@ components:
         reductionType:
           type: ["string", "null"]
       required: [id, itemCode, priceDate, scheduleCode, scheduleEffectiveDate, aemp, dpmq, reductionType]
+    PredictedReduction:
+      type: object
+      properties:
+        id:
+          type: integer
+        itemCode:
+          type: string
+        drugId:
+          type: integer
+        predictedDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        reductionType:
+          type: string
+        predictedPercentage:
+          type: number
+        predictedNewPrice:
+          type: number
+        confidence:
+          type: string
+        sourceNote:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, itemCode, drugId, predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence, sourceNote, createdAt]
     ScheduleChange:
       type: object
       properties:
@@ -756,13 +995,33 @@ components:
           additionalProperties: true
         significance:
           type: string
-          enum: [normal, high]
+          enum: [normal, medium, high]
         notes:
           type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
       required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, brandName, oldValue, newValue, significance, notes, createdAt]
+    ScheduleChangeSettings:
+      type: object
+      properties:
+        mediumReductionPercentage:
+          type: number
+        highReductionPercentage:
+          type: number
+      required: [mediumReductionPercentage, highReductionPercentage]
+    UpdateScheduleChangeSettings:
+      type: object
+      properties:
+        mediumReductionPercentage:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+        highReductionPercentage:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+      required: [mediumReductionPercentage, highReductionPercentage]
     ArtgEntry:
       type: object
       properties:

@@ -21,6 +21,64 @@ export interface Drug {
   firstPbsListingDate: string;
 }
 
+/**
+ * @nullable
+ */
+export type MedicineDrugSummarySearchMatchLevel = typeof MedicineDrugSummarySearchMatchLevel[keyof typeof MedicineDrugSummarySearchMatchLevel] | null;
+
+
+export const MedicineDrugSummarySearchMatchLevel = {
+  drug: 'drug',
+  brand: 'brand',
+  item: 'item',
+} as const;
+
+export interface MedicineDrugSummary {
+  drugId: number;
+  drugName: string;
+  activeIngredient: string;
+  brandCount: number;
+  itemCount: number;
+  formulary: string;
+  minimumPrice: number;
+  maximumPrice: number;
+  upcomingPredictedReductionCount: number;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  nextPredictedReductionDate: string | null;
+  recentHighChangeCount: number;
+  /** @nullable */
+  searchMatchLevel: MedicineDrugSummarySearchMatchLevel;
+  /** @nullable */
+  matchedBrandName: string | null;
+  /** @nullable */
+  matchedItemCode: string | null;
+}
+
+export interface MedicineBrandSummary {
+  drugId: number;
+  brandName: string;
+  itemCount: number;
+  formulary: string;
+  minimumPrice: number;
+  maximumPrice: number;
+  isInnovator: boolean;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  firstListedDate: string | null;
+  changeCount: number;
+  highChangeCount: number;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  latestChangeDate: string | null;
+}
+
 export type PbsItemFormulary = typeof PbsItemFormulary[keyof typeof PbsItemFormulary];
 
 
@@ -96,6 +154,20 @@ export interface PriceHistory {
   reductionType: string | null;
 }
 
+export interface PredictedReduction {
+  id: number;
+  itemCode: string;
+  drugId: number;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  predictedDate: string;
+  reductionType: string;
+  predictedPercentage: number;
+  predictedNewPrice: number;
+  confidence: string;
+  sourceNote: string;
+  createdAt: string;
+}
+
 export type ScheduleChangeChangeType = typeof ScheduleChangeChangeType[keyof typeof ScheduleChangeChangeType];
 
 
@@ -122,6 +194,7 @@ export type ScheduleChangeSignificance = typeof ScheduleChangeSignificance[keyof
 
 export const ScheduleChangeSignificance = {
   normal: 'normal',
+  medium: 'medium',
   high: 'high',
 } as const;
 
@@ -146,6 +219,24 @@ export interface ScheduleChange {
   /** @nullable */
   notes: string | null;
   createdAt: string;
+}
+
+export interface ScheduleChangeSettings {
+  mediumReductionPercentage: number;
+  highReductionPercentage: number;
+}
+
+export interface UpdateScheduleChangeSettings {
+  /**
+     * @maximum 100
+     * @exclusiveMinimum 0
+     */
+  mediumReductionPercentage: number;
+  /**
+     * @maximum 100
+     * @exclusiveMinimum 0
+     */
+  highReductionPercentage: number;
 }
 
 export interface ArtgEntry {
@@ -326,6 +417,13 @@ search?: string;
 limit?: number;
 };
 
+export type ListMedicineDirectoryParams = {
+/**
+ * Search by drug, ingredient, brand, PBS code, or LI item ID
+ */
+search?: string;
+};
+
 export type ListPbsItemsParams = {
 /**
  * Search by item code, brand name, or drug name
@@ -377,6 +475,7 @@ export type ListScheduleChangesSignificance = typeof ListScheduleChangesSignific
 
 export const ListScheduleChangesSignificance = {
   normal: 'normal',
+  medium: 'medium',
   high: 'high',
 } as const;
 

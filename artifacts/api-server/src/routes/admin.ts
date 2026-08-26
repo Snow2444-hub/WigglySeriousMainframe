@@ -5,11 +5,14 @@ import {
   CreatePbsWatchlistEntryBody,
   CreatePbsWatchlistEntryResponse,
   DeletePbsWatchlistEntryParams,
+  GetScheduleChangeSettingsResponse,
   GetCurrentAdminIngestionRunResponse,
   ListPbsWatchlistEntriesResponse,
   ListAdminIngestionRunsResponse,
   TriggerAdminIngestionBody,
   TriggerAdminIngestionResponse,
+  UpdateScheduleChangeSettingsBody,
+  UpdateScheduleChangeSettingsResponse,
   UpdatePbsWatchlistEntryBody,
   UpdatePbsWatchlistEntryParams,
   UpdatePbsWatchlistEntryResponse,
@@ -18,7 +21,11 @@ import { logger } from "../lib/logger";
 import { fetchSchedule } from "../lib/pbs-ingestion";
 import { buildPbsItemIdRequestFilters, buildPbsRequestFilters } from "../lib/pbs-filtering";
 import { itemIdsFromAtcRelationshipPayload, upsertPbsItemsFromPayload } from "../lib/pbs-item-mapping";
-import { syncScheduleChangesFromStagedData } from "../lib/schedule-changes";
+import {
+  getPriceChangeThresholds,
+  syncScheduleChangesFromStagedData,
+  updatePriceChangeThresholds,
+} from "../lib/schedule-changes";
 import { requireAdmin } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
@@ -431,6 +438,26 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
 router.get("/admin/pbs-watchlist", requireAdmin, async (_req, res): Promise<void> => {
   const entries = await db.select().from(pbsWatchlistTable).orderBy(asc(pbsWatchlistTable.id));
   res.json(ListPbsWatchlistEntriesResponse.parse(entries));
+});
+
+router.get("/admin/schedule-change-settings", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(GetScheduleChangeSettingsResponse.parse(await getPriceChangeThresholds()));
+});
+
+router.patch("/admin/schedule-change-settings", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = UpdateScheduleChangeSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (parsed.data.mediumReductionPercentage >= parsed.data.highReductionPercentage) {
+    res.status(400).json({
+      error: "Medium reduction percentage must be lower than the high reduction percentage",
+    });
+    return;
+  }
+  const settings = await updatePriceChangeThresholds(parsed.data);
+  res.json(UpdateScheduleChangeSettingsResponse.parse(settings));
 });
 
 router.post("/admin/pbs-watchlist", requireAdmin, async (req, res): Promise<void> => {

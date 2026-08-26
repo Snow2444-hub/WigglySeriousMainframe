@@ -1,6 +1,14 @@
-import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
-import { db, artgEntriesTable, drugsTable, pbsItemsTable, priceHistoryTable, scheduleChangesTable } from "@workspace/db";
+import {
+  db,
+  artgEntriesTable,
+  drugsTable,
+  pbsItemsTable,
+  predictedReductionsTable,
+  priceHistoryTable,
+  scheduleChangesTable,
+} from "@workspace/db";
 import {
   GetDrugScheduleTimelineParams,
   GetDrugScheduleTimelineResponse,
@@ -14,6 +22,16 @@ import {
   ListDrugsResponse,
   ListPbsItemsQueryParams,
   ListPbsItemsResponse,
+  ListMedicineBrandItemsParams,
+  ListMedicineBrandItemsResponse,
+  ListMedicineBrandsParams,
+  ListMedicineBrandsResponse,
+  ListMedicineDirectoryQueryParams,
+  ListMedicineDirectoryResponse,
+  ListItemPredictedReductionsParams,
+  ListItemPredictedReductionsResponse,
+  ListItemScheduleChangesParams,
+  ListItemScheduleChangesResponse,
   ListPriceHistoryParams,
   ListPriceHistoryResponse,
   ListScheduleChangesQueryParams,
@@ -93,6 +111,182 @@ const pbsSelect = {
   sponsor: drugsTable.sponsor,
 };
 
+function summarizedFormulary(values: Array<string | null>): string {
+  const unique = [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
+  return unique.length > 0 ? unique.join(" / ") : "Not specified";
+}
+
+function priceRange(values: Array<number | null>): { minimumPrice: number; maximumPrice: number } {
+  const prices = values.filter((value): value is number => value !== null);
+  return {
+    minimumPrice: prices.length > 0 ? Math.min(...prices) : 0,
+    maximumPrice: prices.length > 0 ? Math.max(...prices) : 0,
+  };
+}
+
+function indicatorIsTrue(value: string | null): boolean {
+  if (!value) return false;
+  return !["n", "no", "false", "0"].includes(value.trim().toLowerCase());
+}
+
+router.get("/medicine-directory", async (req, res): Promise<void> => {
+  const parsed = ListMedicineDirectoryQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const recentDate = new Date();
+  recentDate.setUTCDate(recentDate.getUTCDate() - 90);
+  const recentDateString = recentDate.toISOString().slice(0, 10);
+  const [items, predictions, highChanges] = await Promise.all([
+    db.select(pbsSelect).from(pbsItemsTable).innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
+    db
+      .select({
+        drugId: predictedReductionsTable.drugId,
+        predictedDate: predictedReductionsTable.predictedDate,
+      })
+      .from(predictedReductionsTable)
+      .where(gte(predictedReductionsTable.predictedDate, today)),
+    db
+      .select({ drugId: scheduleChangesTable.drugId })
+      .from(scheduleChangesTable)
+      .where(
+        and(
+          eq(scheduleChangesTable.significance, "high"),
+          gte(scheduleChangesTable.effectiveDate, recentDateString),
+        ),
+      ),
+  ]);
+  const grouped = new Map<number, typeof items>();
+  for (const item of items) {
+    const group = grouped.get(item.drugId) ?? [];
+    group.push(item);
+    grouped.set(item.drugId, group);
+  }
+  const search = parsed.data.search?.trim().toLowerCase();
+  const summaries = [...grouped.entries()].flatMap(([drugId, group]) => {
+    const first = group[0];
+    const drugMatch = Boolean(
+      search &&
+        (first.drugName.toLowerCase().includes(search) ||
+          first.activeIngredient.toLowerCase().includes(search)),
+    );
+    const brandMatch = search
+      ? group.find((item) => item.brandName.toLowerCase().includes(search))
+      : undefined;
+    const itemMatch = search
+      ? group.find((item) =>
+          [item.itemCode, item.pbsCode, item.liItemId].some((value) =>
+            value?.toLowerCase().includes(search),
+          ),
+        )
+      : undefined;
+    if (search && !drugMatch && !brandMatch && !itemMatch) return [];
+    const upcoming = predictions
+      .filter((prediction) => prediction.drugId === drugId)
+      .sort((a, b) => a.predictedDate.localeCompare(b.predictedDate));
+    return [
+      {
+        drugId,
+        drugName: first.drugName,
+        activeIngredient: first.activeIngredient,
+        brandCount: new Set(group.map((item) => item.brandName.toLowerCase())).size,
+        itemCount: group.length,
+        formulary: summarizedFormulary(group.map((item) => item.formulary)),
+        ...priceRange(group.map((item) => item.currentAemp)),
+        upcomingPredictedReductionCount: upcoming.length,
+        nextPredictedReductionDate: upcoming[0]?.predictedDate ?? null,
+        recentHighChangeCount: highChanges.filter((change) => change.drugId === drugId).length,
+        searchMatchLevel: search ? (drugMatch ? "drug" : brandMatch ? "brand" : "item") : null,
+        matchedBrandName: drugMatch ? null : (brandMatch?.brandName ?? itemMatch?.brandName ?? null),
+        matchedItemCode: drugMatch || brandMatch ? null : (itemMatch?.itemCode ?? null),
+      },
+    ];
+  });
+  summaries.sort((a, b) => a.drugName.localeCompare(b.drugName));
+  res.json(ListMedicineDirectoryResponse.parse(summaries));
+});
+
+router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
+  const parsed = ListMedicineBrandsParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const [items, changes] = await Promise.all([
+    db
+      .select(pbsSelect)
+      .from(pbsItemsTable)
+      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
+      .where(eq(pbsItemsTable.drugId, parsed.data.id)),
+    db
+      .select({
+        brandName: scheduleChangesTable.brandName,
+        significance: scheduleChangesTable.significance,
+        effectiveDate: scheduleChangesTable.effectiveDate,
+      })
+      .from(scheduleChangesTable)
+      .where(eq(scheduleChangesTable.drugId, parsed.data.id)),
+  ]);
+  const grouped = new Map<string, typeof items>();
+  for (const item of items) {
+    const key = item.brandName.trim().toLowerCase();
+    const group = grouped.get(key) ?? [];
+    group.push(item);
+    grouped.set(key, group);
+  }
+  const summaries = [...grouped.values()].map((group) => {
+    const first = group[0];
+    const brandChanges = changes.filter(
+      (change) => change.brandName?.trim().toLowerCase() === first.brandName.trim().toLowerCase(),
+    );
+    const listedDates = group
+      .map((item) => item.firstListedDate)
+      .filter((date): date is string => date !== null)
+      .sort();
+    const changeDates = brandChanges.map((change) => change.effectiveDate).sort();
+    return {
+      drugId: parsed.data.id,
+      brandName: first.brandName,
+      itemCount: group.length,
+      formulary: summarizedFormulary(group.map((item) => item.formulary)),
+      ...priceRange(group.map((item) => item.currentAemp)),
+      isInnovator: group.some(
+        (item) =>
+          indicatorIsTrue(item.innovatorIndicator) ||
+          indicatorIsTrue(item.originatorBrandIndicator),
+      ),
+      firstListedDate: listedDates[0] ?? null,
+      changeCount: brandChanges.length,
+      highChangeCount: brandChanges.filter((change) => change.significance === "high").length,
+      latestChangeDate: changeDates.at(-1) ?? null,
+    };
+  });
+  summaries.sort((a, b) => a.brandName.localeCompare(b.brandName));
+  res.json(ListMedicineBrandsResponse.parse(summaries));
+});
+
+router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Promise<void> => {
+  const parsed = ListMedicineBrandItemsParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db
+    .select(pbsSelect)
+    .from(pbsItemsTable)
+    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
+    .where(
+      and(
+        eq(pbsItemsTable.drugId, parsed.data.id),
+        ilike(pbsItemsTable.brandName, parsed.data.brandName),
+      ),
+    )
+    .orderBy(asc(pbsItemsTable.itemCode));
+  res.json(ListMedicineBrandItemsResponse.parse(rows));
+});
+
 router.get("/pbs-items", async (req, res): Promise<void> => {
   const parsed = ListPbsItemsQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -154,6 +348,20 @@ router.get("/pbs-items/:itemCode/price-history", async (req, res): Promise<void>
   res.json(ListPriceHistoryResponse.parse(rows));
 });
 
+router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promise<void> => {
+  const parsed = ListItemPredictedReductionsParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(predictedReductionsTable)
+    .where(eq(predictedReductionsTable.itemCode, parsed.data.itemCode))
+    .orderBy(asc(predictedReductionsTable.predictedDate));
+  res.json(ListItemPredictedReductionsResponse.parse(rows));
+});
+
 const scheduleChangeSelect = {
   id: scheduleChangesTable.id,
   scheduleCode: scheduleChangesTable.scheduleCode,
@@ -170,6 +378,26 @@ const scheduleChangeSelect = {
   notes: scheduleChangesTable.notes,
   createdAt: scheduleChangesTable.createdAt,
 };
+
+router.get("/pbs-items/:itemCode/schedule-changes", async (req, res): Promise<void> => {
+  const parsed = ListItemScheduleChangesParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db
+    .select(scheduleChangeSelect)
+    .from(scheduleChangesTable)
+    .innerJoin(drugsTable, eq(scheduleChangesTable.drugId, drugsTable.id))
+    .where(
+      or(
+        eq(scheduleChangesTable.liItemId, parsed.data.itemCode),
+        eq(scheduleChangesTable.pbsCode, parsed.data.itemCode),
+      ),
+    )
+    .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id));
+  res.json(ListItemScheduleChangesResponse.parse(rows));
+});
 
 router.get("/schedule-changes", async (req, res): Promise<void> => {
   const parsed = ListScheduleChangesQueryParams.safeParse(req.query);
