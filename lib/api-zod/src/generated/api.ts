@@ -100,6 +100,8 @@ export const ListMedicineDirectoryResponseItem = zod.object({
   "maximumPrice": zod.number(),
   "upcomingPredictedReductionCount": zod.int(),
   "nextPredictedReductionDate": zod.string().regex(listMedicineDirectoryResponseNextPredictedReductionDateRegExp).nullable(),
+  "nextPredictedReductionType": zod.string().nullable(),
+  "nextPredictedReductionPercentage": zod.number().nullable(),
   "recentHighChangeCount": zod.int(),
   "searchMatchLevel": zod.union([zod.literal('drug'),zod.literal('brand'),zod.literal('item'),zod.literal(null)]).nullable(),
   "matchedBrandName": zod.string().nullable(),

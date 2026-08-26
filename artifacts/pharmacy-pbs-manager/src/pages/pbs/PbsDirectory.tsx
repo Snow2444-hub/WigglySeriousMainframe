@@ -11,6 +11,16 @@ import { Search, ChevronRight, ArrowLeft, Pill, Building2, Tag, AlertTriangle } 
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+const shortDate = (value: string) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+const normalise = (value: string) => value.trim().toLocaleLowerCase();
+const priceLabel = (minimum: number, maximum: number) => minimum === maximum
+  ? money(minimum)
+  : <>{money(minimum)} <span className="opacity-40">-</span> {money(maximum)}</>;
+const reductionTypeLabel = (value: string) => {
+  const label = value.replace(/^\d+-year\s+/i, '').replaceAll('_', ' ');
+  return label.charAt(0).toLocaleUpperCase() + label.slice(1);
+};
+const reductionPercentageLabel = (value: number) => `-${Math.abs(value).toFixed(1).replace(/\.0$/, '')}%`;
 
 type Tier = 
   | { level: 'drugs' }
@@ -113,6 +123,14 @@ export function PbsDirectory() {
                 {drugsQuery.data.map(drug => {
                   const isBrand = drug.searchMatchLevel === 'brand';
                   const isItem = drug.searchMatchLevel === 'item';
+                  const ingredientDiffers = normalise(drug.activeIngredient) !== normalise(drug.drugName);
+                  const secondaryLabel = isBrand || isItem
+                    ? ingredientDiffers
+                      ? <>{drug.drugName} <span className="mx-1.5 opacity-50">•</span> {drug.activeIngredient}</>
+                      : drug.drugName
+                    : ingredientDiffers
+                      ? drug.activeIngredient
+                      : null;
                   
                   return (
                     <button 
@@ -138,23 +156,23 @@ export function PbsDirectory() {
                         <div className="text-lg font-bold tracking-tight">
                           {isItem ? (drug.matchedBrandName || drug.drugName) : isBrand ? drug.matchedBrandName : drug.drugName}
                         </div>
-                        <div className="mt-1 text-sm text-muted-foreground font-medium">
-                          {isBrand || isItem ? (
-                            <>{drug.drugName} <span className="opacity-50 mx-1.5">•</span> {drug.activeIngredient}</>
-                          ) : (
-                            drug.activeIngredient
-                          )}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          <span>{drug.brandCount} brands</span>
+                         {secondaryLabel && (
+                           <div className="mt-1 text-sm font-medium text-muted-foreground">
+                             {secondaryLabel}
+                           </div>
+                         )}
+                         <div className="mt-2 flex flex-wrap gap-x-2 gap-y-1.5 font-mono text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
+                           <span>{drug.brandCount} brand{drug.brandCount === 1 ? '' : 's'}</span>
                           <span>•</span>
                           <span>{drug.itemCount} items</span>
                           <span>•</span>
                           <span>{drug.formulary}</span>
-                          {drug.upcomingPredictedReductionCount > 0 && (
+                           {drug.nextPredictedReductionDate && drug.nextPredictedReductionType && drug.nextPredictedReductionPercentage !== null && (
                             <>
                               <span>•</span>
-                              <span className="text-primary">{drug.upcomingPredictedReductionCount} upcoming reduction{drug.upcomingPredictedReductionCount === 1 ? '' : 's'}{drug.nextPredictedReductionDate ? ` from ${date(drug.nextPredictedReductionDate)}` : ''}</span>
+                               <span className="font-semibold normal-case tracking-normal text-primary">
+                                 {reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, {reductionPercentageLabel(drug.nextPredictedReductionPercentage)}
+                               </span>
                             </>
                           )}
                         </div>
@@ -170,7 +188,7 @@ export function PbsDirectory() {
                         <div className="text-right hidden md:block">
                           <div className="text-xs font-semibold text-muted-foreground">Ex-manufacturer / wholesale price range</div>
                           <div className="font-mono text-sm font-bold text-foreground mt-0.5">
-                            {money(drug.minimumPrice)} <span className="opacity-40">-</span> {money(drug.maximumPrice)}
+                             {priceLabel(drug.minimumPrice, drug.maximumPrice)}
                           </div>
                         </div>
                         <ChevronRight className="h-5 w-5 text-muted-foreground/50" />

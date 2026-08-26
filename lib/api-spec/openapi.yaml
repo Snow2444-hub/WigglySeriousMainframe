@@ -809,6 +809,10 @@ components:
         nextPredictedReductionDate:
           type: ["string", "null"]
           pattern: '^\d{4}-\d{2}-\d{2}$'
+        nextPredictedReductionType:
+          type: ["string", "null"]
+        nextPredictedReductionPercentage:
+          type: ["number", "null"]
         recentHighChangeCount:
           type: integer
         searchMatchLevel:
@@ -818,7 +822,7 @@ components:
           type: ["string", "null"]
         matchedItemCode:
           type: ["string", "null"]
-      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, recentHighChangeCount, searchMatchLevel, matchedBrandName, matchedItemCode]
+      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, recentHighChangeCount, searchMatchLevel, matchedBrandName, matchedItemCode]
     MedicineBrandSummary:
       type: object
       properties:

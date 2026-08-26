@@ -145,6 +145,8 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
       .select({
         drugId: predictedReductionsTable.drugId,
         predictedDate: predictedReductionsTable.predictedDate,
+        reductionType: predictedReductionsTable.reductionType,
+        predictedPercentage: predictedReductionsTable.predictedPercentage,
       })
       .from(predictedReductionsTable)
       .where(gte(predictedReductionsTable.predictedDate, today)),
@@ -197,6 +199,8 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         ...priceRange(group.map((item) => item.currentAemp)),
         upcomingPredictedReductionCount: upcoming.length,
         nextPredictedReductionDate: upcoming[0]?.predictedDate ?? null,
+         nextPredictedReductionType: upcoming[0]?.reductionType ?? null,
+         nextPredictedReductionPercentage: upcoming[0]?.predictedPercentage ?? null,
         recentHighChangeCount: highChanges.filter((change) => change.drugId === drugId).length,
         searchMatchLevel: search ? (drugMatch ? "drug" : brandMatch ? "brand" : "item") : null,
         matchedBrandName: drugMatch ? null : (brandMatch?.brandName ?? itemMatch?.brandName ?? null),
