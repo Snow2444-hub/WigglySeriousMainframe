@@ -8,3 +8,4 @@
 - [Generated query polling](generated-query-polling.md) — Passing custom options to this Orval React Query output requires its generated query key explicitly.
 - [API one-off runners](api-one-off-runners.md) — bundle workspace libraries with the API’s esbuild/Pino setup; externalized DB source fails under Node ESM.
 - [Schedule change completeness](schedule-change-completeness.md) — never derive alerts from an ingestion run that exhausted its configured page cap.
+- [Same-strength PBS listings](same-strength-pbs-listings.md) — visually identical PBS items may be distinct benefit listings; do not deduplicate by strength, pack, and price.

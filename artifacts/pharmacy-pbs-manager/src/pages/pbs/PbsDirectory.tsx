@@ -301,42 +301,67 @@ export function PbsDirectory() {
 
         {tier.level === 'items' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="hidden grid-cols-[1.5fr_1fr_1fr_auto] border-b border-border bg-muted/30 px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground md:grid">
-              <span>Item details</span>
-              <span>Formulary</span>
-              <span>Ex-manufacturer / wholesale price</span>
-              <span className="text-right">Action</span>
-            </div>
             {itemsQuery.isLoading ? <div className="p-6"><QueryState kind="loading" /></div> : 
              itemsQuery.isError ? <div className="p-6"><QueryState kind="error" onRetry={() => itemsQuery.refetch()} /></div> : 
              !itemsQuery.data?.length ? <div className="p-6"><QueryState kind="empty" /></div> : (
-              <div className="divide-y divide-border">
-                {itemsQuery.data.map(item => (
-                  <Link 
-                    key={item.itemCode} 
-                    href={`/pbs/${item.itemCode}`}
-                    className="w-full grid gap-2 px-6 py-4 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1.5fr_1fr_1fr_auto] md:items-center"
-                  >
-                    <div>
-                      <div className="font-mono text-xs font-bold text-primary mb-1">PBS {item.pbsCode || 'not supplied'}</div>
-                      <div className="font-mono text-[10px] text-muted-foreground">LI item {item.liItemId || item.itemCode}</div>
-                      <div className="text-sm font-bold">{item.packSize || 'No pack size'}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">{item.liForm || item.form || 'Unknown form'}</div>
-                    </div>
-                    <div>
-                      <span className={`inline-flex rounded-md px-2 py-1 font-mono text-[10px] font-bold ${item.formulary === 'F1' ? 'bg-sidebar-primary/10 text-sidebar-primary' : 'bg-chart-2/15 text-chart-2'}`}>
-                        {item.formulary}
+              (() => {
+                const items = itemsQuery.data;
+                const formularyCounts = items.reduce((counts, item) => {
+                  counts.set(item.formulary, (counts.get(item.formulary) ?? 0) + 1);
+                  return counts;
+                }, new Map<string, number>());
+                const primaryFormulary = [...formularyCounts.entries()]
+                  .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+                const allShareFormulary = formularyCounts.size === 1;
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2 md:px-6">
+                      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                        Listings for {tier.brand.brandName}
+                      </span>
+                      <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">
+                        {items.length} listing{items.length === 1 ? '' : 's'}
+                        {primaryFormulary && <> · {allShareFormulary ? 'Formulary' : 'Default'} {primaryFormulary}</>}
                       </span>
                     </div>
-                    <div className="font-mono text-sm font-bold text-foreground">
-                      {money(item.currentAemp)}
+                    <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-muted/20 px-4 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/70 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:px-6">
+                      <span>Strength</span>
+                      <span>Pack size</span>
+                      <span>PBS code</span>
+                      <span className="text-right">Ex-manufacturer / wholesale price</span>
+                      <span className="hidden w-4 md:block" />
                     </div>
-                    <div className="text-right flex justify-end">
-                      <ChevronRight className="h-5 w-5 text-muted-foreground/50" />
+                    <div className="divide-y divide-border/70">
+                      {items.map((item) => (
+                        <Link
+                          key={item.itemCode}
+                          href={`/pbs/${item.itemCode}`}
+                          className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:px-6 md:py-1.5"
+                          title={`Open listing details${item.liItemId ? ` · LI item ${item.liItemId}` : ''}`}
+                        >
+                          <span className="whitespace-nowrap text-sm font-bold tracking-tight text-foreground">
+                            {item.strength || 'Unknown strength'}
+                          </span>
+                          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                            {item.packSize ? `Pack of ${item.packSize}` : 'Pack not supplied'}
+                          </span>
+                          <span className="min-w-0 truncate font-mono text-xs font-medium text-muted-foreground">
+                            PBS {item.pbsCode || 'not supplied'}
+                          </span>
+                          <span className="flex items-center justify-end gap-2 whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
+                            {money(item.currentAemp)}
+                            {item.formulary !== primaryFormulary && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{item.formulary}</span>
+                            )}
+                          </span>
+                          <ChevronRight className="hidden h-4 w-4 text-muted-foreground/40 md:block" />
+                        </Link>
+                      ))}
                     </div>
-                  </Link>
-                ))}
-              </div>
+                  </>
+                );
+              })()
             )}
           </div>
         )}

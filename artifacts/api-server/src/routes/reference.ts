@@ -138,6 +138,11 @@ function brandGroupName(brandName: string): string {
   return brandGroupKey(brandName) === "crosuva" ? "Crosuva" : brandName;
 }
 
+function strengthSortValue(strength: string | null): number {
+  const value = strength?.match(/\d+(?:\.\d+)?/)?.[0];
+  return value ? Number(value) : Number.POSITIVE_INFINITY;
+}
+
 router.get("/medicine-directory", async (req, res): Promise<void> => {
   const parsed = ListMedicineDirectoryQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -310,6 +315,11 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
       ),
     )
     .orderBy(asc(pbsItemsTable.itemCode));
+  rows.sort((left, right) => {
+    const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
+    if (strengthOrder !== 0) return strengthOrder;
+    return (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode);
+  });
   res.json(ListMedicineBrandItemsResponse.parse(rows));
 });
 
