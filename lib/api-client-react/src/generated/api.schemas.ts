@@ -96,6 +96,58 @@ export interface PriceHistory {
   reductionType: string | null;
 }
 
+export type ScheduleChangeChangeType = typeof ScheduleChangeChangeType[keyof typeof ScheduleChangeChangeType];
+
+
+export const ScheduleChangeChangeType = {
+  new_item: 'new_item',
+  new_brand: 'new_brand',
+  delisted: 'delisted',
+  price_change: 'price_change',
+  formulary_change: 'formulary_change',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ScheduleChangeOldValue = { [key: string]: unknown } | null;
+
+/**
+ * @nullable
+ */
+export type ScheduleChangeNewValue = { [key: string]: unknown } | null;
+
+export type ScheduleChangeSignificance = typeof ScheduleChangeSignificance[keyof typeof ScheduleChangeSignificance];
+
+
+export const ScheduleChangeSignificance = {
+  normal: 'normal',
+  high: 'high',
+} as const;
+
+export interface ScheduleChange {
+  id: number;
+  scheduleCode: number;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  effectiveDate: string;
+  changeType: ScheduleChangeChangeType;
+  liItemId: string;
+  /** @nullable */
+  pbsCode: string | null;
+  drugId: number;
+  drugName: string;
+  /** @nullable */
+  brandName: string | null;
+  /** @nullable */
+  oldValue: ScheduleChangeOldValue;
+  /** @nullable */
+  newValue: ScheduleChangeNewValue;
+  significance: ScheduleChangeSignificance;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+}
+
 export interface ArtgEntry {
   artgId: string;
   activeIngredient: string;
@@ -293,6 +345,39 @@ export type ListPbsItemsFormulary = typeof ListPbsItemsFormulary[keyof typeof Li
 export const ListPbsItemsFormulary = {
   F1: 'F1',
   F2: 'F2',
+} as const;
+
+export type ListScheduleChangesParams = {
+/**
+ * @minimum 1
+ */
+drugId?: number;
+changeType?: ListScheduleChangesChangeType;
+significance?: ListScheduleChangesSignificance;
+/**
+ * @minimum 1
+ * @maximum 500
+ */
+limit?: number;
+};
+
+export type ListScheduleChangesChangeType = typeof ListScheduleChangesChangeType[keyof typeof ListScheduleChangesChangeType];
+
+
+export const ListScheduleChangesChangeType = {
+  new_item: 'new_item',
+  new_brand: 'new_brand',
+  delisted: 'delisted',
+  price_change: 'price_change',
+  formulary_change: 'formulary_change',
+} as const;
+
+export type ListScheduleChangesSignificance = typeof ListScheduleChangesSignificance[keyof typeof ListScheduleChangesSignificance];
+
+
+export const ListScheduleChangesSignificance = {
+  normal: 'normal',
+  high: 'high',
 } as const;
 
 export type ListArtgEntriesParams = {

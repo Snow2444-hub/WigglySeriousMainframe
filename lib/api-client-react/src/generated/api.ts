@@ -31,6 +31,7 @@ import type {
   ListArtgEntriesParams,
   ListDrugsParams,
   ListPbsItemsParams,
+  ListScheduleChangesParams,
   PbsItem,
   PbsWatchlistEntry,
   PbsWatchlistEntryInput,
@@ -38,7 +39,8 @@ import type {
   PharmacyStock,
   PharmacyStockInput,
   PharmacyStockUpdate,
-  PriceHistory
+  PriceHistory,
+  ScheduleChange
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -610,6 +612,167 @@ export function useListPriceHistory<TData = Awaited<ReturnType<typeof listPriceH
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPriceHistoryQueryOptions(itemCode,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListScheduleChangesUrl = (params?: ListScheduleChangesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/schedule-changes?${stringifiedParams}` : `/api/schedule-changes`
+}
+
+/**
+ * @summary List PBS schedule changes
+ */
+export const listScheduleChanges = async (params?: ListScheduleChangesParams, options?: Parameters<typeof customFetch>[1]): Promise<ScheduleChange[]> => {
+
+  return customFetch<ScheduleChange[]>(getListScheduleChangesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListScheduleChangesQueryKey = (params?: ListScheduleChangesParams,) => {
+    return [
+    `/api/schedule-changes`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListScheduleChangesQueryOptions = <TData = Awaited<ReturnType<typeof listScheduleChanges>>, TError = ErrorType<unknown>>(params?: ListScheduleChangesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listScheduleChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListScheduleChangesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScheduleChanges>>> = ({ signal }) => listScheduleChanges(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listScheduleChanges>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListScheduleChangesQueryResult = NonNullable<Awaited<ReturnType<typeof listScheduleChanges>>>
+export type ListScheduleChangesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List PBS schedule changes
+ */
+
+export function useListScheduleChanges<TData = Awaited<ReturnType<typeof listScheduleChanges>>, TError = ErrorType<unknown>>(
+ params?: ListScheduleChangesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listScheduleChanges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListScheduleChangesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetDrugScheduleTimelineUrl = (id: number,) => {
+
+
+
+
+  return `/api/drugs/${id}/schedule-timeline`
+}
+
+/**
+ * @summary Get the schedule-change timeline for a drug
+ */
+export const getDrugScheduleTimeline = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<ScheduleChange[]> => {
+
+  return customFetch<ScheduleChange[]>(getGetDrugScheduleTimelineUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetDrugScheduleTimelineQueryKey = (id: number,) => {
+    return [
+    `/api/drugs/${id}/schedule-timeline`
+    ] as const;
+    }
+
+
+export const getGetDrugScheduleTimelineQueryOptions = <TData = Awaited<ReturnType<typeof getDrugScheduleTimeline>>, TError = ErrorType<unknown>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDrugScheduleTimeline>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetDrugScheduleTimelineQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getDrugScheduleTimeline>>> = ({ signal }) => getDrugScheduleTimeline(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDrugScheduleTimeline>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetDrugScheduleTimelineQueryResult = NonNullable<Awaited<ReturnType<typeof getDrugScheduleTimeline>>>
+export type GetDrugScheduleTimelineQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the schedule-change timeline for a drug
+ */
+
+export function useGetDrugScheduleTimeline<TData = Awaited<ReturnType<typeof getDrugScheduleTimeline>>, TError = ErrorType<unknown>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDrugScheduleTimeline>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetDrugScheduleTimelineQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

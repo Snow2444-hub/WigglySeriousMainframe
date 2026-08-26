@@ -190,6 +190,73 @@ export const ListPriceHistoryResponse = zod.array(ListPriceHistoryResponseItem)
 
 
 /**
+ * @summary List PBS schedule changes
+ */
+
+export const listScheduleChangesQueryLimitDefault = 200;
+export const listScheduleChangesQueryLimitMax = 500;
+
+
+
+export const ListScheduleChangesQueryParams = zod.object({
+  "drugId": zod.coerce.number().int().min(1).optional(),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']).optional(),
+  "significance": zod.enum(['normal', 'high']).optional(),
+  "limit": zod.coerce.number().int().min(1).max(listScheduleChangesQueryLimitMax).default(listScheduleChangesQueryLimitDefault)
+})
+
+export const listScheduleChangesResponseEffectiveDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const ListScheduleChangesResponseItem = zod.object({
+  "id": zod.int(),
+  "scheduleCode": zod.int(),
+  "effectiveDate": zod.string().regex(listScheduleChangesResponseEffectiveDateRegExp),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "liItemId": zod.string(),
+  "pbsCode": zod.string().nullable(),
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string().nullable(),
+  "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "significance": zod.enum(['normal', 'high']),
+  "notes": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListScheduleChangesResponse = zod.array(ListScheduleChangesResponseItem)
+
+
+/**
+ * @summary Get the schedule-change timeline for a drug
+ */
+export const GetDrugScheduleTimelineParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const getDrugScheduleTimelineResponseEffectiveDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetDrugScheduleTimelineResponseItem = zod.object({
+  "id": zod.int(),
+  "scheduleCode": zod.int(),
+  "effectiveDate": zod.string().regex(getDrugScheduleTimelineResponseEffectiveDateRegExp),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "liItemId": zod.string(),
+  "pbsCode": zod.string().nullable(),
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string().nullable(),
+  "oldValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "newValue": zod.record(zod.string(), zod.unknown()).nullable(),
+  "significance": zod.enum(['normal', 'high']),
+  "notes": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const GetDrugScheduleTimelineResponse = zod.array(GetDrugScheduleTimelineResponseItem)
+
+
+/**
  * @summary List ARTG registrations
  */
 export const ListArtgEntriesQueryParams = zod.object({

@@ -7,3 +7,4 @@
 - [PBS schedule backfill](pbs-schedule-backfill.md) — historical schedules must be ordered by effective date and fetched with explicit schedule codes.
 - [Generated query polling](generated-query-polling.md) — Passing custom options to this Orval React Query output requires its generated query key explicitly.
 - [API one-off runners](api-one-off-runners.md) — bundle workspace libraries with the API’s esbuild/Pino setup; externalized DB source fails under Node ESM.
+- [Schedule change completeness](schedule-change-completeness.md) — never derive alerts from an ingestion run that exhausted its configured page cap.

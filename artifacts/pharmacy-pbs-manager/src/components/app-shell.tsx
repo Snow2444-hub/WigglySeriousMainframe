@@ -4,6 +4,7 @@ import { Link, useLocation } from 'wouter';
 import {
   Activity,
   ArrowUpRight,
+  Bell,
   BookOpen,
   Boxes,
   ClipboardList,
@@ -19,6 +20,7 @@ import { useCurrentRole } from '@/components/admin-guard';
 
 const navItems = [
   { href: '/dashboard', label: 'Overview', icon: Activity },
+  { href: '/changes', label: 'PBS updates', icon: Bell },
   { href: '/pbs', label: 'PBS directory', icon: BookOpen },
   { href: '/artg', label: 'ARTG register', icon: Database },
   { href: '/stock', label: 'Private stock', icon: Boxes },

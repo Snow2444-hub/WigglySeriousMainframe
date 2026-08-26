@@ -18,6 +18,7 @@ import { logger } from "../lib/logger";
 import { fetchSchedule } from "../lib/pbs-ingestion";
 import { buildPbsItemIdRequestFilters, buildPbsRequestFilters } from "../lib/pbs-filtering";
 import { itemIdsFromAtcRelationshipPayload, upsertPbsItemsFromPayload } from "../lib/pbs-item-mapping";
+import { syncScheduleChangesFromStagedData } from "../lib/schedule-changes";
 import { requireAdmin } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
@@ -145,6 +146,11 @@ export async function executeIngestionRun(
     if (recordsReturned > 0 && recordsProcessed === 0) {
       throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
     }
+    const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
+    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
+    if (pageCapReached) {
+      logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the ingestion page cap was reached");
+    }
 
     await db
       .update(ingestionRunsTable)
@@ -158,7 +164,7 @@ export async function executeIngestionRun(
       .where(eq(ingestionRunsTable.id, runId));
 
     logger.info(
-      { runId, pages: pages.length, recordsProcessed, requestUrls: [...requestUrls] },
+      { runId, pages: pages.length, recordsProcessed, changesRecorded, requestUrls: [...requestUrls] },
       "PBS ingestion run completed",
     );
   } catch (error) {
@@ -344,6 +350,11 @@ async function executeBackfillIngestionRun(
     if (recordsReturned > 0 && recordsProcessed === 0) {
       throw new Error(`PBS backfill returned ${recordsReturned} item records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
     }
+    const pageCapReached = maxPages !== undefined && pagesFetched >= maxPages;
+    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
+    if (pageCapReached) {
+      logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the backfill page cap was reached");
+    }
 
     await db
       .update(ingestionRunsTable)
@@ -362,6 +373,7 @@ async function executeBackfillIngestionRun(
         schedules: uniqueSchedules.length,
         pages: pagesFetched,
         recordsProcessed,
+        changesRecorded,
         requestUrls: [...requestUrls],
       },
       "PBS backfill ingestion run completed",

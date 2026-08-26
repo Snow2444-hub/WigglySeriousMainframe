@@ -1,7 +1,9 @@
 import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
 import { Router, type IRouter } from "express";
-import { db, artgEntriesTable, drugsTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
+import { db, artgEntriesTable, drugsTable, pbsItemsTable, priceHistoryTable, scheduleChangesTable } from "@workspace/db";
 import {
+  GetDrugScheduleTimelineParams,
+  GetDrugScheduleTimelineResponse,
   GetDrugParams,
   GetDrugResponse,
   GetPbsItemParams,
@@ -14,6 +16,8 @@ import {
   ListPbsItemsResponse,
   ListPriceHistoryParams,
   ListPriceHistoryResponse,
+  ListScheduleChangesQueryParams,
+  ListScheduleChangesResponse,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -148,6 +152,61 @@ router.get("/pbs-items/:itemCode/price-history", async (req, res): Promise<void>
     .where(eq(priceHistoryTable.itemCode, parsed.data.itemCode))
     .orderBy(desc(priceHistoryTable.priceDate));
   res.json(ListPriceHistoryResponse.parse(rows));
+});
+
+const scheduleChangeSelect = {
+  id: scheduleChangesTable.id,
+  scheduleCode: scheduleChangesTable.scheduleCode,
+  effectiveDate: scheduleChangesTable.effectiveDate,
+  changeType: scheduleChangesTable.changeType,
+  liItemId: scheduleChangesTable.liItemId,
+  pbsCode: scheduleChangesTable.pbsCode,
+  drugId: scheduleChangesTable.drugId,
+  drugName: drugsTable.name,
+  brandName: scheduleChangesTable.brandName,
+  oldValue: scheduleChangesTable.oldValue,
+  newValue: scheduleChangesTable.newValue,
+  significance: scheduleChangesTable.significance,
+  notes: scheduleChangesTable.notes,
+  createdAt: scheduleChangesTable.createdAt,
+};
+
+router.get("/schedule-changes", async (req, res): Promise<void> => {
+  const parsed = ListScheduleChangesQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const { drugId, changeType, significance, limit = 200 } = parsed.data;
+  const rows = await db
+    .select(scheduleChangeSelect)
+    .from(scheduleChangesTable)
+    .innerJoin(drugsTable, eq(scheduleChangesTable.drugId, drugsTable.id))
+    .where(
+      and(
+        drugId ? eq(scheduleChangesTable.drugId, drugId) : undefined,
+        changeType ? eq(scheduleChangesTable.changeType, changeType) : undefined,
+        significance ? eq(scheduleChangesTable.significance, significance) : undefined,
+      ),
+    )
+    .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id))
+    .limit(limit);
+  res.json(ListScheduleChangesResponse.parse(rows));
+});
+
+router.get("/drugs/:id/schedule-timeline", async (req, res): Promise<void> => {
+  const parsed = GetDrugScheduleTimelineParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db
+    .select(scheduleChangeSelect)
+    .from(scheduleChangesTable)
+    .innerJoin(drugsTable, eq(scheduleChangesTable.drugId, drugsTable.id))
+    .where(eq(scheduleChangesTable.drugId, parsed.data.id))
+    .orderBy(asc(scheduleChangesTable.effectiveDate), asc(scheduleChangesTable.id));
+  res.json(GetDrugScheduleTimelineResponse.parse(rows));
 });
 
 router.get("/artg-entries", async (req, res): Promise<void> => {

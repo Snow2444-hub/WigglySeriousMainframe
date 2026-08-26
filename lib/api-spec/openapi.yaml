@@ -16,6 +16,8 @@ tags:
     description: PBS drug reference data
   - name: pbs
     description: PBS item and price information
+  - name: changes
+    description: PBS schedule change feed
   - name: artg
     description: ARTG registration data
   - name: stock
@@ -169,6 +171,59 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PriceHistory"
+  /schedule-changes:
+    get:
+      operationId: listScheduleChanges
+      tags: [changes]
+      summary: List PBS schedule changes
+      parameters:
+        - name: drugId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: changeType
+          in: query
+          schema:
+            type: string
+            enum: [new_item, new_brand, delisted, price_change, formulary_change]
+        - name: significance
+          in: query
+          schema:
+            type: string
+            enum: [normal, high]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: Chronological schedule changes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleChange"
+  /drugs/{id}/schedule-timeline:
+    get:
+      operationId: getDrugScheduleTimeline
+      tags: [changes]
+      summary: Get the schedule-change timeline for a drug
+      parameters:
+        - $ref: "#/components/parameters/DrugId"
+      responses:
+        "200":
+          description: Drug schedule-change timeline
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleChange"
   /artg-entries:
     get:
       operationId: listArtgEntries
@@ -670,6 +725,44 @@ components:
         reductionType:
           type: ["string", "null"]
       required: [id, itemCode, priceDate, scheduleCode, scheduleEffectiveDate, aemp, dpmq, reductionType]
+    ScheduleChange:
+      type: object
+      properties:
+        id:
+          type: integer
+        scheduleCode:
+          type: integer
+        effectiveDate:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+        changeType:
+          type: string
+          enum: [new_item, new_brand, delisted, price_change, formulary_change]
+        liItemId:
+          type: string
+        pbsCode:
+          type: ["string", "null"]
+        drugId:
+          type: integer
+        drugName:
+          type: string
+        brandName:
+          type: ["string", "null"]
+        oldValue:
+          type: ["object", "null"]
+          additionalProperties: true
+        newValue:
+          type: ["object", "null"]
+          additionalProperties: true
+        significance:
+          type: string
+          enum: [normal, high]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, brandName, oldValue, newValue, significance, notes, createdAt]
     ArtgEntry:
       type: object
       properties:

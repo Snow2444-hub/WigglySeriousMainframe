@@ -17,6 +17,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ArtgDirectory, AdminPage, Dashboard, PbsDirectory, StockPage } from "@/pages/pages";
+import { ChangesPage } from "@/pages/changes";
 import { AdminGuard } from "@/components/admin-guard";
 import NotFound from "@/pages/not-found";
 
@@ -173,6 +174,7 @@ function Router() {
     <Route path="/sign-in/*?" component={() => <AuthScreen mode="sign-in" />} />
     <Route path="/sign-up/*?" component={() => <AuthScreen mode="sign-up" />} />
     <Route path="/dashboard" component={() => <Protected><Dashboard /></Protected>} />
+    <Route path="/changes" component={() => <Protected><ChangesPage /></Protected>} />
     <Route path="/pbs" component={() => <Protected><PbsDirectory /></Protected>} />
     <Route path="/artg" component={() => <Protected><ArtgDirectory /></Protected>} />
     <Route path="/stock" component={() => <Protected><StockPage /></Protected>} />
