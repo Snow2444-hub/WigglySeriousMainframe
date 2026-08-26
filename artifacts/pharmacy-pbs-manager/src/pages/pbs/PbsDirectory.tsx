@@ -68,11 +68,20 @@ export function PbsDirectory() {
 
   return (
     <AppShell>
-      <PageHeading eyebrow="Reference library / PBS" title="PBS directory" description="Precise medicine intelligence. Search by drug, brand, ingredient, or code." />
+      {tier.level === 'drugs' ? (
+        <PageHeading eyebrow="Reference library / PBS" title="PBS directory" description="Precise medicine intelligence. Search by drug, brand, ingredient, or code." />
+      ) : (
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center gap-2 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-primary">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Reference library / PBS
+          </div>
+          <h1 className="text-2xl font-bold tracking-[-0.045em] text-foreground">PBS directory</h1>
+        </div>
+      )}
       
-      <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-sm sm:flex-row">
-        <label className="flex min-h-12 flex-1 items-center gap-3 rounded-xl bg-muted/50 px-4 text-muted-foreground focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20 transition-all">
-          <Search className="h-5 w-5 shrink-0" />
+      <div className={`flex flex-col rounded-2xl border border-border bg-card shadow-sm sm:flex-row ${tier.level === 'drugs' ? 'mb-6 gap-3 p-3' : 'mb-3 p-1.5'}`}>
+        <label className={`flex flex-1 items-center rounded-xl bg-muted/50 px-4 text-muted-foreground transition-all focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20 ${tier.level === 'drugs' ? 'min-h-12 gap-3' : 'min-h-9 gap-2'}`}>
+          <Search className={tier.level === 'drugs' ? 'h-5 w-5 shrink-0' : 'h-4 w-4 shrink-0'} />
           <input 
             value={search} 
             onChange={(e) => handleSearchChange(e.target.value)} 
@@ -84,7 +93,7 @@ export function PbsDirectory() {
       </div>
 
       {tier.level !== 'drugs' && (
-        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-muted-foreground animate-rise-in">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground animate-rise-in">
           <button 
             onClick={() => setTier({ level: 'drugs' })} 
             className="hover:text-foreground transition-colors flex items-center gap-1"
@@ -203,53 +212,90 @@ export function PbsDirectory() {
 
         {tier.level === 'brands' && (
           <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-            <div className="flex justify-between border-b border-border bg-muted/30 px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
-              <span>Brands for {tier.drug.drugName}</span>
-              <span>{brandsQuery.data?.length || 0} brands</span>
-            </div>
-            {brandsQuery.isLoading ? <div className="p-6"><QueryState kind="loading" /></div> : 
-             brandsQuery.isError ? <div className="p-6"><QueryState kind="error" onRetry={() => brandsQuery.refetch()} /></div> : 
-             !brandsQuery.data?.length ? <div className="p-6"><QueryState kind="empty" /></div> : (
-              <div className="divide-y divide-border">
-                {brandsQuery.data.map(brand => (
-                  <button 
-                    key={brand.brandName} 
-                    onClick={() => clickBrand(brand, tier.drug.drugName)} 
-                    className="w-full grid gap-2 px-6 py-5 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_auto] md:items-center"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        {brand.isInnovator && (
-                          <span className="bg-primary/10 text-primary font-mono text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">Innovator</span>
-                        )}
-                        <span className="text-muted-foreground font-mono text-[10px] font-bold uppercase tracking-wider">
-                          {brand.itemCount} items
-                        </span>
-                      </div>
-                      <div className="text-lg font-bold tracking-tight">{brand.brandName}</div>
-                      <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground font-medium">
-                        <span>Listed {brand.firstListedDate ? date(brand.firstListedDate) : 'Unknown'}</span>
-                        <span>{brand.formulary}</span>
-                        {brand.changeCount > 0 && <span>{brand.changeCount} change{brand.changeCount === 1 ? '' : 's'}{brand.latestChangeDate ? ` · latest ${date(brand.latestChangeDate)}` : ''}</span>}
-                        {brand.highChangeCount > 0 && (
-                          <span className="flex items-center gap-1 text-chart-3"><AlertTriangle className="h-3.5 w-3.5" /> High-impact changes</span>
-                        )}
-                      </div>
+            {brandsQuery.isLoading ? <div className="p-6"><QueryState kind="loading" /></div> :
+             brandsQuery.isError ? <div className="p-6"><QueryState kind="error" onRetry={() => brandsQuery.refetch()} /></div> :
+             !brandsQuery.data?.length ? <div className="p-6"><QueryState kind="empty" /></div> :
+             (() => {
+              const brands = brandsQuery.data ?? [];
+              const innovators = brands.filter((brand) => brand.isInnovator);
+              const generics = brands.filter((brand) => !brand.isInnovator);
+              const formularyCounts = brands.reduce((counts, brand) => {
+                counts.set(brand.formulary, (counts.get(brand.formulary) ?? 0) + 1);
+                return counts;
+              }, new Map<string, number>());
+              const primaryFormulary = [...formularyCounts.entries()]
+                .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+              const allShareFormulary = formularyCounts.size === 1;
+              const renderBrandSection = (label: string, sectionBrands: MedicineBrandSummary[]) => (
+                sectionBrands.length > 0 && (
+                  <section aria-label={label}>
+                    <div className="border-b border-border/70 bg-muted/20 px-6 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+                      {label}
                     </div>
-                    
-                    <div className="flex items-center gap-6 mt-4 md:mt-0">
-                      <div className="text-right hidden md:block">
-                        <div className="text-xs font-semibold text-muted-foreground">Ex-manufacturer / wholesale price range</div>
-                        <div className="font-mono text-sm font-bold text-foreground mt-0.5">
-                          {money(brand.minimumPrice)} <span className="opacity-40">-</span> {money(brand.maximumPrice)}
-                        </div>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-muted-foreground/50" />
+                    <div className="divide-y divide-border/70">
+                      {sectionBrands.map((brand) => (
+                        <button
+                          key={brand.brandName}
+                          onClick={() => clickBrand(brand, tier.drug.drugName)}
+                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.4fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-bold tracking-tight">{brand.brandName}</span>
+                            {brand.highChangeCount > 0 && (
+                              <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-chart-3" title="High-impact schedule changes">
+                                <AlertTriangle className="h-3 w-3" />
+                                <span className="sr-only">High-impact changes</span>
+                              </span>
+                            )}
+                          </span>
+                          <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
+                            {brand.itemCount} item{brand.itemCount === 1 ? '' : 's'}
+                          </span>
+                          <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
+                            {brand.firstListedDate ? `Listed ${date(brand.firstListedDate)}` : 'Listed unknown'}
+                          </span>
+                          <span className="whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
+                            {priceLabel(brand.minimumPrice, brand.maximumPrice)}
+                          </span>
+                          <span className="hidden w-4 text-right md:inline">
+                            {brand.formulary !== primaryFormulary ? (
+                              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] font-bold text-muted-foreground">{brand.formulary}</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                  </button>
-                ))}
-              </div>
-            )}
+                  </section>
+                )
+              );
+
+              return (
+                <>
+                  <div className="flex items-center justify-between border-b border-border bg-muted/30 px-6 py-3">
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                      Brands for {tier.drug.drugName}
+                    </span>
+                    <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+                      {brands.length} brand{brands.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  {primaryFormulary && (
+                    <div className="border-b border-border/70 px-6 py-1.5 text-xs font-medium text-muted-foreground">
+                      {allShareFormulary ? 'Formulary' : 'Default formulary'}: <span className="font-mono font-bold text-foreground">{primaryFormulary}</span>
+                    </div>
+                  )}
+                  <div className="hidden grid-cols-[minmax(0,1.4fr)_auto_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
+                    <span>Brand</span>
+                    <span>Items</span>
+                    <span>Listed</span>
+                    <span className="text-right">Ex-manufacturer / wholesale price</span>
+                    <span className="w-4 text-right">Formulary</span>
+                  </div>
+                  {renderBrandSection('Innovator', innovators)}
+                  {renderBrandSection('Generics', generics)}
+                </>
+              );
+            })()}
           </div>
         )}
 

@@ -129,6 +129,15 @@ function indicatorIsTrue(value: string | null): boolean {
   return !["n", "no", "false", "0"].includes(value.trim().toLowerCase());
 }
 
+function brandGroupKey(brandName: string): string {
+  const normalized = brandName.trim().toLocaleLowerCase();
+  return /^crosuva\s+(10|20|40)$/.test(normalized) ? "crosuva" : normalized;
+}
+
+function brandGroupName(brandName: string): string {
+  return brandGroupKey(brandName) === "crosuva" ? "Crosuva" : brandName;
+}
+
 router.get("/medicine-directory", async (req, res): Promise<void> => {
   const parsed = ListMedicineDirectoryQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -193,7 +202,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         drugId,
         drugName: first.drugName,
         activeIngredient: first.activeIngredient,
-        brandCount: new Set(group.map((item) => item.brandName.toLowerCase())).size,
+        brandCount: new Set(group.map((item) => brandGroupKey(item.brandName))).size,
         itemCount: group.length,
         formulary: summarizedFormulary(group.map((item) => item.formulary)),
         ...priceRange(group.map((item) => item.currentAemp)),
@@ -235,7 +244,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
   ]);
   const grouped = new Map<string, typeof items>();
   for (const item of items) {
-    const key = item.brandName.trim().toLowerCase();
+    const key = brandGroupKey(item.brandName);
     const group = grouped.get(key) ?? [];
     group.push(item);
     grouped.set(key, group);
@@ -243,7 +252,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
   const summaries = [...grouped.values()].map((group) => {
     const first = group[0];
     const brandChanges = changes.filter(
-      (change) => change.brandName?.trim().toLowerCase() === first.brandName.trim().toLowerCase(),
+      (change) => change.brandName !== null && brandGroupKey(change.brandName) === brandGroupKey(first.brandName),
     );
     const listedDates = group
       .map((item) => item.firstListedDate)
@@ -252,7 +261,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
     const changeDates = brandChanges.map((change) => change.effectiveDate).sort();
     return {
       drugId: parsed.data.id,
-      brandName: first.brandName,
+      brandName: brandGroupName(first.brandName),
       itemCount: group.length,
       formulary: summarizedFormulary(group.map((item) => item.formulary)),
       ...priceRange(group.map((item) => item.currentAemp)),
@@ -267,7 +276,14 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       latestChangeDate: changeDates.at(-1) ?? null,
     };
   });
-  summaries.sort((a, b) => a.brandName.localeCompare(b.brandName));
+  summaries.sort((a, b) => {
+    if (a.isInnovator !== b.isInnovator) return a.isInnovator ? -1 : 1;
+    if (!a.isInnovator) {
+      const dateOrder = (b.firstListedDate ?? "").localeCompare(a.firstListedDate ?? "");
+      if (dateOrder !== 0) return dateOrder;
+    }
+    return a.brandName.localeCompare(b.brandName);
+  });
   res.json(ListMedicineBrandsResponse.parse(summaries));
 });
 
@@ -284,7 +300,13 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
     .where(
       and(
         eq(pbsItemsTable.drugId, parsed.data.id),
-        ilike(pbsItemsTable.brandName, parsed.data.brandName),
+        parsed.data.brandName.trim().toLocaleLowerCase() === "crosuva"
+          ? or(
+              ilike(pbsItemsTable.brandName, "Crosuva 10"),
+              ilike(pbsItemsTable.brandName, "Crosuva 20"),
+              ilike(pbsItemsTable.brandName, "Crosuva 40"),
+            )
+          : ilike(pbsItemsTable.brandName, parsed.data.brandName),
       ),
     )
     .orderBy(asc(pbsItemsTable.itemCode));
