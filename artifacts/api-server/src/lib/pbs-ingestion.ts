@@ -24,6 +24,7 @@ export interface FetchScheduleOptions {
   maxPagesPerEndpoint?: number;
   maxPages?: number;
   filters?: PbsRequestFilter[];
+  latestScheduleOnly?: boolean;
   request?: RequestLike;
   sleep?: Sleep;
   onPage?: (page: FetchedSchedulePage) => void | Promise<void>;
@@ -110,9 +111,10 @@ export function buildPageUrl(
   pageNumber: number,
   limit: number,
   params: Record<string, string> = {},
+  latestScheduleOnly = true,
 ): URL {
   const url = new URL(`${PBS_API_BASE_URL}/${normaliseEndpoint(endpoint)}`);
-  url.searchParams.set("get_latest_schedule_only", "true");
+  url.searchParams.set("get_latest_schedule_only", String(latestScheduleOnly));
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
   }
@@ -283,6 +285,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
     maxPages,
     filters = [{ requestKey: "unfiltered", params: {} }],
+    latestScheduleOnly = true,
     request = fetch,
     sleep = defaultSleep,
     onPage,
@@ -325,7 +328,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
           throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
         }
 
-        const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit, filter.params);
+        const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit, filter.params, latestScheduleOnly);
         logger.info(
           { endpoint, requestKey: filter.requestKey, pageNumber, url: url.toString() },
           "Requesting PBS schedule page",

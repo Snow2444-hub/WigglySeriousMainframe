@@ -312,11 +312,13 @@ export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsRe
 /**
  * @summary Start a PBS ingestion run
  */
+export const triggerAdminIngestionBodyModeDefault = `current`;
 export const triggerAdminIngestionBodyMaxPagesMax = 10000;
 
 
 
 export const TriggerAdminIngestionBody = zod.object({
+  "mode": zod.enum(['current', 'backfill']).default(triggerAdminIngestionBodyModeDefault).describe('Current fetches the latest schedule; backfill fetches the available rolling 12-month schedule history.'),
   "maxPages": zod.int().min(1).max(triggerAdminIngestionBodyMaxPagesMax).optional().describe('Optional total page cap across all configured PBS endpoints; omit for the full schedule.')
 })
 

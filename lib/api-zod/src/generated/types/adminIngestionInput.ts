@@ -5,8 +5,11 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AdminIngestionInputMode } from './adminIngestionInputMode';
 
 export interface AdminIngestionInput {
+  /** Current fetches the latest schedule; backfill fetches the available rolling 12-month schedule history. */
+  mode?: AdminIngestionInputMode;
   /**
      * Optional total page cap across all configured PBS endpoints; omit for the full schedule.
      * @minimum 1

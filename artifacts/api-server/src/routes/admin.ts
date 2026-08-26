@@ -40,7 +40,19 @@ function effectiveDateFromSchedulePayload(payload: unknown): string | undefined 
   return undefined;
 }
 
-export async function executeIngestionRun(runId: number, scheduleDate: string, maxPages?: number): Promise<void> {
+type IngestionMode = "current" | "backfill";
+
+export async function executeIngestionRun(
+  runId: number,
+  scheduleDate: string,
+  maxPages?: number,
+  mode: IngestionMode = "current",
+): Promise<void> {
+  if (mode === "backfill") {
+    await executeBackfillIngestionRun(runId, scheduleDate, maxPages);
+    return;
+  }
+
   try {
     await db
       .update(ingestionRunsTable)
@@ -160,6 +172,204 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
       })
       .where(eq(ingestionRunsTable.id, runId));
     logger.error({ err: error, runId }, "PBS ingestion run failed");
+  }
+}
+
+interface HistoricalSchedule {
+  scheduleCode: number;
+  effectiveDate: string;
+}
+
+function historicalSchedulesFromPayload(payload: unknown): HistoricalSchedule[] {
+  if (typeof payload !== "object" || payload === null) return [];
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+  return data.flatMap((record) => {
+    if (typeof record !== "object" || record === null) return [];
+    const value = record as { schedule_code?: unknown; effective_date?: unknown };
+    const scheduleCode =
+      typeof value.schedule_code === "number"
+        ? value.schedule_code
+        : typeof value.schedule_code === "string"
+          ? Number(value.schedule_code)
+          : NaN;
+    const effectiveDate = value.effective_date;
+    if (
+      !Number.isInteger(scheduleCode) ||
+      typeof effectiveDate !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
+    ) {
+      return [];
+    }
+    return [{ scheduleCode, effectiveDate }];
+  });
+}
+
+function dateOneYearBefore(dateValue: string): string {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCFullYear(date.getUTCFullYear() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+async function executeBackfillIngestionRun(
+  runId: number,
+  scheduleDate: string,
+  maxPages?: number,
+): Promise<void> {
+  try {
+    await db
+      .update(ingestionRunsTable)
+      .set({ status: "running" })
+      .where(eq(ingestionRunsTable.id, runId));
+
+    const enabledWatchlist = await db
+      .select()
+      .from(pbsWatchlistTable)
+      .where(eq(pbsWatchlistTable.enabled, true))
+      .orderBy(asc(pbsWatchlistTable.id));
+    const filters = buildPbsRequestFilters(enabledWatchlist);
+    if (filters.length === 0) {
+      throw new Error("No enabled PBS watchlist entries are configured; refusing to backfill an unfiltered schedule");
+    }
+
+    let recordsProcessed = 0;
+    let recordsReturned = 0;
+    let pagesFetched = 0;
+    const requestUrls = new Set<string>();
+    const schedules: HistoricalSchedule[] = [];
+    const persistProgress = async () => {
+      await db
+        .update(ingestionRunsTable)
+        .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
+        .where(eq(ingestionRunsTable.id, runId));
+    };
+
+    const schedulePages = await fetchSchedule({
+      scheduleDate,
+      endpoints: ["schedules"],
+      limit: 100,
+      maxPages,
+      latestScheduleOnly: false,
+      filters: [{ requestKey: `backfill-schedules:${runId}`, params: {} }],
+      onPage: async (page) => {
+        pagesFetched += 1;
+        requestUrls.add(page.url);
+        await persistProgress();
+      },
+      onPayload: ({ payload }) => {
+        schedules.push(...historicalSchedulesFromPayload(payload));
+      },
+    });
+
+    const latestEffectiveDate = schedules
+      .map((schedule) => schedule.effectiveDate)
+      .sort((left, right) => right.localeCompare(left))[0];
+    if (!latestEffectiveDate) {
+      throw new Error("PBS backfill schedule metadata did not include any effective dates");
+    }
+    const cutoffDate = dateOneYearBefore(latestEffectiveDate);
+    const uniqueSchedules = [...new Map(
+      schedules
+        .filter((schedule) => schedule.effectiveDate >= cutoffDate && schedule.effectiveDate <= latestEffectiveDate)
+        .map((schedule) => [`${schedule.scheduleCode}:${schedule.effectiveDate}`, schedule]),
+    ).values()].sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate));
+
+    if (uniqueSchedules.length === 0) {
+      throw new Error(`PBS backfill returned no schedules in the 12-month window beginning ${cutoffDate}`);
+    }
+
+    for (const schedule of uniqueSchedules) {
+      const remainingPages = maxPages === undefined ? undefined : maxPages - pagesFetched;
+      if (remainingPages === 0) break;
+
+      const scheduleFilters = filters.map((filter) => ({
+        ...filter,
+        requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
+        params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
+      }));
+      const scheduleItemIds = new Set<string>();
+      const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
+        pagesFetched += 1;
+        requestUrls.add(page.url);
+        if (page.endpoint === "items") recordsReturned += page.records;
+        await persistProgress();
+      };
+      const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
+        if (page.endpoint === "item-atc-relationships") {
+          itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => scheduleItemIds.add(itemId));
+        }
+        if (page.endpoint === "items") {
+          recordsProcessed += await upsertPbsItemsFromPayload(
+            page.payload,
+            scheduleDate,
+            schedule.effectiveDate,
+            { scheduleCode: schedule.scheduleCode, updateCurrentItem: false },
+          );
+        }
+        await persistProgress();
+      };
+
+      const itemPages = await fetchSchedule({
+        scheduleDate,
+        latestScheduleOnly: false,
+        maxPages: remainingPages,
+        filters: scheduleFilters,
+        onPage: handlePage,
+        onPayload: handlePayload,
+      });
+      const pagesLeft = remainingPages === undefined ? undefined : remainingPages - itemPages.length;
+      const relatedFilters = pagesLeft === 0
+        ? []
+        : buildPbsItemIdRequestFilters(scheduleItemIds).map((filter) => ({
+            ...filter,
+            requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
+            params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
+          }));
+      if (relatedFilters.length > 0) {
+        await fetchSchedule({
+          scheduleDate,
+          latestScheduleOnly: false,
+          maxPages: pagesLeft,
+          filters: relatedFilters,
+          onPage: handlePage,
+          onPayload: handlePayload,
+        });
+      }
+    }
+
+    if (recordsReturned > 0 && recordsProcessed === 0) {
+      throw new Error(`PBS backfill returned ${recordsReturned} item records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
+    }
+
+    await db
+      .update(ingestionRunsTable)
+      .set({
+        status: "completed",
+        finishedAt: new Date(),
+        recordsProcessed,
+        pagesFetched,
+        requestUrls: [...requestUrls],
+      })
+      .where(eq(ingestionRunsTable.id, runId));
+
+    logger.info(
+      {
+        runId,
+        schedules: uniqueSchedules.length,
+        pages: pagesFetched,
+        recordsProcessed,
+        requestUrls: [...requestUrls],
+      },
+      "PBS backfill ingestion run completed",
+    );
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown ingestion error";
+    await db
+      .update(ingestionRunsTable)
+      .set({ status: "failed", finishedAt: new Date(), errorMessage: errorMessage.slice(0, 2_000) })
+      .where(eq(ingestionRunsTable.id, runId));
+    logger.error({ err: error, runId }, "PBS backfill ingestion run failed");
   }
 }
 
@@ -296,7 +506,12 @@ router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<voi
 
   const { run } = acquisition;
   const scheduleDate = currentScheduleDate();
-  void executeIngestionRun(run.id, scheduleDate, parsedBody.data.maxPages);
+  void executeIngestionRun(
+    run.id,
+    scheduleDate,
+    parsedBody.data.maxPages,
+    parsedBody.data.mode ?? "current",
+  );
   res.status(202).json(TriggerAdminIngestionResponse.parse(run));
 });
 

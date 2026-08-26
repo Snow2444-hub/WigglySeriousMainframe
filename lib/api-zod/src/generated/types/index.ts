@@ -7,6 +7,7 @@
  */
 
 export * from './adminIngestionInput';
+export * from './adminIngestionInputMode';
 export * from './adminIngestionRun';
 export * from './adminIngestionRunStatus';
 export * from './artgEntry';

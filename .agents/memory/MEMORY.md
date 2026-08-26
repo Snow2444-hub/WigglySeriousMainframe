@@ -4,4 +4,5 @@
 - [PBS ATC relationship ingestion](pbs-atc-relationship-ingestion.md) — ATC filters apply to the relationship endpoint; item records require a second lookup by `li_item_id`.
 - [PBS item pricing](pbs-item-pricing.md) — `/items` exposes determined, claimed, and proportional prices but not DPMQ; preserve DPMQ as null.
 - [PBS parent listing dates](pbs-parent-listing-dates.md) — item dates vary by strength; a parent drug’s first PBS listing date is the earliest across its items.
+- [PBS schedule backfill](pbs-schedule-backfill.md) — historical schedules must be ordered by effective date and fetched with explicit schedule codes.
 - [Generated query polling](generated-query-polling.md) — Passing custom options to this Orval React Query output requires its generated query key explicitly.

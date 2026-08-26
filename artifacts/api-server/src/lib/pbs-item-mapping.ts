@@ -1,5 +1,5 @@
 import { db, drugsTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
@@ -115,24 +115,65 @@ async function appendPriceHistoryIfChanged(input: {
   scheduleEffectiveDate: string;
   determinedPrice: number;
 }): Promise<boolean> {
-  const [latest] = await db
+  const [sameSchedule] = await db
     .select({ aemp: priceHistoryTable.aemp })
     .from(priceHistoryTable)
-    .where(eq(priceHistoryTable.itemCode, input.itemCode))
+    .where(
+      and(
+        eq(priceHistoryTable.itemCode, input.itemCode),
+        eq(priceHistoryTable.scheduleEffectiveDate, input.scheduleEffectiveDate),
+      ),
+    )
+    .orderBy(desc(priceHistoryTable.id))
+    .limit(1);
+  const [previous] = await db
+    .select({ aemp: priceHistoryTable.aemp })
+    .from(priceHistoryTable)
+    .where(
+      and(
+        eq(priceHistoryTable.itemCode, input.itemCode),
+        lt(priceHistoryTable.scheduleEffectiveDate, input.scheduleEffectiveDate),
+      ),
+    )
     .orderBy(desc(priceHistoryTable.scheduleEffectiveDate), desc(priceHistoryTable.id))
     .limit(1);
-  if (latest && latest.aemp === input.determinedPrice) return false;
+  const shouldInsert =
+    sameSchedule?.aemp !== input.determinedPrice &&
+    previous?.aemp !== input.determinedPrice;
 
-  await db.insert(priceHistoryTable).values({
-    itemCode: input.itemCode,
-    priceDate: input.scheduleEffectiveDate,
-    scheduleCode: input.scheduleCode,
-    scheduleEffectiveDate: input.scheduleEffectiveDate,
-    aemp: input.determinedPrice,
-    dpmq: null,
-    reductionType: null,
-  });
-  return true;
+  if (shouldInsert) {
+    await db.insert(priceHistoryTable).values({
+      itemCode: input.itemCode,
+      priceDate: input.scheduleEffectiveDate,
+      scheduleCode: input.scheduleCode,
+      scheduleEffectiveDate: input.scheduleEffectiveDate,
+      aemp: input.determinedPrice,
+      dpmq: null,
+      reductionType: null,
+    });
+  }
+
+  const chronologicalRows = await db
+    .select({
+      id: priceHistoryTable.id,
+      aemp: priceHistoryTable.aemp,
+    })
+    .from(priceHistoryTable)
+    .where(eq(priceHistoryTable.itemCode, input.itemCode))
+    .orderBy(asc(priceHistoryTable.scheduleEffectiveDate), asc(priceHistoryTable.id));
+  const redundantIds: number[] = [];
+  let previousPrice: number | undefined;
+  for (const row of chronologicalRows) {
+    if (previousPrice === row.aemp) {
+      redundantIds.push(row.id);
+    } else {
+      previousPrice = row.aemp;
+    }
+  }
+  if (redundantIds.length > 0) {
+    await db.delete(priceHistoryTable).where(inArray(priceHistoryTable.id, redundantIds));
+  }
+  return shouldInsert;
 }
 
 /**
@@ -146,9 +187,11 @@ export async function upsertPbsItemsFromPayload(
   payload: unknown,
   scheduleDate: string,
   scheduleEffectiveDate = scheduleDate,
+  options: { scheduleCode?: number; updateCurrentItem?: boolean } = {},
 ): Promise<number> {
   let processed = 0;
   const affectedDrugIds = new Set<number>();
+  const updateCurrentItem = options.updateCurrentItem ?? true;
 
   for (const record of recordsFromPayload(payload)) {
     const liItemId = stringField(record, "li_item_id");
@@ -157,7 +200,7 @@ export async function upsertPbsItemsFromPayload(
     const drugName = activeIngredient;
     const brandName = stringField(record, "brand_name") ?? drugName;
     const formulary = itemFormulary(record);
-    const scheduleCode = numberField(record, "schedule_code");
+    const scheduleCode = options.scheduleCode ?? numberField(record, "schedule_code");
     const determinedPrice = numberField(record, "determined_price", "aemp", "current_aemp");
     const dispensedPrice = numberField(record, "dispensed_price", "dpmq", "current_dpmq");
 
@@ -182,9 +225,7 @@ export async function upsertPbsItemsFromPayload(
       firstPbsListingDate: firstListedDate,
     });
 
-    await db
-      .insert(pbsItemsTable)
-      .values({
+    const itemValues = {
         itemCode,
         pbsCode: itemCode,
         liItemId,
@@ -212,38 +253,18 @@ export async function upsertPbsItemsFromPayload(
         proportionalPrice: numberField(record, "proportional_price"),
         therapeuticGroupId: stringField(record, "therapeutic_group_id"),
         innovatorIndicator: stringField(record, "innovator_indicator"),
-      })
-      .onConflictDoUpdate({
-        target: pbsItemsTable.itemCode,
-        set: {
-          pbsCode: itemCode,
-          liItemId,
-          scheduleCode,
-          drugId,
-          brandName,
-          strength: strengthField(record),
-          form: formField(record),
-          packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
-          pricingQuantity: numberField(record, "pricing_quantity"),
-          liForm: stringField(record, "li_form"),
-          programCode: stringField(record, "program_code"),
-          formulary,
-          currentAemp: determinedPrice,
-          currentDpmq: dispensedPrice ?? null,
-          lastUpdated: scheduleDate,
-          firstListedDate: dateField(record, "first_listed_date"),
-          weightedAvgDisclosedPrice: numberField(record, "weighted_avg_disclosed_price"),
-          originatorBrandIndicator: stringField(record, "originator_brand_indicator"),
-          brandSubstitutionGroupId: stringField(record, "brand_substitution_group_id"),
-          advancedNoticeDate: dateField(record, "advanced_notice_date"),
-          nonEffectiveDate: dateField(record, "non_effective_date"),
-          determinedPrice,
-          claimedPrice: numberField(record, "claimed_price"),
-          proportionalPrice: numberField(record, "proportional_price"),
-          therapeuticGroupId: stringField(record, "therapeutic_group_id"),
-          innovatorIndicator: stringField(record, "innovator_indicator"),
-        },
-      });
+      };
+    if (updateCurrentItem) {
+      await db
+        .insert(pbsItemsTable)
+        .values(itemValues)
+        .onConflictDoUpdate({
+          target: pbsItemsTable.itemCode,
+          set: itemValues,
+        });
+    } else {
+      await db.insert(pbsItemsTable).values(itemValues).onConflictDoNothing();
+    }
 
     await appendPriceHistoryIfChanged({
       itemCode,

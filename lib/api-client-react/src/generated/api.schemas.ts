@@ -171,7 +171,20 @@ export interface AdminIngestionRun {
   errorMessage: string | null;
 }
 
+/**
+ * Current fetches the latest schedule; backfill fetches the available rolling 12-month schedule history.
+ */
+export type AdminIngestionInputMode = typeof AdminIngestionInputMode[keyof typeof AdminIngestionInputMode];
+
+
+export const AdminIngestionInputMode = {
+  current: 'current',
+  backfill: 'backfill',
+} as const;
+
 export interface AdminIngestionInput {
+  /** Current fetches the latest schedule; backfill fetches the available rolling 12-month schedule history. */
+  mode?: AdminIngestionInputMode;
   /**
      * Optional total page cap across all configured PBS endpoints; omit for the full schedule.
      * @minimum 1

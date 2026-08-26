@@ -177,6 +177,7 @@ function AdminPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState('');
   const [maxPages, setMaxPages] = useState('');
+  const [ingestionMode, setIngestionMode] = useState<'current' | 'backfill'>('current');
   const [inputError, setInputError] = useState('');
   const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('atc_code');
   const [watchlistValue, setWatchlistValue] = useState('');
@@ -260,10 +261,13 @@ function AdminPage() {
       return;
     }
 
-    trigger.mutate({ data: requestedMaxPages === undefined ? {} : { maxPages: requestedMaxPages } }, {
+    trigger.mutate({ data: {
+      mode: ingestionMode,
+      ...(requestedMaxPages === undefined ? {} : { maxPages: requestedMaxPages }),
+    } }, {
       onSuccess: (run) => {
         setNotice(requestedMaxPages === undefined
-          ? `Ingestion run #${run.id} has been queued for the enabled watchlist.`
+          ? `${ingestionMode === 'backfill' ? 'Backfill' : 'Current-schedule'} ingestion run #${run.id} has been queued for the enabled watchlist.`
           : `Test ingestion run #${run.id} has been queued with a ${requestedMaxPages}-page cap.`);
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: getListAdminIngestionRunsQueryKey() }),
@@ -279,6 +283,13 @@ function AdminPage() {
       title="PBS data updates"
       description="Start a controlled schedule fetch and monitor the raw reference-data ingestion lifecycle."
       action={<div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-end">
+        <label className="min-w-[170px]">
+          <span className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Run mode</span>
+          <select value={ingestionMode} onChange={(event) => setIngestionMode(event.target.value as 'current' | 'backfill')} disabled={trigger.isPending || Boolean(activeRun)} className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55" data-testid="select-ingestion-mode">
+            <option value="current">Current schedule</option>
+            <option value="backfill">Past 12 months</option>
+          </select>
+        </label>
         <label className="min-w-[150px]">
           <span className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Test page cap</span>
           <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="Full schedule" aria-describedby="max-pages-help" className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55 sm:w-[150px]" data-testid="input-max-pages" />

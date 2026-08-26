@@ -787,6 +787,11 @@ components:
     AdminIngestionInput:
       type: object
       properties:
+        mode:
+          type: string
+          enum: [current, backfill]
+          default: current
+          description: Current fetches the latest schedule; backfill fetches the available rolling 12-month schedule history.
         maxPages:
           type: integer
           minimum: 1
