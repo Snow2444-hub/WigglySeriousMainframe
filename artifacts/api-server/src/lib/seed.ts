@@ -83,11 +83,11 @@ export async function seedReferenceData(): Promise<void> {
   await db
     .insert(priceHistoryTable)
     .values([
-      { itemCode: "1234K", priceDate: "2026-07-01", aemp: 18.42, dpmq: 22.31, reductionType: null },
-      { itemCode: "1234K", priceDate: "2025-07-01", aemp: 19.15, dpmq: 23.05, reductionType: "PBS price reduction" },
-      { itemCode: "5678R", priceDate: "2026-07-01", aemp: 34.8, dpmq: 39.95, reductionType: null },
-      { itemCode: "5678R", priceDate: "2025-10-01", aemp: 36.2, dpmq: 41.2, reductionType: "Price disclosure" },
-      { itemCode: "9012W", priceDate: "2026-07-01", aemp: 26.15, dpmq: 30.2, reductionType: null },
+      { itemCode: "1234K", priceDate: "2026-07-01", scheduleCode: 0, scheduleEffectiveDate: "2026-07-01", aemp: 18.42, dpmq: 22.31, reductionType: null },
+      { itemCode: "1234K", priceDate: "2025-07-01", scheduleCode: 0, scheduleEffectiveDate: "2025-07-01", aemp: 19.15, dpmq: 23.05, reductionType: "PBS price reduction" },
+      { itemCode: "5678R", priceDate: "2026-07-01", scheduleCode: 0, scheduleEffectiveDate: "2026-07-01", aemp: 34.8, dpmq: 39.95, reductionType: null },
+      { itemCode: "5678R", priceDate: "2025-10-01", scheduleCode: 0, scheduleEffectiveDate: "2025-10-01", aemp: 36.2, dpmq: 41.2, reductionType: "Price disclosure" },
+      { itemCode: "9012W", priceDate: "2026-07-01", scheduleCode: 0, scheduleEffectiveDate: "2026-07-01", aemp: 26.15, dpmq: 30.2, reductionType: null },
     ])
     .onConflictDoNothing();
 

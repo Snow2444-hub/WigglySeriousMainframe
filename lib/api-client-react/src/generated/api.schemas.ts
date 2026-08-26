@@ -84,10 +84,14 @@ export interface PbsItem {
 }
 
 export interface PriceHistory {
+  id: number;
   itemCode: string;
   priceDate: string;
+  scheduleCode: number;
+  scheduleEffectiveDate: string;
   aemp: number;
-  dpmq: number;
+  /** @nullable */
+  dpmq: number | null;
   /** @nullable */
   reductionType: string | null;
 }

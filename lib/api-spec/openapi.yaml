@@ -651,18 +651,25 @@ components:
     PriceHistory:
       type: object
       properties:
+        id:
+          type: integer
         itemCode:
           type: string
         priceDate:
           type: string
           format: date
+        scheduleCode:
+          type: integer
+        scheduleEffectiveDate:
+          type: string
+          format: date
         aemp:
           type: number
         dpmq:
-          type: number
+          type: ["number", "null"]
         reductionType:
           type: ["string", "null"]
-      required: [itemCode, priceDate, aemp, dpmq, reductionType]
+      required: [id, itemCode, priceDate, scheduleCode, scheduleEffectiveDate, aemp, dpmq, reductionType]
     ArtgEntry:
       type: object
       properties:

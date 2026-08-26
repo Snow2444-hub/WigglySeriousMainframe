@@ -28,6 +28,18 @@ function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function effectiveDateFromSchedulePayload(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return undefined;
+  for (const record of data) {
+    if (typeof record !== "object" || record === null) continue;
+    const value = (record as { effective_date?: unknown }).effective_date;
+    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  }
+  return undefined;
+}
+
 export async function executeIngestionRun(runId: number, scheduleDate: string, maxPages?: number): Promise<void> {
   try {
     await db
@@ -47,6 +59,7 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
 
     let recordsProcessed = 0;
     let recordsReturned = 0;
+    let scheduleEffectiveDate: string | undefined;
     let pagesFetched = 0;
     const requestUrls = new Set<string>();
     const atcItemIds = new Set<string>();
@@ -56,30 +69,56 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
         .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
         .where(eq(ingestionRunsTable.id, runId));
     };
-    const handlePage = async (page: { url: string; records: number }) => {
+    const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
       requestUrls.add(page.url);
       pagesFetched += 1;
-      recordsReturned += page.records;
+      if (page.endpoint === "items") recordsReturned += page.records;
       await persistProgress();
     };
     const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
       if (page.endpoint === "item-atc-relationships") {
         itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
       }
+      if (page.endpoint === "schedules") {
+        scheduleEffectiveDate = effectiveDateFromSchedulePayload(page.payload) ?? scheduleEffectiveDate;
+      }
       if (page.endpoint === "items") {
-        recordsProcessed += await upsertPbsItemsFromPayload(page.payload, scheduleDate);
+        if (!scheduleEffectiveDate) {
+          throw new Error("Latest PBS schedule metadata did not include an effective_date");
+        }
+        recordsProcessed += await upsertPbsItemsFromPayload(page.payload, scheduleDate, scheduleEffectiveDate);
       }
       await persistProgress();
     };
 
+    const schedulePages = await fetchSchedule({
+      scheduleDate,
+      endpoints: ["schedules"],
+      limit: 100,
+      maxPages: 1,
+      filters: [{ requestKey: `schedule-metadata:${runId}`, params: {} }],
+      onPage: handlePage,
+      onPayload: handlePayload,
+    });
+    if (!scheduleEffectiveDate) {
+      throw new Error("Latest PBS schedule metadata did not include an effective_date");
+    }
+    const pagesAvailableAfterSchedule = maxPages === undefined ? undefined : maxPages - schedulePages.length;
+    if (pagesAvailableAfterSchedule !== undefined && pagesAvailableAfterSchedule <= 0) {
+      throw new Error("maxPages was exhausted by schedule metadata before PBS item retrieval");
+    }
+
     const initialPages = await fetchSchedule({
       scheduleDate,
-      maxPages,
+      maxPages: pagesAvailableAfterSchedule,
       filters,
       onPage: handlePage,
       onPayload: handlePayload,
     });
-    const remainingPages = maxPages === undefined ? undefined : maxPages - initialPages.length;
+    const remainingPages =
+      pagesAvailableAfterSchedule === undefined
+        ? undefined
+        : pagesAvailableAfterSchedule - initialPages.length;
     const itemIdFilters = remainingPages === 0 ? [] : buildPbsItemIdRequestFilters(atcItemIds);
     const relatedItemPages = itemIdFilters.length
       ? await fetchSchedule({
@@ -90,7 +129,7 @@ export async function executeIngestionRun(runId: number, scheduleDate: string, m
           onPayload: handlePayload,
         })
       : [];
-    const pages = [...initialPages, ...relatedItemPages];
+    const pages = [...schedulePages, ...initialPages, ...relatedItemPages];
     if (recordsReturned > 0 && recordsProcessed === 0) {
       throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
     }

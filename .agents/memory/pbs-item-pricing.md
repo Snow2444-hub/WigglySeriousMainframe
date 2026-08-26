@@ -8,3 +8,5 @@ Treat DPMQ as unavailable when ingesting PBS `/items` records. Store the endpoin
 **Why:** The `/items` response used by filtered ingestion returns the three price fields above but has no DPMQ field. Requiring DPMQ caused valid records to be skipped.
 
 **How to apply:** Any mapper consuming `/items` must accept a missing DPMQ. If a future source provides a documented DPMQ, populate it directly rather than calculating it from the available prices.
+
+Latest `/items` records include `schedule_code` but not the schedule effective date. Resolve that date from the latest `/schedules` record’s `effective_date` and store both values with price history.

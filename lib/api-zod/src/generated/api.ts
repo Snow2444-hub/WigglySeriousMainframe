@@ -177,10 +177,13 @@ export const ListPriceHistoryParams = zod.object({
 })
 
 export const ListPriceHistoryResponseItem = zod.object({
+  "id": zod.int(),
   "itemCode": zod.string(),
   "priceDate": zod.coerce.date(),
+  "scheduleCode": zod.int(),
+  "scheduleEffectiveDate": zod.coerce.date(),
   "aemp": zod.number(),
-  "dpmq": zod.number(),
+  "dpmq": zod.number().nullable(),
   "reductionType": zod.string().nullable()
 })
 export const ListPriceHistoryResponse = zod.array(ListPriceHistoryResponseItem)

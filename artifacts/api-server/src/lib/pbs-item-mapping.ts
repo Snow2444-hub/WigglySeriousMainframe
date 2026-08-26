@@ -1,5 +1,6 @@
-import { db, drugsTable, pbsItemsTable } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { db, drugsTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
+import { desc, eq, sql } from "drizzle-orm";
+import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -73,11 +74,26 @@ async function resolveDrugId(input: {
   firstPbsListingDate: string;
 }): Promise<number> {
   const [existing] = await db
-    .select({ id: drugsTable.id })
+    .select({
+      id: drugsTable.id,
+      firstPbsListingDate: drugsTable.firstPbsListingDate,
+    })
     .from(drugsTable)
     .where(eq(drugsTable.activeIngredient, input.activeIngredient))
     .limit(1);
-  if (existing) return existing.id;
+  if (existing) {
+    await db
+      .update(drugsTable)
+      .set({
+        ...input,
+        firstPbsListingDate:
+          existing.firstPbsListingDate <= input.firstPbsListingDate
+            ? existing.firstPbsListingDate
+            : input.firstPbsListingDate,
+      })
+      .where(eq(drugsTable.id, existing.id));
+    return existing.id;
+  }
 
   // Ingestion runs are mutually exclusive. Reserve IDs above the manually seeded
   // range while keeping the existing integer key compatible with the database.
@@ -93,6 +109,32 @@ async function resolveDrugId(input: {
   return created.id;
 }
 
+async function appendPriceHistoryIfChanged(input: {
+  itemCode: string;
+  scheduleCode: number;
+  scheduleEffectiveDate: string;
+  determinedPrice: number;
+}): Promise<boolean> {
+  const [latest] = await db
+    .select({ aemp: priceHistoryTable.aemp })
+    .from(priceHistoryTable)
+    .where(eq(priceHistoryTable.itemCode, input.itemCode))
+    .orderBy(desc(priceHistoryTable.scheduleEffectiveDate), desc(priceHistoryTable.id))
+    .limit(1);
+  if (latest && latest.aemp === input.determinedPrice) return false;
+
+  await db.insert(priceHistoryTable).values({
+    itemCode: input.itemCode,
+    priceDate: input.scheduleEffectiveDate,
+    scheduleCode: input.scheduleCode,
+    scheduleEffectiveDate: input.scheduleEffectiveDate,
+    aemp: input.determinedPrice,
+    dpmq: null,
+    reductionType: null,
+  });
+  return true;
+}
+
 /**
  * Converts one untouched /items response page into reference rows.
  *
@@ -100,8 +142,13 @@ async function resolveDrugId(input: {
  * an identifier and current pricing values, remain in raw staging for audit
  * rather than being converted into incomplete public reference rows.
  */
-export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: string): Promise<number> {
+export async function upsertPbsItemsFromPayload(
+  payload: unknown,
+  scheduleDate: string,
+  scheduleEffectiveDate = scheduleDate,
+): Promise<number> {
   let processed = 0;
+  const affectedDrugIds = new Set<number>();
 
   for (const record of recordsFromPayload(payload)) {
     const liItemId = stringField(record, "li_item_id");
@@ -110,6 +157,7 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
     const drugName = activeIngredient;
     const brandName = stringField(record, "brand_name") ?? drugName;
     const formulary = itemFormulary(record);
+    const scheduleCode = numberField(record, "schedule_code");
     const determinedPrice = numberField(record, "determined_price", "aemp", "current_aemp");
     const dispensedPrice = numberField(record, "dispensed_price", "dpmq", "current_dpmq");
 
@@ -119,6 +167,7 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
       !drugName ||
       !brandName ||
       !formulary ||
+      scheduleCode === undefined ||
       determinedPrice === undefined
     ) {
       continue;
@@ -139,7 +188,7 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
         itemCode,
         pbsCode: itemCode,
         liItemId,
-        scheduleCode: numberField(record, "schedule_code"),
+        scheduleCode,
         drugId,
         brandName,
         strength: strengthField(record),
@@ -169,7 +218,7 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
         set: {
           pbsCode: itemCode,
           liItemId,
-          scheduleCode: numberField(record, "schedule_code"),
+          scheduleCode,
           drugId,
           brandName,
           strength: strengthField(record),
@@ -196,8 +245,18 @@ export async function upsertPbsItemsFromPayload(payload: unknown, scheduleDate: 
         },
       });
 
+    await appendPriceHistoryIfChanged({
+      itemCode,
+      scheduleCode,
+      scheduleEffectiveDate,
+      determinedPrice,
+    });
+    affectedDrugIds.add(drugId);
     processed += 1;
   }
 
+  for (const drugId of affectedDrugIds) {
+    await recalculatePredictedReductionsForDrug(drugId);
+  }
   return processed;
 }

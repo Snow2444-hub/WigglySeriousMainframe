@@ -7,10 +7,14 @@
  */
 
 export interface PriceHistory {
+  id: number;
   itemCode: string;
   priceDate: Date;
+  scheduleCode: number;
+  scheduleEffectiveDate: Date;
   aemp: number;
-  dpmq: number;
+  /** @nullable */
+  dpmq: number | null;
   /** @nullable */
   reductionType: string | null;
 }

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedReferenceData } from "./lib/seed";
+import { ensureDefaultReductionSettings } from "./lib/predicted-reductions";
 import { recoverInterruptedIngestionRuns } from "./routes/admin";
 
 const rawPort = process.env["PORT"];
@@ -19,6 +20,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 async function start(): Promise<void> {
   await recoverInterruptedIngestionRuns();
+  await ensureDefaultReductionSettings();
   if (process.env.SEED_REFERENCE_DATA === "true") {
     await seedReferenceData();
   }
