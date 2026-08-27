@@ -91,6 +91,31 @@ export interface MedicineDrugSummary {
   firstNewBrandReductionDate: string | null;
 }
 
+export interface PharmacyBrandPreference {
+  drugId: number;
+  drugName: string;
+  brandName: string;
+  itemCount: number;
+  hidden: boolean;
+}
+
+export interface PharmacyBrandPreferences {
+  hiddenBrandCount: number;
+  hiddenItemCount: number;
+  brands: PharmacyBrandPreference[];
+}
+
+export interface PharmacyBrandPreferenceInput {
+  /** @minimum 1 */
+  drugId: number;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  brandName: string;
+  hidden: boolean;
+}
+
 /**
  * @nullable
  */

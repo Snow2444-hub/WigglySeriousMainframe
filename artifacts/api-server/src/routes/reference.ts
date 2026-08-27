@@ -45,8 +45,12 @@ import {
   ListScheduleChangesResponse,
 } from "@workspace/api-zod";
 import { getPriceChangeThresholds, priceChangeSignificance } from "../lib/schedule-changes";
+import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
+
+router.use(requireAuth);
 
 router.get("/drugs", async (req, res): Promise<void> => {
   const parsed = ListDrugsQueryParams.safeParse(req.query);
@@ -226,6 +230,8 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
       .from(pbsFnbReductionsTable),
     getPriceChangeThresholds(),
   ]);
+  const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
+  const visibleItems = items.filter((item) => !isBrandHidden(hiddenBrandKeys, item.drugId, item.brandName));
   const cyclesByDrug = new Map<number, Array<{ cycleLabel: string; submissionDeadline: string }>>();
   for (const cycle of disclosureCycles) {
     cyclesByDrug.set(cycle.drugId, [
@@ -240,7 +246,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
     if (!current || effectDate > current) fnbByDrug.set(reduction.drugId, effectDate);
   }
   const grouped = new Map<number, typeof items>();
-  for (const item of items) {
+  for (const item of visibleItems) {
     const group = grouped.get(item.drugId) ?? [];
     group.push(item);
     grouped.set(item.drugId, group);
@@ -337,8 +343,10 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       ),
     getPriceChangeThresholds(),
   ]);
+  const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
+  const visibleItems = items.filter((item) => !isBrandHidden(hiddenBrandKeys, item.drugId, item.brandName));
   const grouped = new Map<string, typeof items>();
-  for (const item of items) {
+  for (const item of visibleItems) {
     const key = brandGroupKey(item.brandName);
     const group = grouped.get(key) ?? [];
     group.push(item);
@@ -441,7 +449,9 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
       ),
     getPriceChangeThresholds(),
   ]);
-  rows.sort((left, right) => {
+  const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
+  const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
+  visibleRows.sort((left, right) => {
     const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
     if (strengthOrder !== 0) return strengthOrder;
     return (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode);
@@ -455,7 +465,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
   }
   res.json(
     ListMedicineBrandItemsResponse.parse(
-      rows.map((row) => {
+       visibleRows.map((row) => {
         const prediction = nextPrediction(predictionsByItem.get(row.itemCode) ?? []);
         return {
           ...row,
@@ -513,6 +523,8 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     ),
     getPriceChangeThresholds(),
   ]);
+  const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
+  const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
   type BrandGroup = {
     brandName: string;
     strength: string | null;
@@ -543,7 +555,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     predictedDate: string;
     brands: Map<string, BrandGroup>;
   }>();
-  for (const row of rows) {
+  for (const row of visibleRows) {
     const predictedDate = dateOnly(row.predictedDate);
     const groupKey = `${row.drugId}:${predictedDate}`;
     const group = groups.get(groupKey) ?? {
@@ -785,7 +797,9 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     )
     .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id))
     .limit(limit);
-  const itemIdentifiers = [...new Set(rows.map((row) => row.liItemId).filter((value): value is string => Boolean(value)))];
+  const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
+  const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
+  const itemIdentifiers = [...new Set(visibleRows.map((row) => row.liItemId).filter((value): value is string => Boolean(value)))];
   const matchingItems = itemIdentifiers.length
     ? await db
       .select({
@@ -806,7 +820,7 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
       ...(item.liItemId ? [[item.liItemId, item] as const] : []),
     ]),
   );
-  res.json(ListScheduleChangesResponse.parse(rows.map((row) => {
+  res.json(ListScheduleChangesResponse.parse(visibleRows.map((row) => {
     if (row.affectedItems?.length || !row.liItemId) return row;
     const item = itemsByIdentifier.get(row.liItemId);
     if (!item) return row;

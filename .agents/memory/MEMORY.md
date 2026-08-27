@@ -11,3 +11,4 @@
 - [Same-strength PBS listings](same-strength-pbs-listings.md) — visually identical PBS items may be distinct benefit listings; do not deduplicate by strength, pack, and price.
 - [PBS workbook style metadata](pbs-workbook-style-metadata.md) — SheetJS cell styles may lose source fill IDs; inspect XLSX XML when highlights carry meaning.
 - [PBS premium data](pbs-premium-data.md) — Premium amounts are published per item-dispensing-rule relationship, not derived from item prices.
+- [Brand visibility preferences](brand-visibility-preferences.md) — Per-account display filters never constrain shared PBS ingestion, storage, or calculations.

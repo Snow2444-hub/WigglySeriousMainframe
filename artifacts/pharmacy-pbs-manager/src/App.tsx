@@ -23,6 +23,7 @@ import NotFound from "@/pages/not-found";
 import { PbsDirectory } from "@/pages/pbs/PbsDirectory";
 import { PbsItemEvidence } from "@/pages/pbs/PbsItemEvidence";
 import { UpcomingChangesPage } from "@/pages/UpcomingChanges";
+import { BrandPreferencesPage } from "@/pages/brand-preferences";
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -182,6 +183,7 @@ function Router() {
     <Route path="/pbs/:itemCode" component={() => <Protected><PbsItemEvidence /></Protected>} />
     <Route path="/artg" component={() => <Protected><ArtgDirectory /></Protected>} />
     <Route path="/stock" component={() => <Protected><StockPage /></Protected>} />
+    <Route path="/brand-preferences" component={() => <Protected><BrandPreferencesPage /></Protected>} />
     <Route path="/admin" component={() => <Protected><AdminGuard><AdminPage /></AdminGuard></Protected>} />
     <Route component={NotFound} />
   </Switch></RoutedErrorBoundary>;

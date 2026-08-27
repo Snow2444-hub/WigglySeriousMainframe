@@ -16,8 +16,16 @@ import {
   ShieldCheck,
   TrendingDown,
   X,
+  SlidersHorizontal,
+  EyeOff
 } from 'lucide-react';
 import { useCurrentRole } from '@/components/admin-guard';
+import {
+  useGetPharmacyBrandPreferences,
+  useClearPharmacyBrandPreferences,
+  getGetPharmacyBrandPreferencesQueryKey
+} from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 const navItems = [
   { href: '/', label: 'Upcoming changes', icon: TrendingDown },
@@ -26,6 +34,7 @@ const navItems = [
   { href: '/pbs', label: 'PBS directory', icon: BookOpen },
   { href: '/artg', label: 'ARTG register', icon: Database },
   { href: '/stock', label: 'Private stock', icon: Boxes },
+  { href: '/brand-preferences', label: 'Brand visibility', icon: SlidersHorizontal },
 ];
 
 export function BrandMark({ compact = false }: { compact?: boolean }) {
@@ -55,6 +64,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const visibleNavItems = roleQuery.data?.role === 'admin'
     ? [...navItems, { href: '/admin', label: 'Data updates', icon: Settings2 }]
     : navItems;
+
+  const { data: preferences } = useGetPharmacyBrandPreferences();
+  const clearPreferences = useClearPharmacyBrandPreferences();
+  const queryClient = useQueryClient();
+
+  const handleClearPreferences = () => {
+    clearPreferences.mutate(undefined, {
+      onSuccess: () => {
+        queryClient.invalidateQueries();
+      }
+    });
+  };
 
   return (
     <div className="min-h-[100dvh] bg-background text-foreground md:flex">
@@ -111,6 +132,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="font-medium">Australian medicines workspace</span>
           </div>
           <div className="ml-auto flex items-center gap-3">
+            {preferences && preferences.hiddenBrandCount > 0 && (
+              <div className="flex animate-rise-in items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-xs text-warning-foreground sm:gap-3 sm:px-3">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <EyeOff className="h-3.5 w-3.5" />
+                  <span className="font-mono">{preferences.hiddenItemCount}</span>
+                  <span className="hidden sm:inline">PBS listing{preferences.hiddenItemCount === 1 ? '' : 's'} hidden</span>
+                  <span className="sm:hidden">hidden</span>
+                </span>
+                <div className="hidden h-3 w-px bg-warning/30 sm:block" />
+                <button
+                  onClick={handleClearPreferences}
+                  disabled={clearPreferences.isPending}
+                  className="font-bold underline decoration-warning/40 underline-offset-2 hover:decoration-warning disabled:opacity-50"
+                >
+                  <span className="hidden sm:inline">Show all</span><span className="sm:hidden">Show</span>
+                </button>
+              </div>
+            )}
             <span className="hidden rounded-full border border-border bg-card px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:inline-flex">Live reference data</span>
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-mono text-xs font-bold text-muted-foreground md:hidden">{initials}</span>
           </div>

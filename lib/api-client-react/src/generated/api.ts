@@ -43,6 +43,8 @@ import type {
   PbsWatchlistEntry,
   PbsWatchlistEntryInput,
   PbsWatchlistEntryUpdate,
+  PharmacyBrandPreferenceInput,
+  PharmacyBrandPreferences,
   PharmacyStock,
   PharmacyStockInput,
   PharmacyStockUpdate,
@@ -236,6 +238,225 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
 
 
 
+
+export const getGetPharmacyBrandPreferencesUrl = () => {
+
+
+
+
+  return `/api/pharmacy-brand-preferences`
+}
+
+/**
+ * @summary List the signed-in pharmacy's brand display preferences
+ */
+export const getPharmacyBrandPreferences = async ( options?: Parameters<typeof customFetch>[1]): Promise<PharmacyBrandPreferences> => {
+
+  return customFetch<PharmacyBrandPreferences>(getGetPharmacyBrandPreferencesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPharmacyBrandPreferencesQueryKey = () => {
+    return [
+    `/api/pharmacy-brand-preferences`
+    ] as const;
+    }
+
+
+export const getGetPharmacyBrandPreferencesQueryOptions = <TData = Awaited<ReturnType<typeof getPharmacyBrandPreferences>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPharmacyBrandPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPharmacyBrandPreferencesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPharmacyBrandPreferences>>> = ({ signal }) => getPharmacyBrandPreferences({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPharmacyBrandPreferences>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPharmacyBrandPreferencesQueryResult = NonNullable<Awaited<ReturnType<typeof getPharmacyBrandPreferences>>>
+export type GetPharmacyBrandPreferencesQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List the signed-in pharmacy's brand display preferences
+ */
+
+export function useGetPharmacyBrandPreferences<TData = Awaited<ReturnType<typeof getPharmacyBrandPreferences>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPharmacyBrandPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPharmacyBrandPreferencesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSetPharmacyBrandPreferenceUrl = () => {
+
+
+
+
+  return `/api/pharmacy-brand-preferences`
+}
+
+/**
+ * @summary Set whether a brand is hidden for the signed-in pharmacy
+ */
+export const setPharmacyBrandPreference = async (pharmacyBrandPreferenceInput: PharmacyBrandPreferenceInput, options?: Parameters<typeof customFetch>[1]): Promise<PharmacyBrandPreferences> => {
+
+  return customFetch<PharmacyBrandPreferences>(getSetPharmacyBrandPreferenceUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pharmacyBrandPreferenceInput)
+  }
+);}
+
+
+
+
+
+export const getSetPharmacyBrandPreferenceMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setPharmacyBrandPreference>>, TError,{data: BodyType<PharmacyBrandPreferenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setPharmacyBrandPreference>>, TError,{data: BodyType<PharmacyBrandPreferenceInput>}, TContext> => {
+
+const mutationKey = ['setPharmacyBrandPreference'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setPharmacyBrandPreference>>, {data: BodyType<PharmacyBrandPreferenceInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setPharmacyBrandPreference(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetPharmacyBrandPreferenceMutationResult = NonNullable<Awaited<ReturnType<typeof setPharmacyBrandPreference>>>
+    export type SetPharmacyBrandPreferenceMutationBody = BodyType<PharmacyBrandPreferenceInput>
+    export type SetPharmacyBrandPreferenceMutationError = ErrorType<Error>
+
+    /**
+ * @summary Set whether a brand is hidden for the signed-in pharmacy
+ */
+export const useSetPharmacyBrandPreference = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setPharmacyBrandPreference>>, TError,{data: BodyType<PharmacyBrandPreferenceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setPharmacyBrandPreference>>,
+        TError,
+        {data: BodyType<PharmacyBrandPreferenceInput>},
+        TContext
+      > => {
+      return useMutation(getSetPharmacyBrandPreferenceMutationOptions(options));
+    }
+
+export const getClearPharmacyBrandPreferencesUrl = () => {
+
+
+
+
+  return `/api/pharmacy-brand-preferences`
+}
+
+/**
+ * @summary Show every brand for the signed-in pharmacy
+ */
+export const clearPharmacyBrandPreferences = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getClearPharmacyBrandPreferencesUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getClearPharmacyBrandPreferencesMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>, TError,void, TContext> => {
+
+const mutationKey = ['clearPharmacyBrandPreferences'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>, void> = () => {
+
+
+          return  clearPharmacyBrandPreferences(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearPharmacyBrandPreferencesMutationResult = NonNullable<Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>>
+
+    export type ClearPharmacyBrandPreferencesMutationError = ErrorType<Error>
+
+    /**
+ * @summary Show every brand for the signed-in pharmacy
+ */
+export const useClearPharmacyBrandPreferences = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearPharmacyBrandPreferences>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearPharmacyBrandPreferencesMutationOptions(options));
+    }
 
 export const getListDrugsUrl = (params?: ListDrugsParams,) => {
   const normalizedParams = new URLSearchParams();

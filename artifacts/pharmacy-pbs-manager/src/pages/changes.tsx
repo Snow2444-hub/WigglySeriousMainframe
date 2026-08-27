@@ -113,7 +113,7 @@ function timelineGroupKey(change: ScheduleChange): string {
     return `${change.changeType}:${oldValue.formulary ?? ''}:${newValue.formulary ?? ''}`;
   }
   if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
-    return `${change.changeType}:${brandKey}`;
+    return 'new_brands';
   }
   if (change.changeType === 'delisted') {
     return `${change.changeType}:${brandKey}:${oldValue.determined_price ?? ''}`;
@@ -183,17 +183,19 @@ function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
   });
 }
 
-function eventSummary(group: ScheduleEventGroup): string {
+function eventBadgeLabel(group: ScheduleEventGroup): string {
   const types = new Set(group.changes.map((change) => change.changeType));
-  const parts: string[] = [];
-  if (types.has('new_brand')) parts.push(group.brands.length > 1 ? `${group.brands.length} new brands` : 'new brand');
-  if (types.has('new_item')) parts.push('new listing');
-  if (types.has('price_change')) parts.push(group.brands.length > 1 ? `price update across ${group.brands.length} brands` : 'price update');
-  if (types.has('formulary_change')) parts.push('formulary update');
-  if (types.has('delisted')) parts.push('delisting');
-  if (types.has('published_fnb_new')) parts.push('FNB register entry');
-  if (parts.length === 0) return 'Schedule update';
-  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  if (types.size > 1) return 'Multiple changes';
+  if (types.has('new_brand')) return 'New brand';
+  if (types.has('new_item')) return 'New listing';
+  if (types.has('price_change')) return 'Price update';
+  if (types.has('formulary_change')) return 'Formulary update';
+  if (types.has('delisted')) return 'Delisting';
+  if (types.has('published_fnb_new')) return 'FNB entry';
+  if (types.has('premium_added')) return 'Premium added';
+  if (types.has('premium_changed')) return 'Premium update';
+  if (types.has('premium_removed')) return 'Premium removed';
+  return 'Schedule update';
 }
 
 function significanceForChanges(changes: ScheduleChange[]): 'normal' | 'medium' | 'high' {
@@ -284,6 +286,23 @@ function priceChangeListings(change: ScheduleChange): PriceChangeListing[] {
   }];
 }
 
+function sameListing(left: PriceChangeListing, right: PriceChangeListing): boolean {
+  if (left.liItemId && right.liItemId) return left.liItemId === right.liItemId;
+  return Boolean(
+    left.pbsCode
+    && right.pbsCode
+    && left.pbsCode === right.pbsCode
+    && left.brandName === right.brandName
+    && left.strength === right.strength,
+  );
+}
+
+function addUniqueListings(target: PriceChangeListing[], additions: PriceChangeListing[]): void {
+  for (const listing of additions) {
+    if (!target.some((candidate) => sameListing(candidate, listing))) target.push(listing);
+  }
+}
+
 function priceChangeGroupKey(change: ScheduleChange): string {
   const oldValue = objectValue(change.oldValue);
   const newValue = objectValue(change.newValue);
@@ -304,7 +323,7 @@ function groupPriceChanges(changes: ScheduleChange[]): PriceChangeGroup[] {
   for (const change of changes) {
     const key = priceChangeGroupKey(change);
     const current = groups.get(key) ?? { representative: change, listings: [] };
-    current.listings.push(...priceChangeListings(change));
+    addUniqueListings(current.listings, priceChangeListings(change));
     groups.set(key, current);
   }
   return [...groups.entries()].map(([key, group]) => {
@@ -339,11 +358,61 @@ function groupPriceChanges(changes: ScheduleChange[]): PriceChangeGroup[] {
   }).sort((left, right) => right.reductionMagnitude - left.reductionMagnitude);
 }
 
+function groupNewBrandChanges(changes: ScheduleChange[]): BrandPriceGroup[] {
+  const brands = new Map<string, BrandPriceGroup>();
+  for (const change of changes) {
+    const fallbackBrand = changeBrandName(change) || change.drugName;
+    const incoming = priceChangeListings(change).map((listing) => ({
+      ...listing,
+      brandName: listing.brandName || fallbackBrand,
+    }));
+    const key = fallbackBrand.trim().toLowerCase();
+    const brand = brands.get(key) ?? {
+      key,
+      brandName: fallbackBrand,
+      strength: incoming[0]?.strength ?? null,
+      listings: [],
+    };
+    for (const listing of incoming) {
+      if (brand.listings.length > 0 && brand.strength !== listing.strength) brand.strength = null;
+    }
+    addUniqueListings(brand.listings, incoming);
+    brands.set(key, brand);
+  }
+  return [...brands.values()].sort((left, right) => left.brandName.localeCompare(right.brandName));
+}
+
+type OtherChangeGroup = {
+  key: string;
+  representative: ScheduleChange;
+  brands: string[];
+};
+
+function groupOtherChanges(changes: ScheduleChange[]): OtherChangeGroup[] {
+  const groups = new Map<string, OtherChangeGroup>();
+  for (const change of changes) {
+    const oldValue = objectValue(change.oldValue);
+    const newValue = objectValue(change.newValue);
+    const key = change.changeType === 'new_brand' || change.changeType === 'new_item'
+      ? 'new_brands'
+      : change.changeType === 'formulary_change'
+        ? `formulary:${oldValue.formulary ?? ''}:${newValue.formulary ?? ''}`
+        : change.changeType;
+    const group = groups.get(key) ?? { key, representative: change, brands: [] };
+    const brand = changeBrandName(change);
+    if (brand) group.brands = addUnique(group.brands, [brand]);
+    group.brands = addUnique(group.brands, (change.affectedItems ?? []).map((item) => item.brandName));
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
 function EventExpandedDetails({ group }: { group: ScheduleEventGroup }) {
   const [expandedPrices, setExpandedPrices] = useState<string[]>([]);
   const [expandedBrands, setExpandedBrands] = useState<string[]>([]);
   const priceGroups = groupPriceChanges(group.changes.filter((change) => change.changeType === 'price_change'));
-  const otherChanges = group.changes.filter((change) => change.changeType !== 'price_change');
+  const otherChanges = groupOtherChanges(group.changes.filter((change) => change.changeType !== 'price_change'));
+  const newBrandChanges = groupNewBrandChanges(group.changes.filter((change) => change.changeType === 'new_brand' || change.changeType === 'new_item'));
   const toggle = (setter: Dispatch<SetStateAction<string[]>>, key: string) => {
     setter((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key]);
   };
@@ -413,10 +482,36 @@ function EventExpandedDetails({ group }: { group: ScheduleEventGroup }) {
             </div>
           );
         })}
-        {otherChanges.map((change) => (
-          <div key={change.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 rounded-xl border border-border bg-card px-4 py-3 text-xs">
-            <span className="font-semibold text-foreground">{changeBrandName(change) || change.drugName}</span>
-            <ChangeDetails change={change} />
+        {newBrandChanges.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 text-xs">
+              <span className="font-semibold text-foreground">New brands listed</span>
+              <span className="font-mono font-bold text-muted-foreground">{newBrandChanges.length} brand{newBrandChanges.length === 1 ? '' : 's'}</span>
+            </div>
+            <div className="divide-y divide-border/70 border-t border-border/70">
+              {newBrandChanges.map((brand) => {
+                const brandKey = `${group.key}:new:${brand.key}`;
+                const expanded = expandedBrands.includes(brandKey);
+                return (
+                  <div key={brandKey}>
+                    <button type="button" onClick={() => toggle(setExpandedBrands, brandKey)} aria-expanded={expanded} className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-xs hover:bg-secondary/25">
+                      <span className="font-semibold text-foreground">{brand.brandName}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] font-bold text-muted-foreground">{brand.listings.length} listing{brand.listings.length === 1 ? '' : 's'}</span>
+                        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                      </span>
+                    </button>
+                    {expanded && listings(brand.listings)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        {otherChanges.filter((change) => change.key !== 'new_brands').map((change) => (
+          <div key={change.key} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 rounded-xl border border-border bg-card px-4 py-3 text-xs">
+            <span className="font-semibold text-foreground">{change.brands.join(', ') || change.representative.drugName}</span>
+            <ChangeDetails change={change.representative} />
           </div>
         ))}
       </div>
@@ -435,10 +530,11 @@ function groupTimelineChanges(changes: ScheduleChange[]): TimelineDateGroup[] {
     }
 
     const key = timelineGroupKey(change);
-    let group = dateGroup.groups.find((candidate) => candidate.key === key);
+    const groupKey = `${change.effectiveDate}:${key}`;
+    let group = dateGroup.groups.find((candidate) => candidate.key === groupKey);
     if (!group) {
       group = {
-        key: `${change.effectiveDate}:${key}`,
+        key: groupKey,
         representative: change,
         changes: [],
         brands: [],
@@ -461,7 +557,14 @@ function groupTimelineChanges(changes: ScheduleChange[]): TimelineDateGroup[] {
 }
 
 function timelineGroupCanExpand(group: TimelineGroup): boolean {
-  return group.changes.length > 1 || group.itemLabels.length > 1;
+  if (group.representative.changeType === 'formulary_change') return false;
+  if (group.representative.changeType === 'price_change') {
+    return groupPriceChanges(group.changes).some((priceGroup) => priceGroup.listingCount > 1);
+  }
+  if (group.representative.changeType === 'new_item' || group.representative.changeType === 'new_brand') {
+    return group.brands.length > 0;
+  }
+  return false;
 }
 
 function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
@@ -482,8 +585,9 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
   if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
     return (
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
-        <span className={reductionTextClass(significance)}>{change.changeType === 'new_brand' ? 'Brand added' : 'Added'}</span>
-        <span className="truncate">{brandLabel}</span>
+        <span className={reductionTextClass(significance)}>
+          {group.brands.length === 1 ? 'New brand listed' : `${group.brands.length} new brands listed`}
+        </span>
         <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(significance)}`}>
           {itemCount} listing{itemCount === 1 ? '' : 's'}
         </span>
@@ -507,23 +611,96 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
 }
 
 function TimelineGroupExpanded({ group }: { group: TimelineGroup }) {
+  const [expandedBrands, setExpandedBrands] = useState<string[]>([]);
+  const priceGroups = groupPriceChanges(group.changes.filter((change) => change.changeType === 'price_change'));
+  const newBrandChanges = groupNewBrandChanges(group.changes.filter((change) => change.changeType === 'new_brand' || change.changeType === 'new_item'));
+  const toggleBrand = (key: string) => {
+    setExpandedBrands((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key]);
+  };
+  const listings = (items: PriceChangeListing[]) => (
+    <div className="divide-y divide-border/70 border-t border-border/70 bg-muted/15">
+      {items.map((item, index) => {
+        const label = [item.brandName, item.strength].filter(Boolean).join(' · ');
+        const itemKey = item.liItemId ?? `${item.pbsCode}:${index}`;
+        return item.liItemId ? (
+          <Link key={itemKey} href={`/pbs/${encodeURIComponent(item.liItemId)}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs transition-colors hover:bg-secondary/30">
+            <span className="font-semibold text-foreground">{label}</span>
+            <span className="font-mono font-bold text-muted-foreground">PBS {item.pbsCode || 'listing'}</span>
+          </Link>
+        ) : (
+          <div key={itemKey} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+            <span className="font-semibold text-foreground">{label}</span>
+            <span className="font-mono font-bold text-muted-foreground">PBS {item.pbsCode || 'listing'}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  if (group.representative.changeType === 'price_change') {
+    return (
+      <div className="border-t border-border/70 bg-muted/20 px-3 py-2.5">
+        <div className="space-y-1.5">
+          {priceGroups.flatMap((priceGroup) => priceGroup.brands.map((brand) => {
+            const brandKey = `${group.key}:${priceGroup.key}:${brand.key}`;
+            const expanded = expandedBrands.includes(brandKey);
+            return (
+              <div key={brandKey} className="overflow-hidden rounded-lg border border-border/70 bg-card">
+                <button type="button" onClick={() => toggleBrand(brandKey)} aria-expanded={expanded} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[11px] hover:bg-secondary/25">
+                  <span className="font-semibold text-foreground">{[brand.brandName, brand.strength].filter(Boolean).join(' · ')}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-muted-foreground">{brand.listings.length} listing{brand.listings.length === 1 ? '' : 's'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+                {expanded && listings(brand.listings)}
+              </div>
+            );
+          }))}
+        </div>
+      </div>
+    );
+  }
+
+  if (group.representative.changeType === 'new_item' || group.representative.changeType === 'new_brand') {
+    return (
+      <div className="border-t border-border/70 bg-muted/20 px-3 py-2.5">
+        <div className="space-y-1.5">
+          {newBrandChanges.map((brand) => {
+            const brandKey = `${group.key}:${brand.key}`;
+            const expanded = expandedBrands.includes(brandKey);
+            return (
+              <div key={brandKey} className="overflow-hidden rounded-lg border border-border/70 bg-card">
+                <button type="button" onClick={() => toggleBrand(brandKey)} aria-expanded={expanded} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-[11px] hover:bg-secondary/25">
+                  <span className="font-semibold text-foreground">{brand.brandName}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-muted-foreground">{brand.listings.length} listing{brand.listings.length === 1 ? '' : 's'}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+                {expanded && listings(brand.listings)}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (group.representative.changeType === 'formulary_change') {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border/70 bg-muted/20 px-3 py-2.5 text-[11px]">
+        <span className="font-semibold text-foreground">{group.brands.join(', ') || 'Affected listings'}</span>
+        <ChangeDetails change={group.representative} />
+      </div>
+    );
+  }
+
   return (
     <div className="border-t border-border/70 bg-muted/20 px-3 py-2.5">
-      <div className="space-y-1.5">
-        {group.changes.map((change) => {
-          const itemLabels = changeItemLabels(change);
-          const labels = itemLabels.length ? itemLabels : [changeBrandName(change) || 'Drug-level change'];
-          return labels.map((label, index) => (
-            <div key={`${change.id}-${index}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
-              <span className="font-semibold text-foreground">{label}</span>
-              {change.changeType === 'price_change' || change.changeType === 'formulary_change' ? (
-                <ChangeDetails change={change} />
-              ) : (
-                <span className="font-mono text-muted-foreground">{changePbsCode(change) || 'PBS listing'}</span>
-              )}
-            </div>
-          ));
-        })}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
+        <span className="font-semibold text-foreground">{group.brands.join(', ') || 'Affected listings'}</span>
+        <ChangeDetails change={group.representative} />
       </div>
     </div>
   );
@@ -538,8 +715,12 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
     const percentage = newVal?.percentage_change;
     return (
       <span className="flex flex-wrap items-center gap-2 font-mono text-sm">
-        <span className="text-muted-foreground line-through opacity-70">{money(oldPrice)}</span>
-        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+        {typeof oldPrice === 'number' && (
+          <>
+            <span className="text-muted-foreground line-through opacity-70">{money(oldPrice)}</span>
+            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+          </>
+        )}
         <span className="font-bold text-foreground">{money(newPrice)}</span>
         {typeof percentage === 'number' && <span className={`text-[11px] font-bold ${reductionTextClass(change.significance)}`}>{percentage.toFixed(2)}%</span>}
       </span>

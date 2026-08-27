@@ -56,6 +56,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /pharmacy-brand-preferences:
+    get:
+      operationId: getPharmacyBrandPreferences
+      tags: [preferences]
+      summary: List the signed-in pharmacy's brand display preferences
+      responses:
+        "200":
+          description: Brand catalogue and the signed-in pharmacy's display preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PharmacyBrandPreferences"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      operationId: setPharmacyBrandPreference
+      tags: [preferences]
+      summary: Set whether a brand is hidden for the signed-in pharmacy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyBrandPreferenceInput"
+      responses:
+        "200":
+          description: Updated brand preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PharmacyBrandPreferences"
+        "400":
+          description: Invalid preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: clearPharmacyBrandPreferences
+      tags: [preferences]
+      summary: Show every brand for the signed-in pharmacy
+      responses:
+        "204":
+          description: Preferences cleared
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /drugs:
     get:
       operationId: listDrugs
@@ -920,6 +980,45 @@ components:
           type: string
           pattern: '^\d{4}-\d{2}-\d{2}$'
       required: [cycleLabel, submissionDeadline]
+    PharmacyBrandPreference:
+      type: object
+      properties:
+        drugId:
+          type: integer
+        drugName:
+          type: string
+        brandName:
+          type: string
+        itemCount:
+          type: integer
+        hidden:
+          type: boolean
+      required: [drugId, drugName, brandName, itemCount, hidden]
+    PharmacyBrandPreferences:
+      type: object
+      properties:
+        hiddenBrandCount:
+          type: integer
+        hiddenItemCount:
+          type: integer
+        brands:
+          type: array
+          items:
+            $ref: "#/components/schemas/PharmacyBrandPreference"
+      required: [hiddenBrandCount, hiddenItemCount, brands]
+    PharmacyBrandPreferenceInput:
+      type: object
+      properties:
+        drugId:
+          type: integer
+          minimum: 1
+        brandName:
+          type: string
+          minLength: 1
+          maxLength: 255
+        hidden:
+          type: boolean
+      required: [drugId, brandName, hidden]
     MedicineBrandSummary:
       type: object
       properties:

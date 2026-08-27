@@ -23,6 +23,7 @@ export * from "./pbs-item-premium-history";
 export * from "./price-history";
 export * from "./artg-entries";
 export * from "./pharmacy-stock";
+export * from "./pharmacy-brand-preferences";
 export * from "./raw-schedule-staging";
 export * from "./ingestion-runs";
 export * from "./pbs-watchlist";

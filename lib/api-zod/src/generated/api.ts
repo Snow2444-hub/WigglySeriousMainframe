@@ -48,6 +48,55 @@ export const GetDashboardResponse = zod.object({
 
 
 /**
+ * @summary List the signed-in pharmacy's brand display preferences
+ */
+export const GetPharmacyBrandPreferencesResponse = zod.object({
+  "hiddenBrandCount": zod.int(),
+  "hiddenItemCount": zod.int(),
+  "brands": zod.array(zod.object({
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string(),
+  "itemCount": zod.int(),
+  "hidden": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Set whether a brand is hidden for the signed-in pharmacy
+ */
+
+export const setPharmacyBrandPreferenceBodyBrandNameMax = 255;
+
+
+
+export const SetPharmacyBrandPreferenceBody = zod.object({
+  "drugId": zod.int().min(1),
+  "brandName": zod.string().min(1).max(setPharmacyBrandPreferenceBodyBrandNameMax),
+  "hidden": zod.boolean()
+})
+
+export const SetPharmacyBrandPreferenceResponse = zod.object({
+  "hiddenBrandCount": zod.int(),
+  "hiddenItemCount": zod.int(),
+  "brands": zod.array(zod.object({
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string(),
+  "itemCount": zod.int(),
+  "hidden": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Show every brand for the signed-in pharmacy
+ */
+export const ClearPharmacyBrandPreferencesResponse = zod.void()
+
+
+/**
  * @summary List PBS drugs
  */
 export const listDrugsQueryLimitDefault = 50;
