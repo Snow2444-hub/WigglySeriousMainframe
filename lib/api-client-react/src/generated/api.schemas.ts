@@ -181,6 +181,23 @@ export interface PriceHistory {
   reductionType: string | null;
 }
 
+export interface PbsItemPremiumHistory {
+  id: number;
+  itemCode: string;
+  liItemId: string;
+  scheduleCode: number;
+  scheduleEffectiveDate: string;
+  dispensingRuleReference: string;
+  /** @nullable */
+  dispensingRuleMnemonic: string | null;
+  /** @nullable */
+  brandPremium: number | null;
+  /** @nullable */
+  therapeuticGroupPremium: number | null;
+  /** @nullable */
+  therapeuticExemptionIndicator: string | null;
+}
+
 export interface PredictedReduction {
   id: number;
   itemCode: string;
@@ -229,6 +246,9 @@ export const ScheduleChangeChangeType = {
   delisted: 'delisted',
   price_change: 'price_change',
   formulary_change: 'formulary_change',
+  premium_added: 'premium_added',
+  premium_changed: 'premium_changed',
+  premium_removed: 'premium_removed',
   published_fnb_new: 'published_fnb_new',
 } as const;
 
@@ -626,6 +646,9 @@ export const ListScheduleChangesChangeType = {
   delisted: 'delisted',
   price_change: 'price_change',
   formulary_change: 'formulary_change',
+  premium_added: 'premium_added',
+  premium_changed: 'premium_changed',
+  premium_removed: 'premium_removed',
 } as const;
 
 export type ListScheduleChangesSignificance = typeof ListScheduleChangesSignificance[keyof typeof ListScheduleChangesSignificance];

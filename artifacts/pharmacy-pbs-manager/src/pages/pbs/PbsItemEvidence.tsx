@@ -4,6 +4,7 @@ import {
   useListPriceHistory, getListPriceHistoryQueryKey,
   useListItemPredictedReductions, getListItemPredictedReductionsQueryKey,
   useListItemScheduleChanges, getListItemScheduleChangesQueryKey,
+  useListItemPremiumHistory, getListItemPremiumHistoryQueryKey,
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { Link } from 'wouter';
@@ -13,6 +14,78 @@ import { format, parseISO } from 'date-fns';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const dateStr = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+type PremiumSnapshot = {
+  scheduleEffectiveDate: string;
+  scheduleCode: number;
+  brandPremium: number | null;
+  therapeuticGroupPremium: number | null;
+  hasTherapeuticExemption: boolean;
+  ruleCount: number;
+};
+
+const isTherapeuticExemption = (value: string | null) => value?.trim().toUpperCase() === 'Y';
+
+function highestPremium(values: Array<number | null>): number | null {
+  const known = values.filter((value): value is number => value !== null);
+  return known.length ? Math.max(...known) : null;
+}
+
+function PremiumHistoryPanel({
+  title,
+  valueKey,
+  snapshots,
+  loading,
+  error,
+}: {
+  title: string;
+  valueKey: 'brandPremium' | 'therapeuticGroupPremium';
+  snapshots: PremiumSnapshot[];
+  loading: boolean;
+  error: boolean;
+}) {
+  const latest = snapshots[0];
+  const latestValue = latest?.[valueKey] ?? null;
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border bg-muted/20 px-6 py-5">
+        <p className="font-bold text-foreground">{title}</p>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="font-mono text-2xl font-bold tracking-tight text-foreground">
+            {loading ? '…' : latestValue === null ? 'Not published' : money(latestValue)}
+          </span>
+          {latest?.hasTherapeuticExemption && (
+            <span className="rounded bg-info/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-info">
+              Exempt — not applicable
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="max-h-[248px] overflow-auto">
+        {loading ? <div className="p-6"><QueryState kind="loading" /></div> :
+         error ? <div className="p-6 text-sm font-medium text-destructive">Premium history could not be loaded.</div> :
+         !snapshots.length ? <div className="p-6 text-sm font-medium text-muted-foreground">Premium history has not been ingested for this item yet.</div> : (
+          <div className="divide-y divide-border">
+            {snapshots.map((snapshot) => (
+              <div key={`${snapshot.scheduleCode}-${snapshot.scheduleEffectiveDate}`} className="flex items-center justify-between gap-3 px-6 py-3 text-xs">
+                <div>
+                  <p className="font-semibold text-foreground">{dateStr(snapshot.scheduleEffectiveDate)}</p>
+                  <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {snapshot.scheduleCode} · {snapshot.ruleCount} rule{snapshot.ruleCount === 1 ? '' : 's'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono font-bold text-foreground">
+                    {snapshot[valueKey] === null ? 'Not published' : money(snapshot[valueKey] as number)}
+                  </p>
+                  {snapshot.hasTherapeuticExemption && <p className="mt-0.5 text-[10px] font-semibold text-info">Exemption applies</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function PbsItemEvidence() {
   const params = useParams();
@@ -22,6 +95,7 @@ export function PbsItemEvidence() {
   const priceHistory = useListPriceHistory(itemCode, { query: { enabled: !!itemCode, queryKey: getListPriceHistoryQueryKey(itemCode) } });
   const predictedReductions = useListItemPredictedReductions(itemCode, { query: { enabled: !!itemCode, queryKey: getListItemPredictedReductionsQueryKey(itemCode) } });
   const scheduleChanges = useListItemScheduleChanges(itemCode, { query: { enabled: !!itemCode, queryKey: getListItemScheduleChangesQueryKey(itemCode) } });
+  const premiumHistory = useListItemPremiumHistory(itemCode, { query: { enabled: !!itemCode, queryKey: getListItemPremiumHistoryQueryKey(itemCode) } });
 
   const item = itemQuery.data;
 
@@ -38,6 +112,27 @@ export function PbsItemEvidence() {
       )
     : [];
   const hasPredictions = Boolean(predictedReductions.data?.length);
+  const premiumSnapshots = Object.values(
+    (premiumHistory.data ?? []).reduce<Record<string, PremiumSnapshot>>((bySchedule, record) => {
+      const key = `${record.scheduleCode}:${record.scheduleEffectiveDate}`;
+      const existing = bySchedule[key] ?? {
+        scheduleEffectiveDate: record.scheduleEffectiveDate,
+        scheduleCode: record.scheduleCode,
+        brandPremium: null,
+        therapeuticGroupPremium: null,
+        hasTherapeuticExemption: false,
+        ruleCount: 0,
+      };
+      bySchedule[key] = {
+        ...existing,
+        brandPremium: highestPremium([existing.brandPremium, record.brandPremium]),
+        therapeuticGroupPremium: highestPremium([existing.therapeuticGroupPremium, record.therapeuticGroupPremium]),
+        hasTherapeuticExemption: existing.hasTherapeuticExemption || isTherapeuticExemption(record.therapeuticExemptionIndicator),
+        ruleCount: existing.ruleCount + 1,
+      };
+      return bySchedule;
+    }, {}),
+  ).sort((left, right) => right.scheduleEffectiveDate.localeCompare(left.scheduleEffectiveDate));
 
   return (
     <AppShell>
@@ -146,6 +241,20 @@ export function PbsItemEvidence() {
             </div>
 
             <div className="flex flex-col gap-6">
+              <PremiumHistoryPanel
+                title="Brand premium"
+                valueKey="brandPremium"
+                snapshots={premiumSnapshots}
+                loading={premiumHistory.isLoading}
+                error={premiumHistory.isError}
+              />
+              <PremiumHistoryPanel
+                title="Therapeutic group premium"
+                valueKey="therapeuticGroupPremium"
+                snapshots={premiumSnapshots}
+                loading={premiumHistory.isLoading}
+                error={premiumHistory.isError}
+              />
                <div className={`order-2 rounded-2xl border border-border bg-card shadow-sm flex flex-col ${!hasPredictions ? 'lg:order-2' : 'lg:order-1'}`}>
                 <div className="border-b border-border px-6 py-5 flex items-center justify-between bg-muted/20">
                   <div className="flex items-center gap-2 font-bold text-foreground">

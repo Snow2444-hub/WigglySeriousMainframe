@@ -1,6 +1,7 @@
 import {
   db,
   drugsTable,
+  pbsItemPremiumHistoryTable,
   rawScheduleStagingTable,
   reductionSettingsTable,
   type ScheduleChangeAffectedItem,
@@ -12,6 +13,14 @@ import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
 
+type PremiumRuleSnapshot = {
+  dispensingRuleReference: string;
+  dispensingRuleMnemonic: string | null;
+  brandPremium: number | null;
+  therapeuticGroupPremium: number | null;
+  therapeuticExemptionIndicator: string | null;
+};
+
 type SnapshotItem = {
   liItemId: string;
   pbsCode: string | null;
@@ -20,6 +29,7 @@ type SnapshotItem = {
   strength: string | null;
   determinedPrice: number | null;
   formulary: "F1" | "F2" | null;
+  premiumRules: PremiumRuleSnapshot[];
 };
 
 type ScheduleSnapshot = {
@@ -247,25 +257,33 @@ function snapshotKey(scheduleCode: number, effectiveDate: string): string {
 }
 
 async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
-  const pages = await db
-    .select({
-      id: rawScheduleStagingTable.id,
-      endpoint: rawScheduleStagingTable.endpoint,
-      requestKey: rawScheduleStagingTable.requestKey,
-      payload: rawScheduleStagingTable.payload,
-    })
-    .from(rawScheduleStagingTable)
-    .where(eq(rawScheduleStagingTable.endpoint, "items"))
-    .orderBy(asc(rawScheduleStagingTable.id));
-
-  const schedulePages = await db
-    .select({
-      endpoint: rawScheduleStagingTable.endpoint,
-      payload: rawScheduleStagingTable.payload,
-    })
-    .from(rawScheduleStagingTable)
-    .where(eq(rawScheduleStagingTable.endpoint, "schedules"))
-    .orderBy(asc(rawScheduleStagingTable.id));
+  const [pages, schedulePages, premiumRows] = await Promise.all([
+    db
+      .select({
+        id: rawScheduleStagingTable.id,
+        endpoint: rawScheduleStagingTable.endpoint,
+        requestKey: rawScheduleStagingTable.requestKey,
+        payload: rawScheduleStagingTable.payload,
+      })
+      .from(rawScheduleStagingTable)
+      .where(eq(rawScheduleStagingTable.endpoint, "items"))
+      .orderBy(asc(rawScheduleStagingTable.id)),
+    db
+      .select({
+        endpoint: rawScheduleStagingTable.endpoint,
+        payload: rawScheduleStagingTable.payload,
+      })
+      .from(rawScheduleStagingTable)
+      .where(eq(rawScheduleStagingTable.endpoint, "schedules"))
+      .orderBy(asc(rawScheduleStagingTable.id)),
+    db
+      .select()
+      .from(pbsItemPremiumHistoryTable)
+      .orderBy(
+        asc(pbsItemPremiumHistoryTable.scheduleEffectiveDate),
+        asc(pbsItemPremiumHistoryTable.dispensingRuleReference),
+      ),
+  ]);
 
   const effectiveDates = new Map<number, string>();
   for (const page of schedulePages) {
@@ -320,15 +338,72 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
           stringField(record, "formulary") === "F1" || stringField(record, "formulary") === "F2"
             ? (stringField(record, "formulary") as "F1" | "F2")
             : null,
+          premiumRules: [],
       });
       snapshot.drugs.set(drugKey, items);
       snapshots.set(key, snapshot);
     }
   }
 
+  for (const row of premiumRows) {
+    const snapshot = snapshots.get(snapshotKey(row.scheduleCode, row.scheduleEffectiveDate));
+    if (!snapshot) continue;
+    const item = [...snapshot.drugs.values()]
+      .map((items) => items.get(row.liItemId))
+      .find((candidate): candidate is SnapshotItem => Boolean(candidate));
+    if (!item) continue;
+    item.premiumRules.push({
+      dispensingRuleReference: row.dispensingRuleReference,
+      dispensingRuleMnemonic: row.dispensingRuleMnemonic,
+      brandPremium: row.brandPremium,
+      therapeuticGroupPremium: row.therapeuticGroupPremium,
+      therapeuticExemptionIndicator: row.therapeuticExemptionIndicator,
+    });
+  }
+
   return [...snapshots.values()].sort((left, right) =>
     left.effectiveDate.localeCompare(right.effectiveDate),
   );
+}
+
+function hasPremium(item: SnapshotItem): boolean {
+  return item.premiumRules.some(
+    (rule) => (rule.brandPremium ?? 0) > 0 || (rule.therapeuticGroupPremium ?? 0) > 0,
+  );
+}
+
+function premiumSnapshotValue(item: SnapshotItem) {
+  const rules = [...item.premiumRules]
+    .sort((left, right) => left.dispensingRuleReference.localeCompare(right.dispensingRuleReference))
+    .map((rule) => ({
+      dispensing_rule_reference: rule.dispensingRuleReference,
+      dispensing_rule_mnem: rule.dispensingRuleMnemonic,
+      brand_premium: rule.brandPremium,
+      therapeutic_group_premium: rule.therapeuticGroupPremium,
+      therapeutic_exemption_indicator: rule.therapeuticExemptionIndicator,
+    }));
+  const brandPremiums = rules
+    .map((rule) => rule.brand_premium)
+    .filter((value): value is number => value !== null);
+  const therapeuticGroupPremiums = rules
+    .map((rule) => rule.therapeutic_group_premium)
+    .filter((value): value is number => value !== null);
+  const exemptions = [...new Set(
+    rules
+      .map((rule) => rule.therapeutic_exemption_indicator)
+      .filter((value): value is string => Boolean(value)),
+  )];
+
+  return {
+    brand_premium: brandPremiums.length ? Math.max(...brandPremiums) : null,
+    therapeutic_group_premium: therapeuticGroupPremiums.length ? Math.max(...therapeuticGroupPremiums) : null,
+    therapeutic_exemption_indicator: exemptions.length === 1 ? exemptions[0] : exemptions.length ? exemptions : null,
+    dispensing_rules: rules,
+  };
+}
+
+function premiumFingerprint(item: SnapshotItem): string {
+  return JSON.stringify(premiumSnapshotValue(item));
 }
 
 function changeRow(input: {
@@ -505,6 +580,53 @@ function compareSnapshots(
             newValue: { formulary: currentItem.formulary },
             significance: highSignificance ? "high" : "normal",
             notes: `Formulary changed from ${item.formulary} to ${currentItem.formulary}.`,
+          }),
+        );
+      }
+
+      const previousHasPremium = hasPremium(item);
+      const currentHasPremium = hasPremium(currentItem);
+      if (!previousHasPremium && currentHasPremium) {
+        changes.push(
+          changeRow({
+            schedule: current,
+            item: currentItem,
+            drugId,
+            changeType: "premium_added",
+            oldValue: premiumSnapshotValue(item),
+            newValue: premiumSnapshotValue(currentItem),
+            significance: "high",
+            notes: "A PBS patient premium was added for this item.",
+          }),
+        );
+      } else if (previousHasPremium && !currentHasPremium) {
+        changes.push(
+          changeRow({
+            schedule: current,
+            item: currentItem,
+            drugId,
+            changeType: "premium_removed",
+            oldValue: premiumSnapshotValue(item),
+            newValue: premiumSnapshotValue(currentItem),
+            significance: "high",
+            notes: "A PBS patient premium was removed for this item.",
+          }),
+        );
+      } else if (
+        previousHasPremium &&
+        currentHasPremium &&
+        premiumFingerprint(item) !== premiumFingerprint(currentItem)
+      ) {
+        changes.push(
+          changeRow({
+            schedule: current,
+            item: currentItem,
+            drugId,
+            changeType: "premium_changed",
+            oldValue: premiumSnapshotValue(item),
+            newValue: premiumSnapshotValue(currentItem),
+            significance: "high",
+            notes: "A PBS patient premium changed for this item.",
           }),
         );
       }

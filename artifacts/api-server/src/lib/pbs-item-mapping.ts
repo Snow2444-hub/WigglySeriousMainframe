@@ -1,8 +1,12 @@
-import { db, drugsTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
+import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
+export type PbsItemScheduleMetadata = Map<
+  string,
+  { itemCode: string; therapeuticExemptionIndicator: string | null }
+>;
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -22,6 +26,62 @@ export function itemIdsFromAtcRelationshipPayload(payload: unknown): string[] {
   return recordsFromPayload(payload)
     .map((record) => stringField(record, "li_item_id"))
     .filter((itemId): itemId is string => Boolean(itemId));
+}
+
+export function itemScheduleMetadataFromPayload(payload: unknown): PbsItemScheduleMetadata {
+  const metadata: PbsItemScheduleMetadata = new Map();
+  for (const record of recordsFromPayload(payload)) {
+    const liItemId = stringField(record, "li_item_id");
+    if (!liItemId) continue;
+    metadata.set(liItemId, {
+      itemCode: liItemId,
+      therapeuticExemptionIndicator: stringField(record, "therapeutic_exemption_indicator") ?? null,
+    });
+  }
+  return metadata;
+}
+
+export async function upsertPbsItemPremiumsFromPayload(
+  payload: unknown,
+  scheduleEffectiveDate: string,
+  itemMetadata: PbsItemScheduleMetadata,
+  scheduleCode?: number,
+): Promise<number> {
+  let processed = 0;
+
+  for (const record of recordsFromPayload(payload)) {
+    const liItemId = stringField(record, "li_item_id");
+    const dispensingRuleReference = stringField(record, "dispensing_rule_reference");
+    const relationshipScheduleCode = scheduleCode ?? numberField(record, "schedule_code");
+    const item = liItemId ? itemMetadata.get(liItemId) : undefined;
+    if (!liItemId || !item || !dispensingRuleReference || relationshipScheduleCode === undefined) continue;
+
+    const values = {
+      itemCode: item.itemCode,
+      liItemId,
+      scheduleCode: relationshipScheduleCode,
+      scheduleEffectiveDate,
+      dispensingRuleReference,
+      dispensingRuleMnemonic: stringField(record, "dispensing_rule_mnem") ?? null,
+      brandPremium: numberField(record, "brand_premium") ?? null,
+      therapeuticGroupPremium: numberField(record, "therapeutic_group_premium") ?? null,
+      therapeuticExemptionIndicator: item.therapeuticExemptionIndicator,
+    };
+    await db
+      .insert(pbsItemPremiumHistoryTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          pbsItemPremiumHistoryTable.itemCode,
+          pbsItemPremiumHistoryTable.scheduleCode,
+          pbsItemPremiumHistoryTable.scheduleEffectiveDate,
+          pbsItemPremiumHistoryTable.dispensingRuleReference,
+        ],
+        set: values,
+      });
+    processed += 1;
+  }
+  return processed;
 }
 
 function stringField(record: JsonRecord, ...keys: string[]): string | undefined {

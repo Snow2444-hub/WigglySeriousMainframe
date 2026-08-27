@@ -4,6 +4,7 @@ import {
   db,
   artgEntriesTable,
   drugsTable,
+  pbsItemPremiumHistoryTable,
   pbsDisclosureCyclesTable,
   pbsFnbReductionsTable,
   pbsItemsTable,
@@ -32,6 +33,8 @@ import {
   ListMedicineDirectoryResponse,
   ListItemPredictedReductionsParams,
   ListItemPredictedReductionsResponse,
+  ListItemPremiumHistoryParams,
+  ListItemPremiumHistoryResponse,
   ListItemScheduleChangesParams,
   ListItemScheduleChangesResponse,
   ListPriceHistoryParams,
@@ -429,6 +432,23 @@ router.get("/pbs-items/:itemCode/price-history", async (req, res): Promise<void>
     .where(eq(priceHistoryTable.itemCode, parsed.data.itemCode))
     .orderBy(desc(priceHistoryTable.priceDate));
   res.json(ListPriceHistoryResponse.parse(rows));
+});
+
+router.get("/pbs-items/:itemCode/premium-history", async (req, res): Promise<void> => {
+  const parsed = ListItemPremiumHistoryParams.safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(pbsItemPremiumHistoryTable)
+    .where(eq(pbsItemPremiumHistoryTable.itemCode, parsed.data.itemCode))
+    .orderBy(
+      desc(pbsItemPremiumHistoryTable.scheduleEffectiveDate),
+      asc(pbsItemPremiumHistoryTable.dispensingRuleReference),
+    );
+  res.json(ListItemPremiumHistoryResponse.parse(rows));
 });
 
 router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promise<void> => {

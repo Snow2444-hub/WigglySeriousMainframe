@@ -19,6 +19,7 @@
 
 export * from "./drugs";
 export * from "./pbs-items";
+export * from "./pbs-item-premium-history";
 export * from "./price-history";
 export * from "./artg-entries";
 export * from "./pharmacy-stock";

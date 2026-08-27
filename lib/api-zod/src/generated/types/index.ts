@@ -31,6 +31,7 @@ export * from './medicineDrugSummary';
 export * from './medicineDrugSummarySearchMatchLevel';
 export * from './pbsItem';
 export * from './pbsItemFormulary';
+export * from './pbsItemPremiumHistory';
 export * from './pbsWatchlistEntry';
 export * from './pbsWatchlistEntryFilterType';
 export * from './pbsWatchlistEntryInput';

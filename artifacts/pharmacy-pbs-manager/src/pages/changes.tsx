@@ -11,6 +11,7 @@ import {
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
+import { Link } from 'wouter';
 
 const money = (value: unknown) => {
   if (typeof value !== 'number') return '—';
@@ -28,6 +29,9 @@ const typeLabels: Record<string, string> = {
   delisted: 'Delisted',
   price_change: 'Price update',
   formulary_change: 'Formulary change',
+  premium_added: 'Premium added',
+  premium_changed: 'Premium updated',
+  premium_removed: 'Premium removed',
   published_fnb_new: 'New FNB register entry'
 };
 
@@ -55,6 +59,16 @@ function changeStrength(change: ScheduleChange): string | null {
 function changePbsCode(change: ScheduleChange): string | null {
   const next = objectValue(change.newValue);
   return change.pbsCode || textValue(next.pbs_code);
+}
+
+function changeItemCode(change: ScheduleChange): string | null {
+  const next = objectValue(change.newValue);
+  const previous = objectValue(change.oldValue);
+  return change.liItemId
+    || textValue(next.li_item_id)
+    || textValue(previous.li_item_id)
+    || change.affectedItems?.[0]?.liItemId
+    || null;
 }
 
 type TimelineGroup = {
@@ -222,7 +236,16 @@ function EventExpandedDetails({ group }: { group: ScheduleEventGroup }) {
         {group.changes.map((change) => (
           <div key={change.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="font-semibold">{changeBrandName(change) || change.drugName}</span>
+              {changeItemCode(change) ? (
+                <Link
+                  href={`/pbs/${encodeURIComponent(changeItemCode(change) as string)}`}
+                  className="font-semibold text-foreground hover:text-primary hover:underline"
+                >
+                  {changeBrandName(change) || change.drugName}
+                </Link>
+              ) : (
+                <span className="font-semibold">{changeBrandName(change) || change.drugName}</span>
+              )}
               <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
                 {changePbsCode(change) || 'PBS listing'}
               </span>
@@ -405,6 +428,28 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
       </span>
     );
   }
+  if (
+    change.changeType === 'premium_added' ||
+    change.changeType === 'premium_changed' ||
+    change.changeType === 'premium_removed'
+  ) {
+    const previous = objectValue(change.oldValue);
+    const next = objectValue(change.newValue);
+    const value = change.changeType === 'premium_removed' ? previous : next;
+    const brandPremium = typeof value.brand_premium === 'number' ? value.brand_premium : null;
+    const therapeuticGroupPremium = typeof value.therapeutic_group_premium === 'number'
+      ? value.therapeutic_group_premium
+      : null;
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+        {brandPremium !== null && <span>Brand {money(brandPremium)}</span>}
+        {therapeuticGroupPremium !== null && <span>Therapeutic {money(therapeuticGroupPremium)}</span>}
+        {value.therapeutic_exemption_indicator === 'Y' && (
+          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">Exempt</span>
+        )}
+      </span>
+    );
+  }
   if (change.changeType === 'published_fnb_new') {
     const added = objectValue(change.newValue);
     return (
@@ -505,6 +550,9 @@ export function ChangesPage() {
             <option value="delisted">Delisted</option>
             <option value="price_change">Price changes</option>
             <option value="formulary_change">Formulary changes</option>
+            <option value="premium_added">Premiums added</option>
+            <option value="premium_changed">Premiums updated</option>
+            <option value="premium_removed">Premiums removed</option>
           </select>
         </label>
         
@@ -558,7 +606,16 @@ export function ChangesPage() {
                       {event.scheduleCode && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {event.scheduleCode}</p>}
                     </div>
                     <div>
-                      <p className="text-sm font-bold leading-tight">{event.brands[0] || event.drugName}</p>
+                      {changeItemCode(event.changes[0]) ? (
+                        <Link
+                          href={`/pbs/${encodeURIComponent(changeItemCode(event.changes[0]) as string)}`}
+                          className="text-sm font-bold leading-tight text-foreground hover:text-primary hover:underline"
+                        >
+                          {event.brands[0] || event.drugName}
+                        </Link>
+                      ) : (
+                        <p className="text-sm font-bold leading-tight">{event.brands[0] || event.drugName}</p>
+                      )}
                       {event.brands[0] && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.drugName}</p>}
                     </div>
                     <div>

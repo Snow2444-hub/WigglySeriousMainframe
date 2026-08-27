@@ -37,6 +37,7 @@ import type {
   MedicineBrandSummary,
   MedicineDrugSummary,
   PbsItem,
+  PbsItemPremiumHistory,
   PbsWatchlistEntry,
   PbsWatchlistEntryInput,
   PbsWatchlistEntryUpdate,
@@ -863,6 +864,83 @@ export function useListPriceHistory<TData = Awaited<ReturnType<typeof listPriceH
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPriceHistoryQueryOptions(itemCode,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListItemPremiumHistoryUrl = (itemCode: string,) => {
+
+
+
+
+  return `/api/pbs-items/${itemCode}/premium-history`
+}
+
+/**
+ * @summary List patient premium history for a PBS item
+ */
+export const listItemPremiumHistory = async (itemCode: string, options?: Parameters<typeof customFetch>[1]): Promise<PbsItemPremiumHistory[]> => {
+
+  return customFetch<PbsItemPremiumHistory[]>(getListItemPremiumHistoryUrl(itemCode),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListItemPremiumHistoryQueryKey = (itemCode: string,) => {
+    return [
+    `/api/pbs-items/${itemCode}/premium-history`
+    ] as const;
+    }
+
+
+export const getListItemPremiumHistoryQueryOptions = <TData = Awaited<ReturnType<typeof listItemPremiumHistory>>, TError = ErrorType<unknown>>(itemCode: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listItemPremiumHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListItemPremiumHistoryQueryKey(itemCode);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listItemPremiumHistory>>> = ({ signal }) => listItemPremiumHistory(itemCode, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: itemCode !== null && itemCode !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listItemPremiumHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListItemPremiumHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof listItemPremiumHistory>>>
+export type ListItemPremiumHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List patient premium history for a PBS item
+ */
+
+export function useListItemPremiumHistory<TData = Awaited<ReturnType<typeof listItemPremiumHistory>>, TError = ErrorType<unknown>>(
+ itemCode: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listItemPremiumHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListItemPremiumHistoryQueryOptions(itemCode,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -224,6 +224,22 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PriceHistory"
+  /pbs-items/{itemCode}/premium-history:
+    get:
+      operationId: listItemPremiumHistory
+      tags: [pbs]
+      summary: List patient premium history for a PBS item
+      parameters:
+        - $ref: "#/components/parameters/ItemCode"
+      responses:
+        "200":
+          description: Historical PBS brand and therapeutic-group premiums
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PbsItemPremiumHistory"
   /pbs-items/{itemCode}/predicted-reductions:
     get:
       operationId: listItemPredictedReductions
@@ -271,7 +287,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [new_item, new_brand, delisted, price_change, formulary_change]
+            enum: [new_item, new_brand, delisted, price_change, formulary_change, premium_added, premium_changed, premium_removed]
         - name: significance
           in: query
           schema:
@@ -993,6 +1009,31 @@ components:
         reductionType:
           type: ["string", "null"]
       required: [id, itemCode, priceDate, scheduleCode, scheduleEffectiveDate, aemp, dpmq, reductionType]
+    PbsItemPremiumHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+        itemCode:
+          type: string
+        liItemId:
+          type: string
+        scheduleCode:
+          type: integer
+        scheduleEffectiveDate:
+          type: string
+          format: date
+        dispensingRuleReference:
+          type: string
+        dispensingRuleMnemonic:
+          type: ["string", "null"]
+        brandPremium:
+          type: ["number", "null"]
+        therapeuticGroupPremium:
+          type: ["number", "null"]
+        therapeuticExemptionIndicator:
+          type: ["string", "null"]
+      required: [id, itemCode, liItemId, scheduleCode, scheduleEffectiveDate, dispensingRuleReference, dispensingRuleMnemonic, brandPremium, therapeuticGroupPremium, therapeuticExemptionIndicator]
     PredictedReduction:
       type: object
       properties:
@@ -1050,7 +1091,7 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         changeType:
           type: string
-          enum: [new_item, new_brand, delisted, price_change, formulary_change, published_fnb_new]
+          enum: [new_item, new_brand, delisted, price_change, formulary_change, premium_added, premium_changed, premium_removed, published_fnb_new]
         liItemId:
           type: ["string", "null"]
         pbsCode:
