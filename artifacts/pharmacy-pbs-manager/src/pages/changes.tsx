@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   type ScheduleChange,
   type ListScheduleChangesChangeType,
@@ -244,30 +244,178 @@ function EventDetails({ group }: { group: ScheduleEventGroup }) {
   );
 }
 
+type PriceChangeListing = {
+  liItemId: string | null;
+  pbsCode: string | null;
+  brandName: string;
+  strength: string | null;
+};
+
+type BrandPriceGroup = {
+  key: string;
+  brandName: string;
+  strength: string | null;
+  listings: PriceChangeListing[];
+};
+
+type PriceChangeGroup = {
+  key: string;
+  representative: ScheduleChange;
+  brands: BrandPriceGroup[];
+  brandCount: number;
+  listingCount: number;
+  reductionMagnitude: number;
+};
+
+function priceChangeListings(change: ScheduleChange): PriceChangeListing[] {
+  if (change.affectedItems?.length) {
+    return change.affectedItems.map((item) => ({
+      liItemId: item.liItemId,
+      pbsCode: item.pbsCode,
+      brandName: item.brandName,
+      strength: item.strength,
+    }));
+  }
+  return [{
+    liItemId: changeItemCode(change),
+    pbsCode: changePbsCode(change),
+    brandName: changeBrandName(change) || change.drugName,
+    strength: changeStrength(change),
+  }];
+}
+
+function priceChangeGroupKey(change: ScheduleChange): string {
+  const oldValue = objectValue(change.oldValue);
+  const newValue = objectValue(change.newValue);
+  return [
+    oldValue.determined_price ?? '',
+    newValue.determined_price ?? '',
+    newValue.percentage_change ?? '',
+  ].join(':');
+}
+
+function priceChangeReductionMagnitude(change: ScheduleChange): number {
+  const percentage = objectValue(change.newValue).percentage_change;
+  return typeof percentage === 'number' ? Math.abs(percentage) : 0;
+}
+
+function groupPriceChanges(changes: ScheduleChange[]): PriceChangeGroup[] {
+  const groups = new Map<string, { representative: ScheduleChange; listings: PriceChangeListing[] }>();
+  for (const change of changes) {
+    const key = priceChangeGroupKey(change);
+    const current = groups.get(key) ?? { representative: change, listings: [] };
+    current.listings.push(...priceChangeListings(change));
+    groups.set(key, current);
+  }
+  return [...groups.entries()].map(([key, group]) => {
+    const brandMap = new Map<string, BrandPriceGroup>();
+    for (const listing of group.listings) {
+      const brandKey = listing.brandName;
+      const brand = brandMap.get(brandKey) ?? {
+        key: brandKey,
+        brandName: listing.brandName,
+        strength: listing.strength,
+        listings: [],
+      };
+      if (brand.listings.length > 0 && brand.strength !== listing.strength) {
+        brand.strength = null;
+      }
+      if (!brand.listings.some((candidate) => candidate.liItemId === listing.liItemId && candidate.pbsCode === listing.pbsCode)) {
+        brand.listings.push(listing);
+      }
+      brandMap.set(brandKey, brand);
+    }
+    const brands = [...brandMap.values()].sort((left, right) =>
+      left.brandName.localeCompare(right.brandName) || (left.strength ?? '').localeCompare(right.strength ?? ''),
+    );
+    return {
+      key,
+      representative: group.representative,
+      brands,
+      brandCount: new Set(group.listings.map((listing) => listing.brandName)).size,
+      listingCount: brands.reduce((count, brand) => count + brand.listings.length, 0),
+      reductionMagnitude: priceChangeReductionMagnitude(group.representative),
+    };
+  }).sort((left, right) => right.reductionMagnitude - left.reductionMagnitude);
+}
+
 function EventExpandedDetails({ group }: { group: ScheduleEventGroup }) {
+  const [expandedPrices, setExpandedPrices] = useState<string[]>([]);
+  const [expandedBrands, setExpandedBrands] = useState<string[]>([]);
+  const priceGroups = groupPriceChanges(group.changes.filter((change) => change.changeType === 'price_change'));
+  const otherChanges = group.changes.filter((change) => change.changeType !== 'price_change');
+  const toggle = (setter: Dispatch<SetStateAction<string[]>>, key: string) => {
+    setter((current) => current.includes(key) ? current.filter((value) => value !== key) : [...current, key]);
+  };
+  const listings = (items: PriceChangeListing[]) => (
+    <div className="divide-y divide-border/70 border-t border-border/70 bg-muted/15">
+      {items.map((item, index) => {
+        const label = [item.brandName, item.strength].filter(Boolean).join(' · ');
+        const itemKey = item.liItemId ?? `${item.pbsCode}:${index}`;
+        return item.liItemId ? (
+          <Link key={itemKey} href={`/pbs/${encodeURIComponent(item.liItemId)}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs transition-colors hover:bg-secondary/30">
+            <span className="font-semibold text-foreground">{label}</span>
+            <span className="font-mono font-bold text-muted-foreground">PBS {item.pbsCode || 'listing'}</span>
+          </Link>
+        ) : (
+          <div key={itemKey} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs">
+            <span className="font-semibold text-foreground">{label}</span>
+            <span className="font-mono font-bold text-muted-foreground">PBS {item.pbsCode || 'listing'}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="border-t border-border/70 bg-muted/20 px-5 py-3">
       <div className="space-y-2">
-        {group.changes.map((change) => (
-          <div key={change.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              {changeItemCode(change) ? (
-                <Link
-                  href={`/pbs/${encodeURIComponent(changeItemCode(change) as string)}`}
-                  className="font-semibold text-foreground hover:text-primary hover:underline"
-                >
-                  {changeBrandName(change) || change.drugName}
-                </Link>
-              ) : (
-                <span className="font-semibold">{changeBrandName(change) || change.drugName}</span>
-              )}
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
-                {changePbsCode(change) || 'PBS listing'}
-              </span>
-              <span className="text-[11px] font-semibold text-muted-foreground">
-                {typeLabels[change.changeType] || change.changeType}
-              </span>
+        {priceGroups.map((priceGroup) => {
+          const priceKey = `${group.key}:${priceGroup.key}`;
+          const expanded = expandedPrices.includes(priceKey);
+          const singleBrand = priceGroup.brandCount === 1;
+          const directBrand = priceGroup.brands[0];
+          const directLabel = directBrand ? [directBrand.brandName, directBrand.strength].filter(Boolean).join(' · ') : '';
+          return (
+            <div key={priceKey} className="overflow-hidden rounded-xl border border-border bg-card">
+              <button type="button" onClick={() => toggle(setExpandedPrices, priceKey)} aria-expanded={expanded} className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 text-left hover:bg-secondary/20">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <ChangeDetails change={priceGroup.representative} />
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {singleBrand ? directLabel : `${priceGroup.brandCount} brands`}
+                  </span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
+                    {priceGroup.listingCount} listing{priceGroup.listingCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              </button>
+              {expanded && (singleBrand ? listings(directBrand.listings) : (
+                <div className="divide-y divide-border/70 border-t border-border/70 bg-muted/15">
+                  {priceGroup.brands.map((brand) => {
+                    const brandKey = `${priceKey}:${brand.key}`;
+                    const brandExpanded = expandedBrands.includes(brandKey);
+                    return (
+                      <div key={brandKey}>
+                        <button type="button" onClick={() => toggle(setExpandedBrands, brandKey)} aria-expanded={brandExpanded} className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-xs hover:bg-secondary/25">
+                          <span className="font-semibold text-foreground">{[brand.brandName, brand.strength].filter(Boolean).join(' · ')}</span>
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-bold text-muted-foreground">{brand.listings.length} listing{brand.listings.length === 1 ? '' : 's'}</span>
+                            <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${brandExpanded ? 'rotate-180' : ''}`} />
+                          </span>
+                        </button>
+                        {brandExpanded && listings(brand.listings)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
+          );
+        })}
+        {otherChanges.map((change) => (
+          <div key={change.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 rounded-xl border border-border bg-card px-4 py-3 text-xs">
+            <span className="font-semibold text-foreground">{changeBrandName(change) || change.drugName}</span>
             <ChangeDetails change={change} />
           </div>
         ))}
@@ -493,7 +641,7 @@ export function ChangesPage() {
     drugId: drugId || undefined,
     changeType: changeType || undefined,
     significance: significance || undefined,
-    limit: 100
+    limit: 500
   }), [drugId, changeType, significance]);
 
   const query = useListScheduleChanges(params, {

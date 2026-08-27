@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -785,7 +785,43 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     )
     .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id))
     .limit(limit);
-  res.json(ListScheduleChangesResponse.parse(rows));
+  const itemIdentifiers = [...new Set(rows.map((row) => row.liItemId).filter((value): value is string => Boolean(value)))];
+  const matchingItems = itemIdentifiers.length
+    ? await db
+      .select({
+        itemCode: pbsItemsTable.itemCode,
+        liItemId: pbsItemsTable.liItemId,
+        pbsCode: pbsItemsTable.pbsCode,
+        brandName: pbsItemsTable.brandName,
+        strength: pbsItemsTable.strength,
+        determinedPrice: pbsItemsTable.determinedPrice,
+        formulary: pbsItemsTable.formulary,
+      })
+      .from(pbsItemsTable)
+      .where(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)))
+    : [];
+  const itemsByIdentifier = new Map(
+    matchingItems.flatMap((item) => [
+      [item.itemCode, item],
+      ...(item.liItemId ? [[item.liItemId, item] as const] : []),
+    ]),
+  );
+  res.json(ListScheduleChangesResponse.parse(rows.map((row) => {
+    if (row.affectedItems?.length || !row.liItemId) return row;
+    const item = itemsByIdentifier.get(row.liItemId);
+    if (!item) return row;
+    return {
+      ...row,
+      affectedItems: [{
+        liItemId: item.liItemId ?? item.itemCode,
+        pbsCode: item.pbsCode,
+        brandName: item.brandName,
+        strength: item.strength,
+        determinedPrice: item.determinedPrice,
+        formulary: item.formulary,
+      }],
+    };
+  })));
 });
 
 router.get("/drugs/:id/schedule-timeline", async (req, res): Promise<void> => {

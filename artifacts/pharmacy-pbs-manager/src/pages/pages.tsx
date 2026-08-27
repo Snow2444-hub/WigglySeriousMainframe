@@ -609,7 +609,8 @@ function AdminPage() {
       eyebrow="Administration / reference data"
       title="PBS data updates"
       description="Start a controlled schedule fetch and monitor the raw reference-data ingestion lifecycle."
-      action={<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[170px_160px_auto] lg:items-end">
+      action={<div className="w-full lg:w-[690px]">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[170px_185px_auto] lg:items-end">
         <label className="min-w-0">
           <span className="field-label-muted">Run mode</span>
           <select value={ingestionMode} onChange={(event) => setIngestionMode(event.target.value as 'current' | 'backfill')} disabled={trigger.isPending || Boolean(activeRun)} className="control-input font-semibold" data-testid="select-ingestion-mode">
@@ -620,12 +621,13 @@ function AdminPage() {
         <label className="min-w-0">
           <span className="field-label-muted">Test page cap</span>
            <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="No cap / fetch all pages" aria-describedby="max-pages-help" className="control-input font-semibold" data-testid="input-max-pages" />
-          <span id="max-pages-help" className="mt-1 block text-[10px] text-muted-foreground">Blank fetches every matching page.</span>
         </label>
-        <div className="flex flex-wrap gap-2 lg:pb-[18px]">
+         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={refresh} disabled={runs.isFetching || current.isFetching} className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold text-foreground hover:-translate-y-0.5 hover:shadow-sm disabled:opacity-55" data-testid="button-refresh-ingestion-runs"><RefreshCw className={`h-4 w-4 ${runs.isFetching || current.isFetching ? 'animate-spin' : ''}`} /> Refresh</button>
           <button type="button" onClick={startIngestion} disabled={trigger.isPending || Boolean(activeRun)} className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-55" data-testid="button-trigger-ingestion"><Play className="h-4 w-4" />{trigger.isPending ? 'Starting…' : activeRun ? 'Run in progress' : 'Start ingestion'}</button>
         </div>
+        </div>
+        <p id="max-pages-help" className="mt-1.5 text-[10px] text-muted-foreground">Leave the page cap blank to fetch every matching page.</p>
       </div>}
     />
 
@@ -641,9 +643,9 @@ function AdminPage() {
        {significanceSettings.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : significanceSettings.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => significanceSettings.refetch()} /></div> : <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-[minmax(130px,1fr)_minmax(130px,1fr)_minmax(225px,1.35fr)_minmax(150px,1fr)_auto] xl:items-end">
         <label className="block"><span className="field-label">Medium reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={mediumThreshold} onChange={(event) => setMediumThreshold(event.target.value)} className="control-input font-mono" data-testid="input-medium-reduction-threshold" /></label>
         <label className="block"><span className="field-label">High reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={highThreshold} onChange={(event) => setHighThreshold(event.target.value)} className="control-input font-mono" data-testid="input-high-reduction-threshold" /></label>
-          <label className="flex h-11 min-w-0 cursor-pointer items-center gap-3 rounded-xl border border-input bg-background px-3"><input type="checkbox" checked={firstNewBrandHighSignificance} onChange={(event) => setFirstNewBrandHighSignificance(event.target.checked)} className="h-4 w-4 shrink-0 accent-primary" data-testid="checkbox-first-new-brand-high-significance" /><span className="min-w-0"><span className="block truncate text-xs font-bold">First new brand is high</span><span className="hidden truncate text-[10px] text-muted-foreground 2xl:block">Only when the previous schedule had one brand.</span></span></label>
+          <div><span className="field-label">First new brand</span><label className="flex h-11 min-w-0 cursor-pointer items-center gap-3 rounded-xl border border-input bg-background px-3"><input type="checkbox" checked={firstNewBrandHighSignificance} onChange={(event) => setFirstNewBrandHighSignificance(event.target.checked)} className="h-4 w-4 shrink-0 accent-primary" data-testid="checkbox-first-new-brand-high-significance" /><span className="min-w-0"><span className="block truncate text-xs font-bold">Treat as high significance</span><span className="hidden truncate text-[10px] text-muted-foreground 2xl:block">Only when the prior schedule had one brand.</span></span></label></div>
           <label className="block"><span className="field-label">First new-brand reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={firstNewBrandReductionPercentage} onChange={(event) => setFirstNewBrandReductionPercentage(event.target.value)} className="control-input font-mono" data-testid="input-first-new-brand-reduction" /></label>
-        <button type="button" onClick={saveSignificanceSettings} disabled={updateSignificanceSettings.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-save-significance-settings">{updateSignificanceSettings.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Save thresholds</button>
+        <div><span className="field-label invisible">Save</span><button type="button" onClick={saveSignificanceSettings} disabled={updateSignificanceSettings.isPending} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50 xl:w-auto" data-testid="button-save-significance-settings">{updateSignificanceSettings.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Save thresholds</button></div>
       </div>}
     </section>
 
