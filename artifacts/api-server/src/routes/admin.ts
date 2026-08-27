@@ -7,6 +7,7 @@ import {
   DeletePbsWatchlistEntryParams,
   GetScheduleChangeSettingsResponse,
   GetCurrentAdminIngestionRunResponse,
+  ListAdminPublishedFilesResponse,
   ListPbsWatchlistEntriesResponse,
   ListAdminIngestionRunsResponse,
   TriggerAdminIngestionBody,
@@ -21,6 +22,7 @@ import { logger } from "../lib/logger";
 import { fetchSchedule } from "../lib/pbs-ingestion";
 import { buildPbsItemIdRequestFilters, buildPbsRequestFilters } from "../lib/pbs-filtering";
 import { itemIdsFromAtcRelationshipPayload, upsertPbsItemsFromPayload } from "../lib/pbs-item-mapping";
+import { ingestPublishedFiles, listLatestPublishedFiles } from "../lib/pbs-published-files";
 import {
   getPriceChangeThresholds,
   syncScheduleChangesFromStagedData,
@@ -158,6 +160,7 @@ export async function executeIngestionRun(
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the ingestion page cap was reached");
     }
+    const publishedFiles = await ingestPublishedFiles();
 
     await db
       .update(ingestionRunsTable)
@@ -171,7 +174,7 @@ export async function executeIngestionRun(
       .where(eq(ingestionRunsTable.id, runId));
 
     logger.info(
-      { runId, pages: pages.length, recordsProcessed, changesRecorded, requestUrls: [...requestUrls] },
+      { runId, pages: pages.length, recordsProcessed, changesRecorded, publishedFiles, requestUrls: [...requestUrls] },
       "PBS ingestion run completed",
     );
   } catch (error) {
@@ -433,6 +436,10 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
     .limit(1);
 
   res.json(GetCurrentAdminIngestionRunResponse.parse({ currentRun: run ?? null }));
+});
+
+router.get("/admin/published-files", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(ListAdminPublishedFilesResponse.parse(await listLatestPublishedFiles()));
 });
 
 router.get("/admin/pbs-watchlist", requireAdmin, async (_req, res): Promise<void> => {

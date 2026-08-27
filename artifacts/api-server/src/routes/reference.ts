@@ -4,6 +4,8 @@ import {
   db,
   artgEntriesTable,
   drugsTable,
+  pbsDisclosureCyclesTable,
+  pbsFnbReductionsTable,
   pbsItemsTable,
   predictedReductionsTable,
   priceHistoryTable,
@@ -138,6 +140,10 @@ function brandGroupName(brandName: string): string {
   return brandGroupKey(brandName) === "crosuva" ? "Crosuva" : brandName;
 }
 
+function dateOnly(value: string): string {
+  return value.slice(0, 10);
+}
+
 function strengthSortValue(strength: string | null): number {
   const value = strength?.match(/\d+(?:\.\d+)?/)?.[0];
   return value ? Number(value) : Number.POSITIVE_INFINITY;
@@ -153,7 +159,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
   const recentDate = new Date();
   recentDate.setUTCDate(recentDate.getUTCDate() - 90);
   const recentDateString = recentDate.toISOString().slice(0, 10);
-  const [items, predictions, highChanges] = await Promise.all([
+  const [items, predictions, highChanges, disclosureCycles, fnbReductions] = await Promise.all([
     db.select(pbsSelect).from(pbsItemsTable).innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
     db
       .select({
@@ -161,6 +167,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         predictedDate: predictedReductionsTable.predictedDate,
         reductionType: predictedReductionsTable.reductionType,
         predictedPercentage: predictedReductionsTable.predictedPercentage,
+        confidence: predictedReductionsTable.confidence,
         subjectToMinisterialDiscretion: predictedReductionsTable.subjectToMinisterialDiscretion,
       })
       .from(predictedReductionsTable)
@@ -174,7 +181,33 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
           gte(scheduleChangesTable.effectiveDate, recentDateString),
         ),
       ),
+    db
+      .select({
+        drugId: pbsDisclosureCyclesTable.drugId,
+        cycleLabel: pbsDisclosureCyclesTable.cycleLabel,
+        submissionDeadline: pbsDisclosureCyclesTable.submissionDeadline,
+      })
+      .from(pbsDisclosureCyclesTable),
+    db
+      .select({
+        drugId: pbsFnbReductionsTable.drugId,
+        effectDate: pbsFnbReductionsTable.effectDate,
+      })
+      .from(pbsFnbReductionsTable),
   ]);
+  const cyclesByDrug = new Map<number, Array<{ cycleLabel: string; submissionDeadline: string }>>();
+  for (const cycle of disclosureCycles) {
+    cyclesByDrug.set(cycle.drugId, [
+      ...(cyclesByDrug.get(cycle.drugId) ?? []),
+      { cycleLabel: cycle.cycleLabel, submissionDeadline: dateOnly(cycle.submissionDeadline) },
+    ]);
+  }
+  const fnbByDrug = new Map<number, string>();
+  for (const reduction of fnbReductions) {
+    const current = fnbByDrug.get(reduction.drugId);
+    const effectDate = dateOnly(reduction.effectDate);
+    if (!current || effectDate > current) fnbByDrug.set(reduction.drugId, effectDate);
+  }
   const grouped = new Map<number, typeof items>();
   for (const item of items) {
     const group = grouped.get(item.drugId) ?? [];
@@ -216,7 +249,12 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         nextPredictedReductionDate: upcoming[0]?.predictedDate ?? null,
          nextPredictedReductionType: upcoming[0]?.reductionType ?? null,
          nextPredictedReductionPercentage: upcoming[0]?.predictedPercentage ?? null,
+         nextPredictedReductionConfidence: upcoming[0]?.confidence ?? null,
         recentHighChangeCount: highChanges.filter((change) => change.drugId === drugId).length,
+         subjectToPriceDisclosure: (cyclesByDrug.get(drugId) ?? []).length > 0,
+         priceDisclosureCycles: cyclesByDrug.get(drugId) ?? [],
+         hasTakenFirstNewBrandReduction: fnbByDrug.has(drugId),
+         firstNewBrandReductionDate: fnbByDrug.get(drugId) ?? null,
         searchMatchLevel: search ? (drugMatch ? "drug" : brandMatch ? "brand" : "item") : null,
         matchedBrandName: drugMatch ? null : (brandMatch?.brandName ?? itemMatch?.brandName ?? null),
         matchedItemCode: drugMatch || brandMatch ? null : (itemMatch?.itemCode ?? null),

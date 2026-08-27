@@ -87,6 +87,8 @@ export const ListMedicineDirectoryQueryParams = zod.object({
 })
 
 export const listMedicineDirectoryResponseNextPredictedReductionDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listMedicineDirectoryResponsePriceDisclosureCyclesItemSubmissionDeadlineRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const listMedicineDirectoryResponseFirstNewBrandReductionDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 
 
 export const ListMedicineDirectoryResponseItem = zod.object({
@@ -102,10 +104,18 @@ export const ListMedicineDirectoryResponseItem = zod.object({
   "nextPredictedReductionDate": zod.string().regex(listMedicineDirectoryResponseNextPredictedReductionDateRegExp).nullable(),
   "nextPredictedReductionType": zod.string().nullable(),
   "nextPredictedReductionPercentage": zod.number().nullable(),
+  "nextPredictedReductionConfidence": zod.string().nullable(),
   "recentHighChangeCount": zod.int(),
   "searchMatchLevel": zod.union([zod.literal('drug'),zod.literal('brand'),zod.literal('item'),zod.literal(null)]).nullable(),
   "matchedBrandName": zod.string().nullable(),
-  "matchedItemCode": zod.string().nullable()
+  "matchedItemCode": zod.string().nullable(),
+  "subjectToPriceDisclosure": zod.boolean(),
+  "priceDisclosureCycles": zod.array(zod.object({
+  "cycleLabel": zod.string(),
+  "submissionDeadline": zod.string().regex(listMedicineDirectoryResponsePriceDisclosureCyclesItemSubmissionDeadlineRegExp)
+})),
+  "hasTakenFirstNewBrandReduction": zod.boolean(),
+  "firstNewBrandReductionDate": zod.string().regex(listMedicineDirectoryResponseFirstNewBrandReductionDateRegExp).nullable()
 })
 export const ListMedicineDirectoryResponse = zod.array(ListMedicineDirectoryResponseItem)
 
@@ -333,7 +343,7 @@ export const ListItemScheduleChangesResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(listItemScheduleChangesResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),
@@ -379,7 +389,7 @@ export const ListScheduleChangesResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(listScheduleChangesResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),
@@ -416,7 +426,7 @@ export const GetDrugScheduleTimelineResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(getDrugScheduleTimelineResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),
@@ -599,6 +609,35 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "errorMessage": zod.string().nullable()
 }),zod.null()])
 })
+
+
+/**
+ * @summary List current PBS published-file ingestion results
+ */
+export const ListAdminPublishedFilesResponseItem = zod.object({
+  "id": zod.int(),
+  "sourceKey": zod.string(),
+  "pageUrl": zod.url(),
+  "fileUrl": zod.url(),
+  "fileName": zod.string(),
+  "contentType": zod.string().nullable(),
+  "fileSha256": zod.string(),
+  "retrievedAt": zod.coerce.date(),
+  "parserVersion": zod.string(),
+  "status": zod.string(),
+  "totalRows": zod.int(),
+  "matchedRows": zod.int(),
+  "watchlistUnmatchedRows": zod.int(),
+  "errorMessage": zod.string().nullable(),
+  "watchlistFailures": zod.array(zod.object({
+  "rowNumber": zod.int(),
+  "sourceDrugName": zod.string().nullable(),
+  "sourceMoa": zod.string().nullable(),
+  "sourceItemCode": zod.string().nullable(),
+  "reason": zod.string()
+}))
+})
+export const ListAdminPublishedFilesResponse = zod.array(ListAdminPublishedFilesResponseItem)
 
 
 /**

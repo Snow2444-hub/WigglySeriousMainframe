@@ -31,3 +31,8 @@ export * from "./predicted-reductions";
 export * from "./users";
 export * from "./schedule-changes";
 export * from "./schedule-change-settings";
+export * from "./pbs-published-files";
+export * from "./pbs-published-file-rows";
+export * from "./pbs-disclosure-cycles";
+export * from "./pbs-fnb-reductions";
+export * from "./pbs-published-prices";

@@ -1,0 +1,984 @@
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import { dirname } from "node:path";
+import * as XLSX from "xlsx";
+import { and, asc, eq, like } from "drizzle-orm";
+import {
+  db,
+  drugsTable,
+  pbsDisclosureCyclesTable,
+  pbsFnbReductionsTable,
+  pbsItemsTable,
+  pbsPublishedFileRowsTable,
+  pbsPublishedFilesTable,
+  pbsPublishedPricesTable,
+  pbsWatchlistTable,
+  scheduleChangesTable,
+  type PbsPublishedFile,
+} from "@workspace/db";
+import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
+
+const PARSER_VERSION = "pbs-published-files-v1";
+const USER_AGENT = "pharmacy-pbs-manager/1.0";
+const PAGE_TIMEOUT_MS = 30_000;
+
+const PAGE_URLS = {
+  firstNewBrand: "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand-price-reductions",
+  subjectToPriceDisclosure:
+    "https://www.pbs.gov.au/industry/pricing/price-disclosure-spd/drugs-subject-to-price-disclosure",
+  currentPriceDisclosureCycle:
+    "https://www.pbs.gov.au/industry/pricing/price-disclosure-spd/current-price-disclosure-cycle",
+} as const;
+
+type PublishedSourceKey =
+  | "first_new_brand"
+  | "subject_to_price_disclosure"
+  | "indicative_non_efc"
+  | "indicative_efc";
+
+type JsonRecord = Record<string, unknown>;
+
+export type PublishedMatchFailure = {
+  rowNumber: number;
+  sourceDrugName: string | null;
+  sourceMoa: string | null;
+  sourceItemCode: string | null;
+  reason: string;
+};
+
+export type PublishedFileReport = {
+  sourceKey: PublishedSourceKey;
+  status: "completed" | "failed";
+  fileUrl: string | null;
+  fileName: string | null;
+  totalRows: number;
+  matchedRows: number;
+  watchlistUnmatchedRows: number;
+  watchlistFailures: PublishedMatchFailure[];
+  errorMessage?: string;
+};
+
+export type PublishedIngestionReport = {
+  fetchedAt: string;
+  files: PublishedFileReport[];
+};
+
+type DrugContext = {
+  drugs: Array<{ id: number; name: string; activeIngredient: string }>;
+  items: Array<{
+    itemCode: string;
+    pbsCode: string | null;
+    liItemId: string | null;
+    drugId: number;
+    form: string | null;
+    liForm: string | null;
+    programCode: string | null;
+    formulary: "F1" | "F2";
+  }>;
+  watchlist: Array<{
+    id: number;
+    filterType: "brand_name" | "drug_name" | "pbs_code" | "formulary" | "program_code" | "atc_code";
+    filterValue: string;
+  }>;
+};
+
+type WorkbookRows = {
+  sheetName: string;
+  title: string;
+  headers: string[];
+  rows: Array<{ rowNumber: number; values: unknown[]; record: JsonRecord }>;
+  sheet: XLSX.WorkSheet;
+  headerRowIndex: number;
+  yellowRowNumbers: Set<number>;
+};
+
+type SourceFile = {
+  sourceKey: PublishedSourceKey;
+  pageUrl: string;
+  fileUrl: string;
+  fileName: string;
+  contentType: string | null;
+  bytes: Buffer;
+  workbook: XLSX.WorkBook;
+};
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalized(value: string | null | undefined): string {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function textValue(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const cleaned = value.replace(/[$,\s]/g, "").trim();
+  if (!cleaned) return null;
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function dateValue(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function scalarValue(value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+  if (value === undefined) return null;
+  return value;
+}
+
+function headerKey(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function findHeader(headers: string[], pattern: RegExp): string | undefined {
+  return headers.find((header) => pattern.test(headerKey(header)));
+}
+
+function moaMatches(localForm: string | null, sourceMoa: string): boolean {
+  const local = normalized(localForm);
+  const source = normalized(sourceMoa);
+  if (!local || !source) return false;
+  if (local === source || local.startsWith(`${source} `)) return true;
+  const routeForms: Record<string, RegExp> = {
+    oral: /^(tablet|capsule|caplet|oral|solution|suspension|granules?|powder|wafer|lozenge|chewable)\b/,
+    injection: /^(injection|infusion|implant)\b/,
+    inhalation: /^(inhalation|pressurised|nebuliser|nebulizer)\b/,
+    topical: /^(cream|ointment|gel|lotion|patch|topical)\b/,
+    ophthalmic: /^(eye|ophthalmic)\b/,
+    otic: /^(ear|otic)\b/,
+    nasal: /^(nasal|spray)\b/,
+  };
+  return Boolean(routeForms[source]?.test(local));
+}
+
+function recordValue(record: JsonRecord, pattern: RegExp): unknown {
+  const key = Object.keys(record).find((candidate) => pattern.test(headerKey(candidate)));
+  return key ? record[key] : undefined;
+}
+
+function parseAnchors(html: string, baseUrl: string): Array<{ text: string; href: string }> {
+  const links: Array<{ text: string; href: string }> = [];
+  const re = /<a\b[^>]*?href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(re)) {
+    const text = match[3].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    try {
+      links.push({
+        text,
+        href: new URL(match[2].replaceAll("&amp;", "&"), baseUrl).href,
+      });
+    } catch {
+      // Ignore malformed navigation links; file links must still be validated below.
+    }
+  }
+  return [...new Map(links.map((link) => [link.href, link])).values()];
+}
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, {
+    redirect: "follow",
+    headers: { "user-agent": USER_AGENT },
+    signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
+  });
+}
+
+function chooseFileLink(
+  links: Array<{ text: string; href: string }>,
+  predicate: (link: { text: string; href: string }) => boolean,
+): string | undefined {
+  return links.find(
+    (link) => /\.(xlsx?|xlsm|csv)(?:[?#]|$)/i.test(link.href) && predicate(link),
+  )?.href;
+}
+
+async function fetchSourceFile(
+  sourceKey: PublishedSourceKey,
+  pageUrl: string,
+  predicate: (link: { text: string; href: string }) => boolean,
+): Promise<SourceFile> {
+  const pageResponse = await fetchWithTimeout(pageUrl);
+  const html = await pageResponse.text();
+  if (!pageResponse.ok) {
+    throw new Error(`PBS page returned ${pageResponse.status} ${pageResponse.statusText}`);
+  }
+  const links = parseAnchors(html, pageResponse.url);
+  const fileUrl = chooseFileLink(links, predicate);
+  if (!fileUrl) throw new Error("No spreadsheet download link was found in the PBS page HTML");
+
+  const fileResponse = await fetchWithTimeout(fileUrl);
+  const bytes = Buffer.from(await fileResponse.arrayBuffer());
+  if (!fileResponse.ok) {
+    throw new Error(`PBS file returned ${fileResponse.status} ${fileResponse.statusText}`);
+  }
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(bytes, {
+      type: "buffer",
+      cellDates: true,
+      cellStyles: true,
+      raw: false,
+    });
+  } catch (error) {
+    throw new Error(`Downloaded PBS file is not a readable workbook: ${errorMessage(error)}`);
+  }
+
+  return {
+    sourceKey,
+    pageUrl,
+    fileUrl: fileResponse.url,
+    fileName: decodeURIComponent(new URL(fileResponse.url).pathname.split("/").pop() ?? "pbs-published-file"),
+    contentType: fileResponse.headers.get("content-type"),
+    bytes,
+    workbook,
+  };
+}
+
+function workbookYellowRows(workbook: XLSX.WorkBook, bytes: Buffer): Set<number> {
+  const rows = new Set<number>();
+  try {
+    const moduleRequire = createRequire(import.meta.url);
+    const xlsxPath = moduleRequire.resolve("xlsx");
+    const cfbPath = moduleRequire.resolve("cfb", { paths: [dirname(xlsxPath)] });
+    const cfb = moduleRequire(cfbPath) as {
+      read: (content: Buffer, options: { type: "buffer" }) => { Directory: unknown; FullPaths: string[] };
+      find: (container: { FullPaths: string[] }, path: string) => { content: Uint8Array } | undefined;
+    };
+    const zip = cfb.read(bytes, { type: "buffer" });
+    const directory = (workbook as XLSX.WorkBook & {
+      Directory?: { sheets?: string[]; styles?: string };
+    }).Directory;
+    const sheetPath = directory?.sheets?.[0] ?? "/xl/worksheets/sheet1.xml";
+    const stylesPath = directory?.styles ?? "/xl/styles.xml";
+    const sheetEntry = cfb.find(zip, `Root Entry${sheetPath}`);
+    const stylesEntry = cfb.find(zip, `Root Entry${stylesPath}`);
+    if (!sheetEntry || !stylesEntry) return rows;
+    const sheetXml = new TextDecoder().decode(sheetEntry.content);
+    const stylesXml = new TextDecoder().decode(stylesEntry.content);
+    const fillsXml = stylesXml.match(/<fills\b[^>]*>([\s\S]*?)<\/fills>/i)?.[1] ?? "";
+    const yellowFillIds = new Set<number>();
+    [...fillsXml.matchAll(/<fill\b[^>]*>([\s\S]*?)<\/fill>/gi)].forEach((match, fillId) => {
+      const rgb = match[1].match(/<fgColor\b[^>]*\brgb="([A-F0-9]+)"/i)?.[1]?.toUpperCase();
+      if (rgb === "FFFFFF00" || rgb === "FFFF00") yellowFillIds.add(fillId);
+    });
+    const cellXfsXml = stylesXml.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/i)?.[1] ?? "";
+    const yellowStyleIds = new Set<number>();
+    [...cellXfsXml.matchAll(/<xf\b([^>]*)\/?>/gi)].forEach((match, styleId) => {
+      const fillId = Number(match[1].match(/\bfillId="(\d+)"/i)?.[1]);
+      if (yellowFillIds.has(fillId)) yellowStyleIds.add(styleId);
+    });
+    for (const cellMatch of sheetXml.matchAll(/<c\b([^>]*)>/gi)) {
+      const attributes = cellMatch[1];
+      const rowNumber = Number(attributes.match(/\br="[^"]+?(\d+)"/i)?.[1]);
+      const styleId = Number(attributes.match(/\bs="(\d+)"/i)?.[1]);
+      if (Number.isInteger(rowNumber) && yellowStyleIds.has(styleId)) rows.add(rowNumber);
+    }
+  } catch {
+    // Style metadata is optional for other published files; matching remains auditable without it.
+  }
+  return rows;
+}
+
+function workbookRows(workbook: XLSX.WorkBook, bytes: Buffer, headerRowIndex: number): WorkbookRows {
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) throw new Error("PBS workbook did not contain a worksheet");
+  const sheet = workbook.Sheets[sheetName];
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: null,
+    blankrows: false,
+    raw: false,
+  });
+  const headers = (rawRows[headerRowIndex] ?? []).map((value) => textValue(value) ?? "");
+  const title = rawRows[0]?.map((value) => textValue(value) ?? "").join(" ").trim() ?? "";
+  const rows = rawRows
+    .slice(headerRowIndex + 1)
+    .map((values, index) => {
+      const record: JsonRecord = {};
+      headers.forEach((header, columnIndex) => {
+        if (header) record[header] = scalarValue(values[columnIndex]);
+      });
+      return { rowNumber: headerRowIndex + index + 2, values, record };
+    })
+    .filter(({ record }) => Object.values(record).some((value) => value !== null && String(value).trim() !== ""));
+  return {
+    sheetName,
+    title,
+    headers,
+    rows,
+    sheet,
+    headerRowIndex,
+    yellowRowNumbers: workbookYellowRows(workbook, bytes),
+  };
+}
+
+function extractReductionDate(value: string): string | null {
+  const match = value.match(
+    /\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i,
+  );
+  return match ? dateValue(`${match[1]} ${match[2]} ${match[3]}`) : null;
+}
+
+function extractCycle(value: string): {
+  cycleCode: string;
+  cycleLabel: string;
+  submissionDeadline: string;
+} | null {
+  const cycle = value.match(/\b(20\d{2})\s+(April|October)\s+Cycle\b/i);
+  if (!cycle) return null;
+  const month = cycle[2].toLowerCase() === "april" ? "04" : "10";
+  const deadline = value.match(
+    /deadline:\s*(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})/i,
+  );
+  const submissionDeadline = dateValue(deadline?.[1] ?? "");
+  if (!submissionDeadline) return null;
+  return {
+    cycleCode: `${cycle[1]}-${month}`,
+    cycleLabel: `${cycle[2]} ${cycle[1]} cycle`,
+    submissionDeadline,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function loadContext(): Promise<DrugContext> {
+  const [drugs, items, watchlist] = await Promise.all([
+    db
+      .select({ id: drugsTable.id, name: drugsTable.name, activeIngredient: drugsTable.activeIngredient })
+      .from(drugsTable)
+      .orderBy(asc(drugsTable.id)),
+    db
+      .select({
+        itemCode: pbsItemsTable.itemCode,
+        pbsCode: pbsItemsTable.pbsCode,
+        liItemId: pbsItemsTable.liItemId,
+        drugId: pbsItemsTable.drugId,
+        form: pbsItemsTable.form,
+        liForm: pbsItemsTable.liForm,
+        programCode: pbsItemsTable.programCode,
+        formulary: pbsItemsTable.formulary,
+      })
+      .from(pbsItemsTable)
+      .orderBy(asc(pbsItemsTable.itemCode)),
+    db
+      .select({
+        id: pbsWatchlistTable.id,
+        filterType: pbsWatchlistTable.filterType,
+        filterValue: pbsWatchlistTable.filterValue,
+      })
+      .from(pbsWatchlistTable)
+      .where(eq(pbsWatchlistTable.enabled, true))
+      .orderBy(asc(pbsWatchlistTable.id)),
+  ]);
+  return { drugs, items, watchlist };
+}
+
+function matchDrugAndMoa(
+  context: DrugContext,
+  sourceDrugName: string | null,
+  sourceMoa: string | null,
+): { drugId: number | null; itemCodes: string[]; reason: string | null } {
+  const drugKey = normalized(sourceDrugName);
+  const moaKey = normalized(sourceMoa);
+  if (!drugKey) return { drugId: null, itemCodes: [], reason: "Source drug name is blank" };
+  if (!moaKey) return { drugId: null, itemCodes: [], reason: "Source manner of administration is blank" };
+
+  const drug = context.drugs.find(
+    (candidate) =>
+      normalized(candidate.name) === drugKey || normalized(candidate.activeIngredient) === drugKey,
+  );
+  if (!drug) {
+    return { drugId: null, itemCodes: [], reason: `No local drug matched "${sourceDrugName}"` };
+  }
+  const matchedItems = context.items.filter(
+    (item) =>
+      item.drugId === drug.id &&
+      (moaMatches(item.form, moaKey) || moaMatches(item.liForm, moaKey)),
+  );
+  if (matchedItems.length === 0) {
+    return {
+      drugId: drug.id,
+      itemCodes: [],
+      reason: `Drug matched, but no local item has MoA "${sourceMoa}"`,
+    };
+  }
+  return { drugId: drug.id, itemCodes: matchedItems.map((item) => item.itemCode), reason: null };
+}
+
+function watchedRow(
+  context: DrugContext,
+  row: { drugName: string | null; moa: string | null; itemCode: string | null; brandName?: string | null; programCode?: string | null },
+): boolean {
+  return context.watchlist.some((entry) => {
+    const filter = normalized(entry.filterValue);
+    switch (entry.filterType) {
+      case "drug_name":
+        return normalized(row.drugName) === filter;
+      case "brand_name":
+        return Boolean(row.brandName && normalized(row.brandName).includes(filter));
+      case "pbs_code":
+        return normalized(row.itemCode) === filter;
+      case "program_code":
+        return normalized(row.programCode) === filter;
+      default:
+        return false;
+    }
+  });
+}
+
+async function upsertPublishedFile(sourceFile: SourceFile): Promise<PbsPublishedFile> {
+  const fileSha256 = createHash("sha256").update(sourceFile.bytes).digest("hex");
+  const [file] = await db
+    .insert(pbsPublishedFilesTable)
+    .values({
+      sourceKey: sourceFile.sourceKey,
+      pageUrl: sourceFile.pageUrl,
+      fileUrl: sourceFile.fileUrl,
+      fileName: sourceFile.fileName,
+      contentType: sourceFile.contentType,
+      fileSha256,
+      rawContentBase64: sourceFile.bytes.toString("base64"),
+      parserVersion: PARSER_VERSION,
+      status: "processing",
+      metadata: { sheetNames: sourceFile.workbook.SheetNames },
+      isCurrent: true,
+    })
+    .onConflictDoUpdate({
+      target: pbsPublishedFilesTable.sourceKey,
+      set: {
+        pageUrl: sourceFile.pageUrl,
+        fileUrl: sourceFile.fileUrl,
+        fileName: sourceFile.fileName,
+        contentType: sourceFile.contentType,
+        fileSha256,
+        rawContentBase64: sourceFile.bytes.toString("base64"),
+        parserVersion: PARSER_VERSION,
+        retrievedAt: new Date(),
+        status: "processing",
+        totalRows: 0,
+        matchedRows: 0,
+        watchlistUnmatchedRows: 0,
+        errorMessage: null,
+        metadata: { sheetNames: sourceFile.workbook.SheetNames },
+        isCurrent: true,
+      },
+    })
+    .returning();
+  if (!file) throw new Error(`Unable to persist ${sourceFile.sourceKey} file metadata`);
+  return file;
+}
+
+async function clearFileRows(fileId: number): Promise<void> {
+  await db.delete(pbsPublishedFileRowsTable).where(eq(pbsPublishedFileRowsTable.fileId, fileId));
+  await db.delete(pbsDisclosureCyclesTable).where(eq(pbsDisclosureCyclesTable.fileId, fileId));
+  await db.delete(pbsFnbReductionsTable).where(eq(pbsFnbReductionsTable.fileId, fileId));
+  await db.delete(pbsPublishedPricesTable).where(eq(pbsPublishedPricesTable.fileId, fileId));
+  await db
+    .delete(scheduleChangesTable)
+    .where(
+      and(
+        eq(scheduleChangesTable.changeType, "published_fnb_new"),
+        like(scheduleChangesTable.liItemId, `published-fnb:${fileId}:%`),
+      ),
+    );
+}
+
+async function finishPublishedFile(
+  fileId: number,
+  result: Omit<PublishedFileReport, "sourceKey" | "fileUrl" | "fileName" | "status">,
+): Promise<void> {
+  await db
+    .update(pbsPublishedFilesTable)
+    .set({
+      status: "completed",
+      totalRows: result.totalRows,
+      matchedRows: result.matchedRows,
+      watchlistUnmatchedRows: result.watchlistUnmatchedRows,
+      errorMessage: null,
+      metadata: { watchlistFailures: result.watchlistFailures },
+    })
+    .where(eq(pbsPublishedFilesTable.id, fileId));
+}
+
+async function failPublishedFile(fileId: number, message: string): Promise<void> {
+  await db
+    .update(pbsPublishedFilesTable)
+    .set({ status: "failed", errorMessage: message.slice(0, 2_000) })
+    .where(eq(pbsPublishedFilesTable.id, fileId));
+}
+
+async function persistFileRow(input: {
+  fileId: number;
+  rowNumber: number;
+  rawRow: JsonRecord;
+  sourceDrugName: string | null;
+  sourceMoa: string | null;
+  sourceItemCode: string | null;
+  matchedDrugId: number | null;
+  matchedItemCodes: string[];
+  matchStatus: "matched" | "unmatched";
+  failureReason: string | null;
+  isWatchlistMatch: boolean;
+  isNewEntry?: boolean;
+  effectDate?: string | null;
+}): Promise<void> {
+  await db.insert(pbsPublishedFileRowsTable).values({
+    fileId: input.fileId,
+    sourceRowNumber: input.rowNumber,
+    rawRow: input.rawRow,
+    sourceDrugName: input.sourceDrugName,
+    sourceMoa: input.sourceMoa,
+    sourceItemCode: input.sourceItemCode,
+    matchedDrugId: input.matchedDrugId,
+    matchedItemCodes: input.matchedItemCodes,
+    matchStatus: input.matchStatus,
+    failureReason: input.failureReason,
+    isWatchlistMatch: input.isWatchlistMatch,
+    isNewEntry: input.isNewEntry ?? false,
+    effectDate: input.effectDate ?? null,
+  });
+}
+
+async function processFirstNewBrand(
+  sourceFile: SourceFile,
+  file: PbsPublishedFile,
+  context: DrugContext,
+): Promise<PublishedFileReport> {
+  const parsed = workbookRows(sourceFile.workbook, sourceFile.bytes, 0);
+  const dataRows = parsed.rows.filter(({ record }) => {
+    const drug = textValue(recordValue(record, /^drug$/i));
+    return Boolean(drug && !drug.startsWith("("));
+  });
+  let matchedRows = 0;
+  const watchlistFailures: PublishedMatchFailure[] = [];
+  const affectedDrugIds = new Set<number>();
+
+  for (const row of dataRows) {
+    const sourceDrugName = textValue(recordValue(row.record, /^drug$/i));
+    const sourceMoa = textValue(recordValue(row.record, /manner of administration/i));
+    const effectDate = dateValue(recordValue(row.record, /date of effect/i));
+    const match = matchDrugAndMoa(context, sourceDrugName, sourceMoa);
+    const isNewEntry = parsed.yellowRowNumbers.has(row.rowNumber);
+    const reason = effectDate ? match.reason : "Date of effect is missing or invalid";
+    const isMatched = !reason && match.itemCodes.length > 0 && match.drugId !== null;
+    const isWatched = watchedRow(context, { drugName: sourceDrugName, moa: sourceMoa, itemCode: null });
+    if (isMatched) {
+      matchedRows += 1;
+      affectedDrugIds.add(match.drugId as number);
+      await db.insert(pbsFnbReductionsTable).values({
+        fileId: file.id,
+        sourceRowNumber: row.rowNumber,
+        drugId: match.drugId as number,
+        sourceDrugName: sourceDrugName as string,
+        mannerOfAdministration: sourceMoa as string,
+        effectDate: effectDate as string,
+        isNewEntry,
+      });
+      if (isNewEntry) {
+        await db
+          .insert(scheduleChangesTable)
+          .values({
+            scheduleCode: 0,
+            effectiveDate: effectDate as string,
+            changeType: "published_fnb_new",
+            liItemId: `published-fnb:${file.id}:${row.rowNumber}`,
+            pbsCode: null,
+            drugId: match.drugId as number,
+            brandName: null,
+            oldValue: null,
+            newValue: {
+              source: "first_new_brand",
+              drug_name: sourceDrugName,
+              manner_of_administration: sourceMoa,
+              date_of_effect: effectDate,
+              matched_item_codes: match.itemCodes,
+              is_new_entry: true,
+            },
+            affectedItems: null,
+            significance: "normal",
+            notes: "New row highlighted in the PBS First New Brand Price Reductions register.",
+          })
+          .onConflictDoNothing();
+      }
+    }
+    await persistFileRow({
+      fileId: file.id,
+      rowNumber: row.rowNumber,
+      rawRow: row.record,
+      sourceDrugName,
+      sourceMoa,
+      sourceItemCode: null,
+      matchedDrugId: match.drugId,
+      matchedItemCodes: match.itemCodes,
+      matchStatus: isMatched ? "matched" : "unmatched",
+      failureReason: reason,
+      isWatchlistMatch: isWatched,
+      isNewEntry,
+      effectDate,
+    });
+    if (!isMatched && isWatched) {
+      watchlistFailures.push({
+        rowNumber: row.rowNumber,
+        sourceDrugName,
+        sourceMoa,
+        sourceItemCode: null,
+        reason: reason ?? "No local item matched",
+      });
+    }
+  }
+
+  for (const drugId of affectedDrugIds) {
+    await recalculatePredictedReductionsForDrug(drugId);
+  }
+  const result = {
+    totalRows: dataRows.length,
+    matchedRows,
+    watchlistUnmatchedRows: watchlistFailures.length,
+    watchlistFailures,
+  };
+  await finishPublishedFile(file.id, result);
+  return {
+    sourceKey: sourceFile.sourceKey,
+    status: "completed",
+    fileUrl: sourceFile.fileUrl,
+    fileName: sourceFile.fileName,
+    ...result,
+  };
+}
+
+async function processSubjectToPriceDisclosure(
+  sourceFile: SourceFile,
+  file: PbsPublishedFile,
+  context: DrugContext,
+): Promise<PublishedFileReport> {
+  const parsed = workbookRows(sourceFile.workbook, sourceFile.bytes, 0);
+  const cycleHeaders = parsed.headers
+    .map((header, index) => ({ header, index, cycle: extractCycle(header) }))
+    .filter((candidate): candidate is { header: string; index: number; cycle: NonNullable<typeof candidate.cycle> } =>
+      Boolean(candidate.cycle),
+    );
+  if (cycleHeaders.length === 0) throw new Error("No disclosure-cycle columns were found in the subject list");
+
+  let matchedRows = 0;
+  const watchlistFailures: PublishedMatchFailure[] = [];
+  for (const row of parsed.rows) {
+    const sourceDrugName = textValue(recordValue(row.record, /legal instrument drug/i));
+    const sourceMoa = textValue(recordValue(row.record, /legal instrument moa/i));
+    const match = matchDrugAndMoa(context, sourceDrugName, sourceMoa);
+    const isMatched = match.drugId !== null && match.itemCodes.length > 0;
+    const isWatched = watchedRow(context, { drugName: sourceDrugName, moa: sourceMoa, itemCode: null });
+    if (isMatched) {
+      matchedRows += 1;
+      for (const cycleHeader of cycleHeaders) {
+        const subject = textValue(row.values[cycleHeader.index]);
+        if (subject?.toLowerCase() !== "yes") continue;
+        await db
+          .insert(pbsDisclosureCyclesTable)
+          .values({
+            fileId: file.id,
+            sourceRowNumber: row.rowNumber,
+            drugId: match.drugId as number,
+            legalInstrumentDrug: sourceDrugName as string,
+            legalInstrumentMoa: sourceMoa as string,
+            cycleCode: cycleHeader.cycle.cycleCode,
+            cycleLabel: cycleHeader.cycle.cycleLabel,
+            submissionDeadline: cycleHeader.cycle.submissionDeadline,
+          })
+          .onConflictDoUpdate({
+            target: [pbsDisclosureCyclesTable.drugId, pbsDisclosureCyclesTable.cycleCode],
+            set: {
+              fileId: file.id,
+              sourceRowNumber: row.rowNumber,
+              legalInstrumentDrug: sourceDrugName as string,
+              legalInstrumentMoa: sourceMoa as string,
+              cycleLabel: cycleHeader.cycle.cycleLabel,
+              submissionDeadline: cycleHeader.cycle.submissionDeadline,
+            },
+          });
+      }
+    }
+    const reason = isMatched ? null : match.reason ?? "No local item matched";
+    await persistFileRow({
+      fileId: file.id,
+      rowNumber: row.rowNumber,
+      rawRow: row.record,
+      sourceDrugName,
+      sourceMoa,
+      sourceItemCode: null,
+      matchedDrugId: match.drugId,
+      matchedItemCodes: match.itemCodes,
+      matchStatus: isMatched ? "matched" : "unmatched",
+      failureReason: reason,
+      isWatchlistMatch: isWatched,
+    });
+    if (!isMatched && isWatched) {
+      watchlistFailures.push({
+        rowNumber: row.rowNumber,
+        sourceDrugName,
+        sourceMoa,
+        sourceItemCode: null,
+        reason: reason as string,
+      });
+    }
+  }
+  const result = {
+    totalRows: parsed.rows.length,
+    matchedRows,
+    watchlistUnmatchedRows: watchlistFailures.length,
+    watchlistFailures,
+  };
+  await finishPublishedFile(file.id, result);
+  return {
+    sourceKey: sourceFile.sourceKey,
+    status: "completed",
+    fileUrl: sourceFile.fileUrl,
+    fileName: sourceFile.fileName,
+    ...result,
+  };
+}
+
+function indicativeDate(parsed: WorkbookRows): string {
+  const date =
+    extractReductionDate(parsed.title) ??
+    extractReductionDate(parsed.headers.find((header) => /new .*aemp/i.test(header)) ?? "");
+  if (!date) throw new Error("Could not determine the indicative reduction date from workbook headers");
+  return date;
+}
+
+async function processIndicativePrices(
+  sourceFile: SourceFile,
+  file: PbsPublishedFile,
+  context: DrugContext,
+): Promise<PublishedFileReport> {
+  const parsed = workbookRows(sourceFile.workbook, sourceFile.bytes, 1);
+  const itemCodeHeader = findHeader(parsed.headers, /^item code$/);
+  const drugHeader = findHeader(parsed.headers, /legal instrument drug/);
+  const moaHeader = findHeader(parsed.headers, /legal instrument moa/);
+  const brandHeader = findHeader(parsed.headers, /^brand name$/);
+  const currentAempHeader = findHeader(parsed.headers, /^current .*aemp/);
+  const newAempHeader = findHeader(parsed.headers, /^new .*aemp/);
+  if (!itemCodeHeader || !drugHeader || !moaHeader || !brandHeader || !currentAempHeader || !newAempHeader) {
+    throw new Error("Indicative workbook is missing one or more required row-2 headers");
+  }
+  const predictedDate = indicativeDate(parsed);
+  let matchedRows = 0;
+  const watchlistFailures: PublishedMatchFailure[] = [];
+  const affectedDrugIds = new Set<number>();
+
+  for (const row of parsed.rows) {
+    const sourceItemCode = textValue(row.record[itemCodeHeader]);
+    const sourceDrugName = textValue(row.record[drugHeader]);
+    const sourceMoa = textValue(row.record[moaHeader]);
+    const brandName = textValue(row.record[brandHeader]);
+    const currentAemp = numberValue(row.record[currentAempHeader]);
+    const newAemp = numberValue(row.record[newAempHeader]);
+    const localItems = context.items.filter((item) =>
+      [item.itemCode, item.pbsCode, item.liItemId].some(
+        (candidate) => normalized(candidate) === normalized(sourceItemCode),
+      ),
+    );
+    const matchedItemCodes = [...new Set(localItems.map((item) => item.itemCode))];
+    const matchedDrugId = localItems[0]?.drugId ?? null;
+    const reason = !sourceItemCode
+      ? "Source Item Code is blank"
+      : matchedItemCodes.length === 0
+        ? `No local PBS item matched Item Code "${sourceItemCode}"`
+        : currentAemp === null || newAemp === null
+          ? "Current or new AEMP is missing or invalid"
+          : null;
+    const isMatched = !reason && matchedItemCodes.length > 0 && matchedDrugId !== null;
+    const isWatched = watchedRow(context, {
+      drugName: sourceDrugName,
+      moa: sourceMoa,
+      itemCode: sourceItemCode,
+      brandName,
+      programCode: textValue(recordValue(row.record, /program code/i)),
+    });
+    if (isMatched) {
+      matchedRows += 1;
+      affectedDrugIds.add(matchedDrugId as number);
+      const percentage =
+        currentAemp && currentAemp > 0
+          ? Number((((currentAemp - (newAemp as number)) / currentAemp) * 100).toFixed(3))
+          : 0;
+      for (const matchedItemCode of matchedItemCodes) {
+        await db.insert(pbsPublishedPricesTable).values({
+          fileId: file.id,
+          sourceRowNumber: row.rowNumber,
+          sourceItemCode: sourceItemCode as string,
+          matchedItemCode,
+          drugId: matchedDrugId as number,
+          legalInstrumentDrug: sourceDrugName ?? "",
+          legalInstrumentMoa: sourceMoa ?? "",
+          brandName: brandName ?? "",
+          currentAemp: currentAemp as number,
+          newAemp: newAemp as number,
+          predictedDate,
+          confidence: "indicative",
+        });
+      }
+    }
+    const failureReason = reason;
+    await persistFileRow({
+      fileId: file.id,
+      rowNumber: row.rowNumber,
+      rawRow: row.record,
+      sourceDrugName,
+      sourceMoa,
+      sourceItemCode,
+      matchedDrugId,
+      matchedItemCodes,
+      matchStatus: isMatched ? "matched" : "unmatched",
+      failureReason,
+      isWatchlistMatch: isWatched,
+    });
+    if (!isMatched && isWatched) {
+      watchlistFailures.push({
+        rowNumber: row.rowNumber,
+        sourceDrugName,
+        sourceMoa,
+        sourceItemCode,
+        reason: failureReason ?? "No local item matched",
+      });
+    }
+  }
+  for (const drugId of affectedDrugIds) {
+    await recalculatePredictedReductionsForDrug(drugId);
+  }
+  const result = {
+    totalRows: parsed.rows.length,
+    matchedRows,
+    watchlistUnmatchedRows: watchlistFailures.length,
+    watchlistFailures,
+  };
+  await finishPublishedFile(file.id, result);
+  return {
+    sourceKey: sourceFile.sourceKey,
+    status: "completed",
+    fileUrl: sourceFile.fileUrl,
+    fileName: sourceFile.fileName,
+    ...result,
+  };
+}
+
+async function processSource(
+  sourceKey: PublishedSourceKey,
+  fetchSource: () => Promise<SourceFile>,
+  context: DrugContext,
+): Promise<PublishedFileReport> {
+  let sourceFile: SourceFile | undefined;
+  let file: PbsPublishedFile | undefined;
+  try {
+    sourceFile = await fetchSource();
+    file = await upsertPublishedFile(sourceFile);
+    await clearFileRows(file.id);
+    if (sourceKey === "first_new_brand") return await processFirstNewBrand(sourceFile, file, context);
+    if (sourceKey === "subject_to_price_disclosure") {
+      return await processSubjectToPriceDisclosure(sourceFile, file, context);
+    }
+    return await processIndicativePrices(sourceFile, file, context);
+  } catch (error) {
+    const message = errorMessage(error);
+    if (file) await failPublishedFile(file.id, message);
+    return {
+      sourceKey,
+      status: "failed",
+      fileUrl: sourceFile?.fileUrl ?? null,
+      fileName: sourceFile?.fileName ?? null,
+      totalRows: 0,
+      matchedRows: 0,
+      watchlistUnmatchedRows: 0,
+      watchlistFailures: [],
+      errorMessage: message,
+    };
+  }
+}
+
+export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> {
+  const context = await loadContext();
+  const files = await Promise.all([
+    processSource(
+      "first_new_brand",
+      () =>
+        fetchSourceFile("first_new_brand", PAGE_URLS.firstNewBrand, (link) =>
+          /first new brand|price reductions/i.test(`${link.text} ${link.href}`),
+        ),
+      context,
+    ),
+    processSource(
+      "subject_to_price_disclosure",
+      () =>
+        fetchSourceFile(
+          "subject_to_price_disclosure",
+          PAGE_URLS.subjectToPriceDisclosure,
+          (link) => /subject to price disclosure/i.test(`${link.text} ${link.href}`),
+        ),
+      context,
+    ),
+    processSource(
+      "indicative_non_efc",
+      () =>
+        fetchSourceFile(
+          "indicative_non_efc",
+          PAGE_URLS.currentPriceDisclosureCycle,
+          (link) => /indicative prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+        ),
+      context,
+    ),
+    processSource(
+      "indicative_efc",
+      () =>
+        fetchSourceFile(
+          "indicative_efc",
+          PAGE_URLS.currentPriceDisclosureCycle,
+          (link) => /indicative prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+        ),
+      context,
+    ),
+  ]);
+  return { fetchedAt: new Date().toISOString(), files };
+}
+
+export async function listLatestPublishedFiles(): Promise<Array<PbsPublishedFile & {
+  watchlistFailures: PublishedMatchFailure[];
+}>> {
+  const files = await db
+    .select()
+    .from(pbsPublishedFilesTable)
+    .where(eq(pbsPublishedFilesTable.isCurrent, true))
+    .orderBy(asc(pbsPublishedFilesTable.sourceKey));
+  return files.map((file) => ({
+    ...file,
+    watchlistFailures: Array.isArray(file.metadata) ? [] : isRecord(file.metadata) && Array.isArray(file.metadata.watchlistFailures)
+      ? file.metadata.watchlistFailures.filter(isRecord).map((failure) => ({
+          rowNumber: typeof failure.rowNumber === "number" ? failure.rowNumber : 0,
+          sourceDrugName: typeof failure.sourceDrugName === "string" ? failure.sourceDrugName : null,
+          sourceMoa: typeof failure.sourceMoa === "string" ? failure.sourceMoa : null,
+          sourceItemCode: typeof failure.sourceItemCode === "string" ? failure.sourceItemCode : null,
+          reason: typeof failure.reason === "string" ? failure.reason : "Unknown matching failure",
+        }))
+      : [],
+  }));
+}

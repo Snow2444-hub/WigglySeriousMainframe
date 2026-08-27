@@ -27,7 +27,8 @@ const typeLabels: Record<string, string> = {
   new_brand: 'New brand',
   delisted: 'Delisted',
   price_change: 'Price update',
-  formulary_change: 'Formulary change'
+  formulary_change: 'Formulary change',
+  published_fnb_new: 'New FNB register entry'
 };
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -100,6 +101,16 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
         <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{oldVal?.formulary || '—'}</span> 
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> 
         <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{newVal?.formulary || '—'}</span>
+      </span>
+    );
+  }
+  if (change.changeType === 'published_fnb_new') {
+    const added = objectValue(change.newValue);
+    return (
+      <span className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
+        <span className="text-chart-3">Highlighted in PBS register</span>
+        {textValue(added.manner_of_administration) && <span>{textValue(added.manner_of_administration)}</span>}
+        {textValue(added.date_of_effect) && <span className="font-mono">{date(textValue(added.date_of_effect) as string)}</span>}
       </span>
     );
   }

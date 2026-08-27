@@ -158,7 +158,7 @@ export function PbsItemEvidence() {
                          <div key={pred.id} className="p-5">
                            <div className="flex justify-between items-start mb-2">
                              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{dateStr(pred.predictedDate)}</span>
-                              <span className="bg-chart-3/15 text-chart-3 font-mono text-[10px] font-bold px-2 py-0.5 rounded uppercase">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : `${pred.confidence} confidence`}</span>
+                               <span className="bg-chart-3/15 text-chart-3 font-mono text-[10px] font-bold px-2 py-0.5 rounded uppercase">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
                            </div>
                            <div className="flex items-baseline gap-2 mb-2">
                              <span className="text-2xl font-bold tracking-tight text-foreground">-{pred.predictedPercentage}%</span>

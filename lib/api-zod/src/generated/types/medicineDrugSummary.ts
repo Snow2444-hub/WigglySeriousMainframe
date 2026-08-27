@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { MedicineDrugSummarySearchMatchLevel } from './medicineDrugSummarySearchMatchLevel';
+import type { PriceDisclosureCycleSummary } from './priceDisclosureCycleSummary';
 
 export interface MedicineDrugSummary {
   drugId: number;
@@ -26,6 +27,8 @@ export interface MedicineDrugSummary {
   nextPredictedReductionType: string | null;
   /** @nullable */
   nextPredictedReductionPercentage: number | null;
+  /** @nullable */
+  nextPredictedReductionConfidence: string | null;
   recentHighChangeCount: number;
   /** @nullable */
   searchMatchLevel: MedicineDrugSummarySearchMatchLevel;
@@ -33,4 +36,12 @@ export interface MedicineDrugSummary {
   matchedBrandName: string | null;
   /** @nullable */
   matchedItemCode: string | null;
+  subjectToPriceDisclosure: boolean;
+  priceDisclosureCycles: PriceDisclosureCycleSummary[];
+  hasTakenFirstNewBrandReduction: boolean;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  firstNewBrandReductionDate: string | null;
 }

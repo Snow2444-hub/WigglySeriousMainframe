@@ -15,4 +15,5 @@ export const ScheduleChangeChangeType = {
   delisted: 'delisted',
   price_change: 'price_change',
   formulary_change: 'formulary_change',
+  published_fnb_new: 'published_fnb_new',
 } as const;

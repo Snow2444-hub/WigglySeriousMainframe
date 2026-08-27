@@ -532,6 +532,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/published-files:
+    get:
+      operationId: listAdminPublishedFiles
+      tags: [admin]
+      summary: List current PBS published-file ingestion results
+      responses:
+        "200":
+          description: Published-file ingestion results and watchlist match failures
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminPublishedFile"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/pbs-watchlist:
     get:
       operationId: listPbsWatchlistEntries
@@ -813,6 +839,8 @@ components:
           type: ["string", "null"]
         nextPredictedReductionPercentage:
           type: ["number", "null"]
+        nextPredictedReductionConfidence:
+          type: ["string", "null"]
         recentHighChangeCount:
           type: integer
         searchMatchLevel:
@@ -822,7 +850,27 @@ components:
           type: ["string", "null"]
         matchedItemCode:
           type: ["string", "null"]
-      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, recentHighChangeCount, searchMatchLevel, matchedBrandName, matchedItemCode]
+        subjectToPriceDisclosure:
+          type: boolean
+        priceDisclosureCycles:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriceDisclosureCycleSummary"
+        hasTakenFirstNewBrandReduction:
+          type: boolean
+        firstNewBrandReductionDate:
+          type: ["string", "null"]
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, nextPredictedReductionConfidence, recentHighChangeCount, subjectToPriceDisclosure, priceDisclosureCycles, hasTakenFirstNewBrandReduction, firstNewBrandReductionDate, searchMatchLevel, matchedBrandName, matchedItemCode]
+    PriceDisclosureCycleSummary:
+      type: object
+      properties:
+        cycleLabel:
+          type: string
+        submissionDeadline:
+          type: string
+          pattern: '^\d{4}-\d{2}-\d{2}$'
+      required: [cycleLabel, submissionDeadline]
     MedicineBrandSummary:
       type: object
       properties:
@@ -999,7 +1047,7 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         changeType:
           type: string
-          enum: [new_item, new_brand, delisted, price_change, formulary_change]
+          enum: [new_item, new_brand, delisted, price_change, formulary_change, published_fnb_new]
         liItemId:
           type: ["string", "null"]
         pbsCode:
@@ -1186,6 +1234,59 @@ components:
           minimum: 1
           maximum: 10000
           description: Optional total page cap across all configured PBS endpoints; omit for the full schedule.
+    AdminPublishedFile:
+      type: object
+      properties:
+        id:
+          type: integer
+        sourceKey:
+          type: string
+        pageUrl:
+          type: string
+          format: uri
+        fileUrl:
+          type: string
+          format: uri
+        fileName:
+          type: string
+        contentType:
+          type: ["string", "null"]
+        fileSha256:
+          type: string
+        retrievedAt:
+          type: string
+          format: date-time
+        parserVersion:
+          type: string
+        status:
+          type: string
+        totalRows:
+          type: integer
+        matchedRows:
+          type: integer
+        watchlistUnmatchedRows:
+          type: integer
+        errorMessage:
+          type: ["string", "null"]
+        watchlistFailures:
+          type: array
+          items:
+            $ref: "#/components/schemas/PublishedFileMatchFailure"
+      required: [id, sourceKey, pageUrl, fileUrl, fileName, contentType, fileSha256, retrievedAt, parserVersion, status, totalRows, matchedRows, watchlistUnmatchedRows, errorMessage, watchlistFailures]
+    PublishedFileMatchFailure:
+      type: object
+      properties:
+        rowNumber:
+          type: integer
+        sourceDrugName:
+          type: ["string", "null"]
+        sourceMoa:
+          type: ["string", "null"]
+        sourceItemCode:
+          type: ["string", "null"]
+        reason:
+          type: string
+      required: [rowNumber, sourceDrugName, sourceMoa, sourceItemCode, reason]
     CurrentAdminIngestionRun:
       type: object
       properties:

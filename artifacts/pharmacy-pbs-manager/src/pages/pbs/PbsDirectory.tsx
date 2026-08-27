@@ -180,10 +180,20 @@ export function PbsDirectory() {
                             <>
                               <span>•</span>
                                <span className="font-semibold normal-case tracking-normal text-primary">
-                                 {reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, {reductionPercentageLabel(drug.nextPredictedReductionPercentage)}
+                                  {drug.nextPredictedReductionConfidence === 'indicative' ? 'Indicative price disclosure' : reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, {reductionPercentageLabel(drug.nextPredictedReductionPercentage)}
                                </span>
                             </>
                           )}
+                           {drug.subjectToPriceDisclosure && drug.priceDisclosureCycles.map((cycle) => (
+                             <span key={`${cycle.cycleLabel}-${cycle.submissionDeadline}`} className="rounded bg-primary/10 px-2 py-0.5 font-semibold normal-case tracking-normal text-primary">
+                               subject to price disclosure — {cycle.cycleLabel}
+                             </span>
+                           ))}
+                           {drug.hasTakenFirstNewBrandReduction && drug.firstNewBrandReductionDate && (
+                             <span className="rounded bg-muted px-2 py-0.5 font-semibold normal-case tracking-normal text-muted-foreground">
+                               FNB reduction recorded {shortDate(drug.firstNewBrandReductionDate)}
+                             </span>
+                           )}
                         </div>
                       </div>
                       

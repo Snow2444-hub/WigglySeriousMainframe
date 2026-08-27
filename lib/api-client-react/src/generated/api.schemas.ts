@@ -33,6 +33,12 @@ export const MedicineDrugSummarySearchMatchLevel = {
   item: 'item',
 } as const;
 
+export interface PriceDisclosureCycleSummary {
+  cycleLabel: string;
+  /** @pattern ^\d{4}-\d{2}-\d{2}$ */
+  submissionDeadline: string;
+}
+
 export interface MedicineDrugSummary {
   drugId: number;
   drugName: string;
@@ -52,6 +58,8 @@ export interface MedicineDrugSummary {
   nextPredictedReductionType: string | null;
   /** @nullable */
   nextPredictedReductionPercentage: number | null;
+  /** @nullable */
+  nextPredictedReductionConfidence: string | null;
   recentHighChangeCount: number;
   /** @nullable */
   searchMatchLevel: MedicineDrugSummarySearchMatchLevel;
@@ -59,6 +67,14 @@ export interface MedicineDrugSummary {
   matchedBrandName: string | null;
   /** @nullable */
   matchedItemCode: string | null;
+  subjectToPriceDisclosure: boolean;
+  priceDisclosureCycles: PriceDisclosureCycleSummary[];
+  hasTakenFirstNewBrandReduction: boolean;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  firstNewBrandReductionDate: string | null;
 }
 
 export interface MedicineBrandSummary {
@@ -206,6 +222,7 @@ export const ScheduleChangeChangeType = {
   delisted: 'delisted',
   price_change: 'price_change',
   formulary_change: 'formulary_change',
+  published_fnb_new: 'published_fnb_new',
 } as const;
 
 /**
@@ -374,6 +391,37 @@ export interface AdminIngestionInput {
      * @maximum 10000
      */
   maxPages?: number;
+}
+
+export interface PublishedFileMatchFailure {
+  rowNumber: number;
+  /** @nullable */
+  sourceDrugName: string | null;
+  /** @nullable */
+  sourceMoa: string | null;
+  /** @nullable */
+  sourceItemCode: string | null;
+  reason: string;
+}
+
+export interface AdminPublishedFile {
+  id: number;
+  sourceKey: string;
+  pageUrl: string;
+  fileUrl: string;
+  fileName: string;
+  /** @nullable */
+  contentType: string | null;
+  fileSha256: string;
+  retrievedAt: string;
+  parserVersion: string;
+  status: string;
+  totalRows: number;
+  matchedRows: number;
+  watchlistUnmatchedRows: number;
+  /** @nullable */
+  errorMessage: string | null;
+  watchlistFailures: PublishedFileMatchFailure[];
 }
 
 export interface CurrentAdminIngestionRun {

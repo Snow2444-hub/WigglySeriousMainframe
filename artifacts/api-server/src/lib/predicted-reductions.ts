@@ -3,11 +3,13 @@ import {
   drugsTable,
   pbsItemsTable,
   priceDisclosureSettingsTable,
+  pbsFnbReductionsTable,
+  pbsPublishedPricesTable,
   predictedReductionsTable,
   reductionSettingsTable,
   scheduleChangesTable,
 } from "@workspace/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 
 const DEFAULT_SETTINGS = [
   { anniversaryYears: 5, reductionType: "5-year statutory reduction", percentage: 5 },
@@ -121,32 +123,39 @@ export async function recalculatePredictedReductionsForDrug(
   });
 
   const firstNewBrandSetting = settings.find((setting) => setting.triggerType === "first_new_brand");
-  const firstNewBrandChanges = firstNewBrandSetting
-    ? await db
-        .select({
-          effectiveDate: scheduleChangesTable.effectiveDate,
-          oldValue: scheduleChangesTable.oldValue,
-        })
-        .from(scheduleChangesTable)
-        .where(
-          and(
-            eq(scheduleChangesTable.drugId, drugId),
-            eq(scheduleChangesTable.changeType, "new_brand"),
-            eq(scheduleChangesTable.significance, "high"),
-          ),
-        )
-        .orderBy(asc(scheduleChangesTable.effectiveDate))
-        .then((changes) =>
-          changes
-            .filter((change) => isRecord(change.oldValue))
-            .filter((change) => {
-              const baselineItems = (change.oldValue as JsonRecord).baseline_items;
-              return Array.isArray(baselineItems) && baselineItems.length > 0;
-            }),
-        )
-    : [];
+  const [firstNewBrandChanges, fnbReductions] = await Promise.all([
+    firstNewBrandSetting
+      ? db
+          .select({
+            effectiveDate: scheduleChangesTable.effectiveDate,
+            oldValue: scheduleChangesTable.oldValue,
+          })
+          .from(scheduleChangesTable)
+          .where(
+            and(
+              eq(scheduleChangesTable.drugId, drugId),
+              eq(scheduleChangesTable.changeType, "new_brand"),
+              eq(scheduleChangesTable.significance, "high"),
+            ),
+          )
+          .orderBy(asc(scheduleChangesTable.effectiveDate))
+          .then((changes) =>
+            changes
+              .filter((change) => isRecord(change.oldValue))
+              .filter((change) => {
+                const baselineItems = (change.oldValue as JsonRecord).baseline_items;
+                return Array.isArray(baselineItems) && baselineItems.length > 0;
+              }),
+          )
+      : Promise.resolve([]),
+    db
+      .select({ effectDate: pbsFnbReductionsTable.effectDate })
+      .from(pbsFnbReductionsTable)
+      .where(and(eq(pbsFnbReductionsTable.drugId, drugId), lte(pbsFnbReductionsTable.effectDate, today)))
+      .orderBy(asc(pbsFnbReductionsTable.effectDate)),
+  ]);
   const firstNewBrandChange = firstNewBrandChanges[0];
-  const firstNewBrandRows = firstNewBrandChange && firstNewBrandSetting
+  const firstNewBrandRows = fnbReductions.length === 0 && firstNewBrandChange && firstNewBrandSetting
     ? (() => {
         const oldValue = isRecord(firstNewBrandChange.oldValue) ? firstNewBrandChange.oldValue : {};
         const baselineItems = Array.isArray(oldValue.baseline_items)
@@ -212,7 +221,49 @@ export async function recalculatePredictedReductionsForDrug(
         }];
       })
     : [];
-  const rows = [...statutoryRows, ...firstNewBrandRows, ...disclosureRows];
+  const publishedPrices = await db
+    .select({
+      itemCode: pbsPublishedPricesTable.matchedItemCode,
+      predictedDate: pbsPublishedPricesTable.predictedDate,
+      currentAemp: pbsPublishedPricesTable.currentAemp,
+      newAemp: pbsPublishedPricesTable.newAemp,
+      confidence: pbsPublishedPricesTable.confidence,
+    })
+    .from(pbsPublishedPricesTable)
+    .where(eq(pbsPublishedPricesTable.drugId, drugId));
+  const publishedPriceByItemDate = new Map<string, typeof publishedPrices[number]>();
+  for (const price of publishedPrices) {
+    const key = `${price.itemCode}:${price.predictedDate}`;
+    const existing = publishedPriceByItemDate.get(key);
+    const rank = price.confidence === "confirmed" ? 2 : 1;
+    const existingRank = existing?.confidence === "confirmed" ? 2 : 1;
+    if (!existing || rank > existingRank) publishedPriceByItemDate.set(key, price);
+  }
+  const publishedRows = [...publishedPriceByItemDate.values()].flatMap((price) => {
+    if (price.currentAemp <= 0) return [];
+    const percentage = Number(
+      (((price.currentAemp - price.newAemp) / price.currentAemp) * 100).toFixed(3),
+    );
+    return [{
+      itemCode: price.itemCode,
+      drugId,
+      predictedDate: price.predictedDate,
+      reductionType: "price_disclosure",
+      predictedPercentage: percentage,
+      predictedNewPrice: price.newAemp,
+      confidence: price.confidence,
+      subjectToMinisterialDiscretion: false,
+      sourceNote:
+        price.confidence === "confirmed"
+          ? "Confirmed Prices Report: future AEMP published by PBS; supersedes any indicative price for this item and date."
+          : "Indicative Prices Report: future AEMP estimate published by PBS; will be superseded when confirmed prices are published.",
+    }];
+  });
+  const publishedKeys = new Set(publishedRows.map((row) => `${row.itemCode}:${row.predictedDate}`));
+  const filteredDisclosureRows = disclosureRows.filter(
+    (row) => !publishedKeys.has(`${row.itemCode}:${row.predictedDate}`),
+  );
+  const rows = [...statutoryRows, ...firstNewBrandRows, ...filteredDisclosureRows, ...publishedRows];
 
   if (rows.length > 0) {
     await db.insert(predictedReductionsTable).values(rows);

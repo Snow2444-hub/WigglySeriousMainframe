@@ -22,6 +22,7 @@ import type {
 import type {
   AdminIngestionInput,
   AdminIngestionRun,
+  AdminPublishedFile,
   ArtgEntry,
   CurrentAdminIngestionRun,
   DashboardSummary,
@@ -1776,6 +1777,83 @@ export function useGetCurrentAdminIngestionRun<TData = Awaited<ReturnType<typeof
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCurrentAdminIngestionRunQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminPublishedFilesUrl = () => {
+
+
+
+
+  return `/api/admin/published-files`
+}
+
+/**
+ * @summary List current PBS published-file ingestion results
+ */
+export const listAdminPublishedFiles = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPublishedFile[]> => {
+
+  return customFetch<AdminPublishedFile[]>(getListAdminPublishedFilesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminPublishedFilesQueryKey = () => {
+    return [
+    `/api/admin/published-files`
+    ] as const;
+    }
+
+
+export const getListAdminPublishedFilesQueryOptions = <TData = Awaited<ReturnType<typeof listAdminPublishedFiles>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPublishedFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminPublishedFilesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminPublishedFiles>>> = ({ signal }) => listAdminPublishedFiles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminPublishedFiles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminPublishedFilesQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminPublishedFiles>>>
+export type ListAdminPublishedFilesQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List current PBS published-file ingestion results
+ */
+
+export function useListAdminPublishedFiles<TData = Awaited<ReturnType<typeof listAdminPublishedFiles>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPublishedFiles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminPublishedFilesQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
