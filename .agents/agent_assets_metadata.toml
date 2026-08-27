@@ -28,3 +28,17 @@ mtime_ms = 1787741697599
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/360e26be-7c5f-4db5-bb29-4942acc64dd3/2b90a57d-7ca5-4123-a2db-b1628fd4f4a7"
 storage_version_token = "1787741698739920"
 content_type = "text/csv"
+
+[[outputs]]
+id = "OdJLtWckxMV_JmjKaCvRY"
+uri = "file://reports/rivaroxaban-backfill-report.html"
+type = "text"
+title = "Rivaroxaban PBS backfill report"
+description = "Full item list, price history, schedule changes, and October 2026 indicative matches."
+logical_id = "ffff15a2-eb06-4cb8-aa78-3764e45afaed"
+content_hash = "sha256:7502021895d4efd13c121af6d8812f23888c534e9a03ba27a187969da7a26aee"
+size = 328309
+mtime_ms = 1787820353780
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/ffff15a2-eb06-4cb8-aa78-3764e45afaed/54674ddd-6c54-4404-af05-0275f3487c03"
+storage_version_token = "1787820354545685"
+content_type = "text/html"
