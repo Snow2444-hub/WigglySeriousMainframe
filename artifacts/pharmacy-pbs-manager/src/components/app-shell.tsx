@@ -63,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="mb-3 px-3 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-foreground/45">Workspace</div>
+          <div className="mb-3 px-3 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-sidebar-foreground/45">Workspace</div>
         <nav className="space-y-1" aria-label="Primary navigation">
           {visibleNavItems.map((item) => {
             const active = location === item.href;
@@ -105,12 +105,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Menu className="h-5 w-5" />
           </button>
           <div className="hidden items-center gap-2 text-xs text-muted-foreground md:flex">
-            <ClipboardList className="h-4 w-4 text-primary" />
+            <ClipboardList className="h-4 w-4 text-info" />
             <span className="font-medium">Australian medicines workspace</span>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="hidden rounded-full border border-border bg-card px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:inline-flex">Live reference data</span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 font-mono text-xs font-bold text-primary md:hidden">{initials}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-mono text-xs font-bold text-muted-foreground md:hidden">{initials}</span>
           </div>
         </header>
         <div className="mx-auto max-w-[1400px] px-5 py-7 md:px-10 md:py-10">{children}</div>
@@ -123,13 +123,13 @@ export function PageHeading({ eyebrow, title, description, action }: { eyebrow: 
   return (
     <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
       <div className="animate-rise-in">
-        <div className="mb-3 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" /> {eyebrow}
+        <div className="mb-3 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full bg-info" /> {eyebrow}
         </div>
         <h1 className="text-3xl font-bold tracking-[-0.055em] text-foreground md:text-[42px]">{title}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
       </div>
-      {action && <div className="animate-rise-in delay-1">{action}</div>}
+      {action && <div className="animate-rise-in delay-1 md:shrink-0">{action}</div>}
     </div>
   );
 }
@@ -139,7 +139,7 @@ export function QueryState({ kind, onRetry }: { kind: 'loading' | 'error' | 'emp
     return <div className="space-y-3 rounded-2xl border border-border bg-card p-6" data-testid="status-loading"><div className="skeleton-bar h-4 w-1/3 rounded bg-muted" /><div className="skeleton-bar h-10 w-full rounded-lg bg-muted" /><div className="skeleton-bar h-10 w-5/6 rounded-lg bg-muted" /></div>;
   }
   if (kind === 'error') {
-    return <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-8 text-center" data-testid="status-error"><p className="font-semibold text-destructive">Reference data could not be loaded.</p><p className="mt-1 text-sm text-muted-foreground">Check your connection and try again.</p>{onRetry && <button type="button" onClick={onRetry} className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-retry">Try again</button>}</div>;
+    return <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-8 text-center" data-testid="status-error"><p className="font-semibold text-destructive">Reference data could not be loaded.</p><p className="mt-1 text-sm text-muted-foreground">Check your connection and try again.</p>{onRetry && <button type="button" onClick={onRetry} className="mt-4 inline-flex h-11 items-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-retry">Try again</button>}</div>;
   }
   return <div className="rounded-2xl border border-dashed border-border bg-card/60 p-12 text-center" data-testid="status-empty"><PackageSearch className="mx-auto h-8 w-8 text-muted-foreground/50" /><p className="mt-3 font-semibold">Nothing matched that search</p><p className="mt-1 text-sm text-muted-foreground">Try a broader name, ingredient, or code.</p></div>;
 }

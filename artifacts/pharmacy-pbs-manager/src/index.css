@@ -40,6 +40,10 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-destructive-border: var(--destructive-border);
 
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-info: hsl(var(--info));
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -109,6 +113,9 @@
   
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
+  --success: 154 52% 34%;
+  --warning: 35 92% 42%;
+  --info: 217 58% 42%;
   
   --input: 214 32% 91%;
   --ring: 185 75% 35%;
@@ -177,6 +184,9 @@
   
   --destructive: 0 72% 58%;
   --destructive-foreground: 210 25% 98%;
+  --success: 154 58% 48%;
+  --warning: 38 92% 57%;
+  --info: 211 78% 64%;
   
   --input: 215 28% 25%;
   --ring: 185 75% 45%;
@@ -211,6 +221,48 @@
 .skeleton-bar { animation: pulse-bar 1.3s ease-in-out infinite; }
 .grid-paper { background-image: linear-gradient(hsl(var(--border) / .5) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border) / .5) 1px, transparent 1px); background-size: 24px 24px; }
 .data-mono { font-family: var(--app-font-mono); letter-spacing: -0.03em; }
+
+@layer components {
+  .field-label {
+    @apply mb-1.5 block text-xs font-bold text-foreground;
+  }
+
+  .field-label-muted {
+    @apply mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground;
+  }
+
+  .control-input {
+    @apply h-11 w-full rounded-xl border border-input bg-background px-3 text-sm shadow-sm outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-55;
+  }
+
+  .control-row {
+    @apply flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-xs sm:flex-row;
+  }
+
+  .status-badge {
+    @apply inline-flex w-fit items-center rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em];
+  }
+
+  .status-success {
+    @apply bg-success/12 text-success;
+  }
+
+  .status-warning {
+    @apply bg-warning/15 text-warning;
+  }
+
+  .status-error {
+    @apply bg-destructive/10 text-destructive;
+  }
+
+  .status-info {
+    @apply bg-info/10 text-info;
+  }
+
+  .status-neutral {
+    @apply bg-muted text-muted-foreground;
+  }
+}
 
 @layer base {
   * {

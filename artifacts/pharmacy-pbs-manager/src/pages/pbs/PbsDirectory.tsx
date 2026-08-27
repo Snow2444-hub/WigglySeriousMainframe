@@ -7,7 +7,7 @@ import {
 } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
-import { Search, ChevronRight, ArrowLeft, Pill, Building2, Tag, AlertTriangle } from 'lucide-react';
+import { Search, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
@@ -75,8 +75,8 @@ export function PbsDirectory() {
         <PageHeading eyebrow="Reference library / PBS" title="PBS directory" description="Precise medicine intelligence. Search by drug, brand, ingredient, or code." />
       ) : (
         <div className="mb-3">
-          <div className="mb-1.5 flex items-center gap-2 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-primary">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" /> Reference library / PBS
+          <div className="mb-1.5 flex items-center gap-2 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-info" /> Reference library / PBS
           </div>
           <h1 className="text-2xl font-bold tracking-[-0.045em] text-foreground">PBS directory</h1>
         </div>
@@ -121,7 +121,7 @@ export function PbsDirectory() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm min-h-[400px]">
+       <div className={`overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${tier.level === 'drugs' ? 'min-h-[400px]' : ''}`}>
         {tier.level === 'drugs' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="flex justify-between border-b border-border bg-muted/30 px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
@@ -152,11 +152,11 @@ export function PbsDirectory() {
                     >
                       <div>
                         {isItem ? (
-                          <div className="flex items-center gap-2 mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
+                          <div className="flex items-center gap-2 mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-info">
                             <Tag className="h-3 w-3" /> Item Match • {drug.matchedItemCode}
                           </div>
                         ) : isBrand ? (
-                          <div className="flex items-center gap-2 mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-primary">
+                          <div className="flex items-center gap-2 mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-info">
                             <Building2 className="h-3 w-3" /> Brand Match
                           </div>
                         ) : (
@@ -182,16 +182,19 @@ export function PbsDirectory() {
                            {drug.nextPredictedReductionDate && drug.nextPredictedReductionType && drug.nextPredictedReductionPercentage !== null && (
                             <>
                               <span>•</span>
-                               <span className="font-semibold normal-case tracking-normal text-primary">
+                                <span className="font-semibold normal-case tracking-normal text-info">
                                   {drug.nextPredictedReductionConfidence === 'indicative' ? 'Indicative price disclosure' : reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, {reductionPercentageLabel(drug.nextPredictedReductionPercentage)}
                                </span>
                             </>
                           )}
-                           {drug.subjectToPriceDisclosure && drug.priceDisclosureCycles.map((cycle) => (
-                             <span key={`${cycle.cycleLabel}-${cycle.submissionDeadline}`} className="rounded bg-primary/10 px-2 py-0.5 font-semibold normal-case tracking-normal text-primary">
-                               subject to price disclosure — {cycle.cycleLabel}
-                             </span>
-                           ))}
+                            {drug.subjectToPriceDisclosure && drug.priceDisclosureCycles.length > 0 && (
+                              <span
+                                className="rounded bg-info/10 px-2 py-0.5 font-semibold normal-case tracking-normal text-info"
+                                title={drug.priceDisclosureCycles.map((cycle) => `${cycle.cycleLabel}: submit by ${shortDate(cycle.submissionDeadline)}`).join(' · ')}
+                              >
+                                Price disclosure · {drug.priceDisclosureCycles.map((cycle) => cycle.cycleLabel).join(', ')}
+                              </span>
+                            )}
                            {drug.hasTakenFirstNewBrandReduction && drug.firstNewBrandReductionDate && (
                              <span className="rounded bg-muted px-2 py-0.5 font-semibold normal-case tracking-normal text-muted-foreground">
                                FNB reduction recorded {shortDate(drug.firstNewBrandReductionDate)}
@@ -202,9 +205,11 @@ export function PbsDirectory() {
                       
                       <div className="flex items-center gap-6 mt-4 md:mt-0">
                         {drug.recentHighChangeCount > 0 && (
-                          <div className="flex items-center gap-1.5 text-chart-3 font-semibold text-xs bg-chart-3/10 px-2.5 py-1 rounded-md">
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            {drug.recentHighChangeCount} schedule changes
+                          <div
+                            className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                            title="High-impact schedule changes recorded in the last 90 days"
+                          >
+                            {drug.recentHighChangeCount} high-impact changes in 90 days
                           </div>
                         )}
                         <div className="text-right hidden md:block">
@@ -230,8 +235,15 @@ export function PbsDirectory() {
              !brandsQuery.data?.length ? <div className="p-6"><QueryState kind="empty" /></div> :
              (() => {
               const brands = brandsQuery.data ?? [];
-              const innovators = brands.filter((brand) => brand.isInnovator);
-              const generics = brands.filter((brand) => !brand.isInnovator);
+               const innovators = brands
+                 .filter((brand) => brand.isInnovator)
+                 .sort((left, right) => left.brandName.localeCompare(right.brandName));
+               const generics = brands
+                 .filter((brand) => !brand.isInnovator)
+                 .sort((left, right) => {
+                   const dateOrder = (right.firstListedDate ?? '').localeCompare(left.firstListedDate ?? '');
+                   return dateOrder !== 0 ? dateOrder : left.brandName.localeCompare(right.brandName);
+                 });
               const formularyCounts = brands.reduce((counts, brand) => {
                 counts.set(brand.formulary, (counts.get(brand.formulary) ?? 0) + 1);
                 return counts;
@@ -239,6 +251,11 @@ export function PbsDirectory() {
               const primaryFormulary = [...formularyCounts.entries()]
                 .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
               const allShareFormulary = formularyCounts.size === 1;
+               const allSharePrice = brands.every(
+                 (brand) => brand.minimumPrice === brands[0].minimumPrice && brand.maximumPrice === brands[0].maximumPrice,
+               );
+               const sharedMinimumPrice = Math.min(...brands.map((brand) => brand.minimumPrice));
+               const sharedMaximumPrice = Math.max(...brands.map((brand) => brand.maximumPrice));
               const renderBrandSection = (label: string, sectionBrands: MedicineBrandSummary[]) => (
                 sectionBrands.length > 0 && (
                   <section aria-label={label}>
@@ -252,14 +269,8 @@ export function PbsDirectory() {
                           onClick={() => clickBrand(brand, tier.drug.drugName)}
                           className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.4fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
                         >
-                          <span className="flex min-w-0 items-center gap-2">
+                           <span className="flex min-w-0 items-center gap-2">
                             <span className="truncate text-sm font-bold tracking-tight">{brand.brandName}</span>
-                            {brand.highChangeCount > 0 && (
-                              <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-chart-3" title="High-impact schedule changes">
-                                <AlertTriangle className="h-3 w-3" />
-                                <span className="sr-only">High-impact changes</span>
-                              </span>
-                            )}
                           </span>
                           <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
                             {brand.itemCount} item{brand.itemCount === 1 ? '' : 's'}
@@ -267,14 +278,7 @@ export function PbsDirectory() {
                           <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
                             {brand.firstListedDate ? `Listed ${date(brand.firstListedDate)}` : 'Listed unknown'}
                           </span>
-                          <span className="whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
-                            {priceLabel(brand.minimumPrice, brand.maximumPrice)}
-                          </span>
-                          <span className="hidden w-4 text-right md:inline">
-                            {brand.formulary !== primaryFormulary ? (
-                              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] font-bold text-muted-foreground">{brand.formulary}</span>
-                            ) : null}
-                          </span>
+                           <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
                         </button>
                       ))}
                     </div>
@@ -292,17 +296,16 @@ export function PbsDirectory() {
                       {brands.length} brand{brands.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  {primaryFormulary && (
-                    <div className="border-b border-border/70 px-6 py-1.5 text-xs font-medium text-muted-foreground">
-                      {allShareFormulary ? 'Formulary' : 'Default formulary'}: <span className="font-mono font-bold text-foreground">{primaryFormulary}</span>
-                    </div>
-                  )}
-                  <div className="hidden grid-cols-[minmax(0,1.4fr)_auto_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
+                   <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-b border-border/70 px-6 py-2 text-xs font-medium text-muted-foreground">
+                     <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Shared across brands</span>
+                     <span>Formulary: <span className="font-mono font-bold text-foreground">{allShareFormulary ? primaryFormulary : 'varies'}</span></span>
+                     <span>Ex-manufacturer / wholesale price: <span className="font-mono font-bold text-foreground">{allSharePrice ? priceLabel(brands[0].minimumPrice, brands[0].maximumPrice) : priceLabel(sharedMinimumPrice, sharedMaximumPrice)}</span></span>
+                   </div>
+                   <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
                     <span>Brand</span>
                     <span>Items</span>
                     <span>Listed</span>
-                    <span className="text-right">Ex-manufacturer / wholesale price</span>
-                    <span className="w-4 text-right">Formulary</span>
+                     <span />
                   </div>
                   {renderBrandSection('Innovator', innovators)}
                   {renderBrandSection('Generics', generics)}

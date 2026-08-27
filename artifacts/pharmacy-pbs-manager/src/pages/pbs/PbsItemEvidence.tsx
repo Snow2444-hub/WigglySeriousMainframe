@@ -32,6 +32,12 @@ export function PbsItemEvidence() {
       fullDate: p.priceDate,
       price: p.aemp
     }));
+  const medicineContext = item
+    ? [item.drugName, item.activeIngredient].filter((value, index, values) =>
+        values.findIndex((candidate) => candidate.trim().toLocaleLowerCase() === value.trim().toLocaleLowerCase()) === index,
+      )
+    : [];
+  const hasPredictions = Boolean(predictedReductions.data?.length);
 
   return (
     <AppShell>
@@ -48,22 +54,20 @@ export function PbsItemEvidence() {
             <div className="flex flex-col md:flex-row justify-between gap-6 md:items-start">
               <div>
                  <div className="mb-3 flex min-w-0 flex-wrap items-center gap-3">
-                   <span className="max-w-full break-all rounded-lg bg-primary/10 px-3 py-1 font-mono text-xs font-bold text-primary sm:text-sm">
-                    {item.itemCode}
-                  </span>
                   <span className={`rounded-lg px-3 py-1 font-mono text-sm font-bold ${item.formulary === 'F1' ? 'bg-sidebar-primary/10 text-sidebar-primary' : 'bg-chart-2/15 text-chart-2'}`}>
                     {item.formulary}
                   </span>
                 </div>
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground mb-2">
-                  {item.brandName || item.drugName}
+                  {[item.brandName || item.drugName, item.strength].filter(Boolean).join(' · ')}
                 </h1>
                 <p className="text-lg text-muted-foreground font-medium">
-                  {item.drugName} <span className="opacity-40 mx-1.5">•</span> {item.activeIngredient}
+                   {medicineContext.join(' • ')}
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4" /> {item.sponsor}</span>
                   <span className="flex items-center gap-1.5"><Info className="h-4 w-4" /> {item.form || 'Unknown form'} <span className="opacity-40 mx-1">•</span> {item.packSize || 'Unknown size'}</span>
+                   <span className="font-mono text-[10px] font-semibold text-muted-foreground/70" title="Internal PBS listing identifier">Listing ID {item.liItemId || item.itemCode}</span>
                 </div>
               </div>
               <div className="text-left md:text-right rounded-xl bg-muted/40 p-5 min-w-[200px] border border-border/50">
@@ -72,23 +76,23 @@ export function PbsItemEvidence() {
                   {money(item.currentAemp)}
                 </div>
                 <div className="mt-3 text-xs font-semibold text-muted-foreground flex items-center md:justify-end gap-1.5">
-                  <CalendarDays className="h-3.5 w-3.5 text-primary" /> Updated {dateStr(item.lastUpdated)}
+                  <CalendarDays className="h-3.5 w-3.5 text-info" /> Updated {dateStr(item.lastUpdated)}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid lg:grid-cols-[1.5fr_1fr] gap-6 animate-rise-in delay-2">
-             <div className="flex min-h-[400px] min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+           <div className="grid gap-6 animate-rise-in delay-2 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+              <div className="flex min-h-[460px] min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-6 py-5 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-foreground">
-                  <Activity className="h-5 w-5 text-primary" /> Ex-manufacturer / wholesale price history
+                  <Activity className="h-5 w-5 text-info" /> Ex-manufacturer / wholesale price history
                 </div>
               </div>
                <div className="h-full min-w-0 max-w-full flex-1 overflow-hidden p-4 sm:p-6">
                 {priceHistory.isLoading ? <QueryState kind="loading" /> :
                  !chartData.length ? <div className="h-full flex items-center justify-center text-muted-foreground text-sm font-medium">No price history available.</div> : (
-                  <ResponsiveContainer width="100%" height={320}>
+                   <ResponsiveContainer width="100%" height={380}>
                     <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
@@ -142,10 +146,10 @@ export function PbsItemEvidence() {
             </div>
 
             <div className="flex flex-col gap-6">
-              <div className="rounded-2xl border border-border bg-card shadow-sm flex flex-col">
+               <div className={`order-2 rounded-2xl border border-border bg-card shadow-sm flex flex-col ${!hasPredictions ? 'lg:order-2' : 'lg:order-1'}`}>
                 <div className="border-b border-border px-6 py-5 flex items-center justify-between bg-muted/20">
                   <div className="flex items-center gap-2 font-bold text-foreground">
-                    <TrendingDown className="h-5 w-5 text-chart-3" /> Predicted Reductions
+                    <TrendingDown className="h-5 w-5 text-warning" /> Predicted Reductions
                   </div>
                 </div>
                 <div className="p-0">
@@ -158,13 +162,13 @@ export function PbsItemEvidence() {
                          <div key={pred.id} className="p-5">
                            <div className="flex justify-between items-start mb-2">
                              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{dateStr(pred.predictedDate)}</span>
-                               <span className="bg-chart-3/15 text-chart-3 font-mono text-[10px] font-bold px-2 py-0.5 rounded uppercase">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
+                               <span className="rounded bg-info/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-info">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
                            </div>
                            <div className="flex items-baseline gap-2 mb-2">
                              <span className="text-2xl font-bold tracking-tight text-foreground">-{pred.predictedPercentage}%</span>
                              <span className="text-sm font-medium text-muted-foreground line-through">{money(item.currentAemp)}</span>
                              <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
-                             <span className="text-lg font-mono font-bold text-primary">{money(pred.predictedNewPrice)}</span>
+                             <span className="text-lg font-mono font-bold text-warning">{money(pred.predictedNewPrice)}</span>
                            </div>
                             <p className="text-xs text-muted-foreground leading-relaxed">{pred.sourceNote}</p>
                          </div>
@@ -174,10 +178,10 @@ export function PbsItemEvidence() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-border bg-card shadow-sm flex flex-col flex-1">
+               <div className={`order-1 rounded-2xl border border-border bg-card shadow-sm flex flex-col ${!hasPredictions ? 'lg:order-1' : 'lg:order-2'}`}>
                 <div className="border-b border-border px-6 py-5 flex items-center justify-between bg-muted/20">
                   <div className="flex items-center gap-2 font-bold text-foreground">
-                    <History className="h-5 w-5 text-primary" /> Schedule Changes
+                    <History className="h-5 w-5 text-info" /> Schedule Changes
                   </div>
                 </div>
                 <div className="p-0 flex-1 overflow-auto max-h-[300px]">
@@ -190,7 +194,7 @@ export function PbsItemEvidence() {
                          <div key={change.id} className="p-5 text-sm">
                            <div className="flex items-center justify-between mb-1.5">
                              <span className="font-mono text-[10px] font-bold text-muted-foreground">{dateStr(change.effectiveDate)}</span>
-                              <span className={`rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${change.significance === 'high' ? 'bg-destructive/10 text-destructive' : change.significance === 'medium' ? 'bg-accent/20 text-accent-foreground' : 'bg-muted text-muted-foreground'}`}>{change.significance}</span>
+                              <span className={`rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${change.significance === 'high' ? 'bg-destructive/10 text-destructive' : change.significance === 'medium' ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>{change.significance}</span>
                            </div>
                            <div className="font-bold text-foreground mb-1 capitalize">{change.changeType.replace('_', ' ')}</div>
                            {change.notes && <p className="text-xs text-muted-foreground leading-relaxed">{change.notes}</p>}

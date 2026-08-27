@@ -10,7 +10,7 @@ import {
   getGetDrugScheduleTimelineQueryKey
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
-import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity } from 'lucide-react';
+import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
 
 const money = (value: unknown) => {
   if (typeof value !== 'number') return '—';
@@ -39,6 +39,190 @@ function objectValue(value: unknown): Record<string, unknown> {
 
 function textValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function changeBrandName(change: ScheduleChange): string | null {
+  const next = objectValue(change.newValue);
+  const previous = objectValue(change.oldValue);
+  return change.brandName || textValue(next.brand_name) || textValue(previous.brand_name);
+}
+
+function changeStrength(change: ScheduleChange): string | null {
+  const next = objectValue(change.newValue);
+  return textValue(next.strength) || textValue(next.strength_text);
+}
+
+function changePbsCode(change: ScheduleChange): string | null {
+  const next = objectValue(change.newValue);
+  return change.pbsCode || textValue(next.pbs_code);
+}
+
+type TimelineGroup = {
+  key: string;
+  representative: ScheduleChange;
+  changes: ScheduleChange[];
+  brands: string[];
+  itemLabels: string[];
+};
+
+type TimelineDateGroup = {
+  date: string;
+  groups: TimelineGroup[];
+};
+
+function timelineGroupKey(change: ScheduleChange): string {
+  const oldValue = objectValue(change.oldValue);
+  const newValue = objectValue(change.newValue);
+  const brandKey = changeBrandName(change)?.trim().toLowerCase() || '';
+
+  if (change.changeType === 'price_change') {
+    return [
+      change.changeType,
+      oldValue.determined_price ?? '',
+      newValue.determined_price ?? '',
+      newValue.percentage_change ?? '',
+    ].join(':');
+  }
+  if (change.changeType === 'formulary_change') {
+    return `${change.changeType}:${oldValue.formulary ?? ''}:${newValue.formulary ?? ''}`;
+  }
+  if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
+    return `${change.changeType}:${brandKey}`;
+  }
+  if (change.changeType === 'delisted') {
+    return `${change.changeType}:${brandKey}:${oldValue.determined_price ?? ''}`;
+  }
+  if (change.changeType === 'published_fnb_new') {
+    return `${change.changeType}:${newValue.manner_of_administration ?? ''}:${newValue.date_of_effect ?? ''}`;
+  }
+  return change.changeType;
+}
+
+function changeItemLabels(change: ScheduleChange): string[] {
+  if (change.affectedItems?.length) {
+    return change.affectedItems.map((item) => {
+      const label = item.strength || item.pbsCode;
+      return item.brandName && label ? `${item.brandName} · ${label}` : item.brandName || label || 'PBS listing';
+    });
+  }
+
+  const brand = changeBrandName(change);
+  const strength = changeStrength(change);
+  const pbsCode = changePbsCode(change);
+  const label = [brand, strength || pbsCode].filter(Boolean).join(' · ');
+  return label ? [label] : [];
+}
+
+function addUnique(values: string[], additions: string[]): string[] {
+  const next = [...values];
+  for (const value of additions) {
+    if (value && !next.includes(value)) next.push(value);
+  }
+  return next;
+}
+
+function groupTimelineChanges(changes: ScheduleChange[]): TimelineDateGroup[] {
+  const dateGroups = new Map<string, TimelineDateGroup>();
+
+  for (const change of changes) {
+    let dateGroup = dateGroups.get(change.effectiveDate);
+    if (!dateGroup) {
+      dateGroup = { date: change.effectiveDate, groups: [] };
+      dateGroups.set(change.effectiveDate, dateGroup);
+    }
+
+    const key = timelineGroupKey(change);
+    let group = dateGroup.groups.find((candidate) => candidate.key === key);
+    if (!group) {
+      group = {
+        key: `${change.effectiveDate}:${key}`,
+        representative: change,
+        changes: [],
+        brands: [],
+        itemLabels: [],
+      };
+      dateGroup.groups.push(group);
+    }
+
+    group.changes.push(change);
+    const brand = changeBrandName(change);
+    if (brand) group.brands = addUnique(group.brands, [brand]);
+    group.brands = addUnique(
+      group.brands,
+      (change.affectedItems ?? []).map((item) => item.brandName),
+    );
+    group.itemLabels = addUnique(group.itemLabels, changeItemLabels(change));
+  }
+
+  return [...dateGroups.values()];
+}
+
+function timelineGroupCanExpand(group: TimelineGroup): boolean {
+  return group.changes.length > 1 || group.itemLabels.length > 1;
+}
+
+function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
+  const change = group.representative;
+  const brandLabel = group.brands.length ? group.brands.join(', ') : 'Affected listings';
+  const itemCount = group.itemLabels.length || group.changes.length;
+
+  if (change.changeType === 'price_change' || change.changeType === 'formulary_change') {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+        <ChangeDetails change={change} />
+        <span className="text-xs font-semibold text-muted-foreground">{brandLabel}</span>
+      </div>
+    );
+  }
+
+  if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
+        <span className="text-success">{change.changeType === 'new_brand' ? 'Brand added' : 'Added'}</span>
+        <span className="truncate">{brandLabel}</span>
+        <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+          {itemCount} listing{itemCount === 1 ? '' : 's'}
+        </span>
+      </div>
+    );
+  }
+
+  if (change.changeType === 'delisted') {
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
+        <span className="text-destructive">Removed</span>
+        <span className="truncate">{brandLabel}</span>
+        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          {itemCount} listing{itemCount === 1 ? '' : 's'}
+        </span>
+      </div>
+    );
+  }
+
+  return <ChangeDetails change={change} />;
+}
+
+function TimelineGroupExpanded({ group }: { group: TimelineGroup }) {
+  return (
+    <div className="border-t border-border/70 bg-muted/20 px-3 py-2.5">
+      <div className="space-y-1.5">
+        {group.changes.map((change) => {
+          const itemLabels = changeItemLabels(change);
+          const labels = itemLabels.length ? itemLabels : [changeBrandName(change) || 'Drug-level change'];
+          return labels.map((label, index) => (
+            <div key={`${change.id}-${index}`} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
+              <span className="font-semibold text-foreground">{label}</span>
+              {change.changeType === 'price_change' || change.changeType === 'formulary_change' ? (
+                <ChangeDetails change={change} />
+              ) : (
+                <span className="font-mono text-muted-foreground">{changePbsCode(change) || 'PBS listing'}</span>
+              )}
+            </div>
+          ));
+        })}
+      </div>
+    </div>
+  );
 }
 
 function ChangeDetails({ change }: { change: ScheduleChange }) {
@@ -73,10 +257,10 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
     const added = objectValue(change.newValue);
     return (
       <span className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-        <span className="text-chart-3">Added</span>
+        <span className="text-success">Added</span>
         {textValue(added.brand_name) && <span>{textValue(added.brand_name)}</span>}
         {typeof added.determined_price === 'number' && <span className="font-mono">{money(added.determined_price)}</span>}
-        {textValue(added.formulary) && <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">{textValue(added.formulary)}</span>}
+        {textValue(added.formulary) && <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">{textValue(added.formulary)}</span>}
         {textValue(added.pbs_code) && <span className="font-mono text-[10px] text-muted-foreground">{textValue(added.pbs_code)}</span>}
       </span>
     );
@@ -86,9 +270,9 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
     const affectedItems = change.affectedItems ?? [];
     return (
       <span className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-        <span className="text-chart-3">Brand added</span>
+        <span className="text-success">Brand added</span>
         {textValue(added.brand_name) && <span>{textValue(added.brand_name)}</span>}
-        <span className="rounded bg-chart-3/10 px-1.5 py-0.5 font-mono text-[10px] text-chart-3">{affectedItems.length} item{affectedItems.length === 1 ? '' : 's'}</span>
+        <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">{affectedItems.length} item{affectedItems.length === 1 ? '' : 's'}</span>
         {affectedItems.map((item) => <span key={item.liItemId} className="font-mono text-[10px] text-muted-foreground">{item.strength || item.pbsCode || item.liItemId}</span>)}
       </span>
     );
@@ -100,7 +284,7 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
       <span className="flex items-center gap-2 text-sm font-semibold">
         <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{oldVal?.formulary || '—'}</span> 
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> 
-        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{newVal?.formulary || '—'}</span>
+        <span className="rounded bg-info/10 px-1.5 py-0.5 text-info">{newVal?.formulary || '—'}</span>
       </span>
     );
   }
@@ -108,7 +292,7 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
     const added = objectValue(change.newValue);
     return (
       <span className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
-        <span className="text-chart-3">Highlighted in PBS register</span>
+        <span className="text-info">Highlighted in PBS register</span>
         {textValue(added.manner_of_administration) && <span>{textValue(added.manner_of_administration)}</span>}
         {textValue(added.date_of_effect) && <span className="font-mono">{date(textValue(added.date_of_effect) as string)}</span>}
       </span>
@@ -124,6 +308,7 @@ export function ChangesPage() {
   
   const [timelineDrugId, setTimelineDrugId] = useState<number | null>(null);
   const [timelineDrugName, setTimelineDrugName] = useState<string>('');
+  const [expandedTimelineGroups, setExpandedTimelineGroups] = useState<string[]>([]);
 
   const params = useMemo(() => ({
     drugId: drugId || undefined,
@@ -146,6 +331,16 @@ export function ChangesPage() {
   });
 
   const changes = query.data ?? [];
+  const timelineGroups = useMemo(
+    () => (timeline.data ? groupTimelineChanges(timeline.data) : []),
+    [timeline.data],
+  );
+
+  const toggleTimelineGroup = (key: string) => {
+    setExpandedTimelineGroups((current) => (
+      current.includes(key) ? current.filter((value) => value !== key) : [...current, key]
+    ));
+  };
 
   return (
     <AppShell>
@@ -155,8 +350,8 @@ export function ChangesPage() {
         description="Monitor schedule movements, pricing changes, and delistings across the PBS network." 
       />
       
-      <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-border bg-card p-3 shadow-xs sm:flex-row">
-        <label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
+      <div className="control-row mb-6">
+        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
           <Activity className="h-4 w-4 text-muted-foreground" />
           <select 
             value={drugId} 
@@ -171,8 +366,8 @@ export function ChangesPage() {
           </select>
         </label>
         
-        <label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary/20">
-          <Filter className="h-4 w-4 text-primary" />
+        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+          <Filter className="h-4 w-4 text-info" />
           <select 
             value={changeType} 
             onChange={(e) => setChangeType(e.target.value as ListScheduleChangesChangeType | '')} 
@@ -188,8 +383,8 @@ export function ChangesPage() {
           </select>
         </label>
         
-        <label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-border bg-background px-3 text-sm focus-within:border-destructive focus-within:ring-1 focus-within:ring-destructive/20">
-          <AlertTriangle className={`h-4 w-4 ${significance === 'high' ? 'text-destructive' : significance === 'medium' ? 'text-accent-foreground' : 'text-muted-foreground'}`} />
+        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+          <AlertTriangle className={`h-4 w-4 ${significance === 'high' ? 'text-destructive' : significance === 'medium' ? 'text-warning' : 'text-muted-foreground'}`} />
           <select 
             value={significance} 
             onChange={(e) => setSignificance(e.target.value as ListScheduleChangesSignificance | '')} 
@@ -223,7 +418,7 @@ export function ChangesPage() {
             {changes.map((change) => (
               <div 
                 key={change.id} 
-                className={`grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4 ${change.significance === 'high' ? 'bg-destructive/5' : change.significance === 'medium' ? 'bg-accent/5' : ''}`} 
+                className={`grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4 ${change.significance === 'high' ? 'bg-destructive/5' : change.significance === 'medium' ? 'bg-warning/5' : ''}`}
                 data-testid={`row-change-${change.id}`}
               >
                 <div>
@@ -233,15 +428,15 @@ export function ChangesPage() {
                 <div>
                   <p className="text-sm font-bold leading-tight">{change.brandName || change.drugName}</p>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary">{change.pbsCode || change.liItemId || (change.affectedItems?.length ? `${change.affectedItems.length} items` : 'Drug-level')}</span>
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">{change.pbsCode || change.liItemId || (change.affectedItems?.length ? `${change.affectedItems.length} items` : 'Drug-level')}</span>
                     {change.brandName && <span className="truncate text-[11px] font-semibold text-muted-foreground">{change.drugName}</span>}
                   </div>
                 </div>
                 <div>
                   <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
                     change.significance === 'high' ? 'bg-destructive text-destructive-foreground' : 
-                    change.significance === 'medium' ? 'bg-accent/25 text-accent-foreground' :
-                    change.changeType.startsWith('new_') ? 'bg-chart-3/15 text-chart-3' :
+                    change.significance === 'medium' ? 'bg-warning/15 text-warning' :
+                    change.changeType.startsWith('new_') ? 'bg-success/12 text-success' :
                     change.changeType === 'delisted' ? 'border border-destructive/30 text-destructive' :
                     'bg-muted text-muted-foreground'
                   }`}>
@@ -256,7 +451,7 @@ export function ChangesPage() {
                   <button 
                     type="button" 
                     onClick={() => { setTimelineDrugId(change.drugId); setTimelineDrugName(change.drugName); }} 
-                    className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10"
+                    className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-info hover:bg-info/10"
                     data-testid={`button-timeline-${change.id}`}
                   >
                     <History className="h-3.5 w-3.5" />
@@ -275,7 +470,7 @@ export function ChangesPage() {
           <div className="relative flex max-h-[88dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-border bg-card shadow-2xl sm:rounded-3xl">
             <div className="flex shrink-0 items-start justify-between border-b border-border bg-muted/20 px-6 py-5">
               <div className="pr-8">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-primary">Schedule Timeline</span>
+                <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-info">Schedule Timeline</span>
                 <h2 className="mt-1.5 text-2xl font-bold tracking-[-0.04em]">{timelineDrugName}</h2>
               </div>
               <button type="button" onClick={() => setTimelineDrugId(null)} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground" aria-label="Close" data-testid="button-close-timeline-modal">
@@ -291,47 +486,93 @@ export function ChangesPage() {
               ) : timeline.data.length === 0 ? (
                 <p className="py-12 text-center text-sm font-semibold text-muted-foreground">No historical changes found for this medicine.</p>
               ) : (
-                <div className="relative ml-4 space-y-8 border-l-2 border-border/60 pb-6 pt-2">
-                  {timeline.data.map((change) => (
-                    <div key={change.id} className="relative pl-7" data-testid={`timeline-item-${change.id}`}>
-                      <span className={`absolute -left-[9px] top-1.5 h-4 w-4 rounded-full border-4 border-card ${
-                        change.significance === 'high' ? 'bg-destructive' : 
-                        change.significance === 'medium' ? 'bg-accent' :
-                        change.changeType.startsWith('new_') ? 'bg-chart-3' :
-                        change.changeType === 'delisted' ? 'bg-muted-foreground' :
-                        'bg-primary'
-                      }`} />
-                      
-                      <div className="mb-2 flex items-baseline justify-between gap-4">
-                        <p className="font-mono text-sm font-bold text-foreground">{date(change.effectiveDate)}</p>
-                        {(change.significance === 'high' || change.significance === 'medium') && (
-                          <span className={`flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wider ${change.significance === 'high' ? 'text-destructive' : 'text-accent-foreground'}`}>
-                            <AlertCircle className="h-3 w-3" /> {change.significance} impact
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="rounded-2xl border border-border bg-card p-5 shadow-xs transition-shadow hover:shadow-sm">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                          <span className="font-bold text-foreground">{typeLabels[change.changeType] || change.changeType}</span>
-                          {(change.brandName || change.pbsCode) && (
-                            <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-                              {change.pbsCode && <span className="rounded bg-muted px-1 font-mono text-[10px]">{change.pbsCode}</span>}
-                              {change.brandName}
+                <div className="relative ml-2 space-y-5 border-l-2 border-border/60 pb-5 pt-1">
+                  {timelineGroups.map((day) => {
+                    const highestImpact = day.groups.some((group) => group.changes.some((change) => change.significance === 'high'))
+                      ? 'high'
+                      : day.groups.some((group) => group.changes.some((change) => change.significance === 'medium'))
+                        ? 'medium'
+                        : null;
+                    return (
+                      <section key={day.date} className="relative pl-5" data-testid={`timeline-date-${day.date}`}>
+                        <span className={`absolute -left-[7px] top-1 h-3 w-3 rounded-full border-2 border-card ${
+                          highestImpact === 'high' ? 'bg-destructive' :
+                          highestImpact === 'medium' ? 'bg-warning' :
+                          'bg-info'
+                        }`} />
+
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                          <p className="font-mono text-sm font-bold text-foreground">{date(day.date)}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                              {day.groups.length} event{day.groups.length === 1 ? '' : 's'}
                             </span>
-                          )}
+                            {highestImpact && (
+                              <span className={`flex items-center gap-1 font-mono text-[10px] font-bold uppercase tracking-wider ${highestImpact === 'high' ? 'text-destructive' : 'text-warning'}`}>
+                                <AlertCircle className="h-3 w-3" /> {highestImpact}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        
-                        <div className="mt-4 flex items-center gap-4 rounded-xl bg-muted/40 p-3">
-                          <ChangeDetails change={change} />
+
+                        <div className="space-y-2">
+                          {day.groups.map((group) => {
+                            const canExpand = timelineGroupCanExpand(group);
+                            const isExpanded = expandedTimelineGroups.includes(group.key);
+                            const significance = group.changes.some((change) => change.significance === 'high')
+                              ? 'high'
+                              : group.changes.some((change) => change.significance === 'medium')
+                                ? 'medium'
+                                : 'normal';
+                            return (
+                              <article
+                                key={group.key}
+                                className={`overflow-hidden rounded-xl border bg-card shadow-xs ${
+                                  significance === 'high' ? 'border-destructive/35 border-l-4' :
+                                  significance === 'medium' ? 'border-warning/40 border-l-4' :
+                                  'border-border'
+                                }`}
+                                data-testid={`timeline-group-${group.key}`}
+                              >
+                                <div className="flex items-start gap-2.5 p-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                      <span className="text-xs font-bold text-foreground">
+                                        {typeLabels[group.representative.changeType] || group.representative.changeType}
+                                      </span>
+                                      {significance !== 'normal' && (
+                                        <span className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
+                                          significance === 'high' ? 'bg-destructive/10 text-destructive' : 'bg-warning/12 text-warning'
+                                        }`}>
+                                          {significance}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1.5">
+                                      <TimelineGroupSummary group={group} />
+                                    </div>
+                                  </div>
+                                  {canExpand && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTimelineGroup(group.key)}
+                                      className="mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                      aria-label={`${isExpanded ? 'Hide' : 'Show'} individual changes`}
+                                      aria-expanded={isExpanded}
+                                      data-testid={`button-toggle-timeline-group-${group.key}`}
+                                    >
+                                      <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                    </button>
+                                  )}
+                                </div>
+                                {isExpanded && <TimelineGroupExpanded group={group} />}
+                              </article>
+                            );
+                          })}
                         </div>
-                        
-                        {change.notes && (
-                          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{change.notes}</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                      </section>
+                    );
+                  })}
                 </div>
               )}
             </div>

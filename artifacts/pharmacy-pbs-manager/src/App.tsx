@@ -40,39 +40,39 @@ const clerkAppearance = {
     logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
   },
   variables: {
-    colorPrimary: "#17627b",
-    colorForeground: "#172b3b",
-    colorMutedForeground: "#647681",
+    colorPrimary: "#168b98",
+    colorForeground: "#0f172a",
+    colorMutedForeground: "#64748b",
     colorDanger: "#c0443a",
-    colorBackground: "#fffdf8",
-    colorInput: "#f4f0e6",
-    colorInputForeground: "#172b3b",
-    colorNeutral: "#d9d3c5",
+    colorBackground: "#ffffff",
+    colorInput: "#f1f5f9",
+    colorInputForeground: "#0f172a",
+    colorNeutral: "#dbe3ed",
     fontFamily: "DM Sans, sans-serif",
     borderRadius: "0.8rem",
   },
   elements: {
     rootBox: "w-full flex justify-center",
-    cardBox: "bg-[#fffdf8] rounded-3xl w-[440px] max-w-full overflow-hidden shadow-xl",
+    cardBox: "bg-white rounded-3xl w-[440px] max-w-full overflow-hidden shadow-xl",
     card: "!shadow-none !border-0 !bg-transparent",
     footer: "!shadow-none !border-0 !bg-transparent",
-    headerTitle: "text-[#172b3b] font-bold tracking-tight",
-    headerSubtitle: "text-[#647681]",
-    socialButtonsBlockButtonText: "text-[#172b3b] font-semibold",
-    formFieldLabel: "text-[#172b3b] font-semibold",
-    footerActionLink: "text-[#17627b] font-semibold",
-    footerActionText: "text-[#647681]",
-    dividerText: "text-[#647681]",
-    identityPreviewEditButton: "text-[#17627b]",
+    headerTitle: "text-[#0f172a] font-bold tracking-tight",
+    headerSubtitle: "text-[#64748b]",
+    socialButtonsBlockButtonText: "text-[#0f172a] font-semibold",
+    formFieldLabel: "text-[#0f172a] font-semibold",
+    footerActionLink: "text-[#168b98] font-semibold",
+    footerActionText: "text-[#64748b]",
+    dividerText: "text-[#64748b]",
+    identityPreviewEditButton: "text-[#168b98]",
     formFieldSuccessText: "text-[#28775e]",
     alertText: "text-[#c0443a]",
     logoBox: "rounded-xl overflow-hidden",
     logoImage: "rounded-xl",
-    socialButtonsBlockButton: "border-[#d9d3c5] bg-[#f4f0e6] hover:bg-[#ece5d7]",
-    formButtonPrimary: "bg-[#17627b] text-[#fffdf8] hover:bg-[#124d62]",
-    formFieldInput: "border-[#d9d3c5] bg-[#f4f0e6] text-[#172b3b]",
-    footerAction: "border-t border-[#d9d3c5]",
-    dividerLine: "bg-[#d9d3c5]",
+    socialButtonsBlockButton: "border-[#dbe3ed] bg-[#f1f5f9] hover:bg-[#e8eef5]",
+    formButtonPrimary: "bg-[#168b98] text-white hover:bg-[#117480]",
+    formFieldInput: "border-[#dbe3ed] bg-[#f1f5f9] text-[#0f172a]",
+    footerAction: "border-t border-[#dbe3ed]",
+    dividerLine: "bg-[#dbe3ed]",
     alert: "border-[#e8b7b2] bg-[#fff0ee]",
     otpCodeFieldInput: "border-[#d9d3c5] bg-[#f4f0e6]",
     formFieldRow: "gap-1",
@@ -98,21 +98,21 @@ function Home() {
           </span>
         </a>
         <nav className="flex items-center gap-2">
-          <a href="/sign-in" className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-card hover:text-foreground" data-testid="link-home-sign-in">Sign in</a>
-          <a href="/sign-up" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-home-sign-up">Create account</a>
+          <a href="/sign-in" className="inline-flex h-11 items-center rounded-xl px-4 text-sm font-bold text-muted-foreground hover:bg-card hover:text-foreground" data-testid="link-home-sign-in">Sign in</a>
+          <a href="/sign-up" className="inline-flex h-11 items-center rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-home-sign-up">Create account</a>
         </nav>
       </header>
       <main>
         <section className="relative mx-auto grid max-w-7xl gap-12 px-6 pb-20 pt-12 lg:grid-cols-[1fr_.8fr] lg:items-center lg:px-10 lg:pb-28 lg:pt-20">
           <div className="relative z-10 animate-rise-in">
-            <div className="mb-6 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-primary"><span className="h-1.5 w-1.5 rounded-full bg-accent" /> For Australian pharmacy teams</div>
+            <div className="mb-6 flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-info" /> For Australian pharmacy teams</div>
             <h1 className="max-w-[650px] text-[clamp(3.4rem,7vw,6.5rem)] font-bold leading-[.94] tracking-[-0.075em]">The right number,<br /><span className="text-primary">right when you need it.</span></h1>
             <p className="mt-7 max-w-[530px] text-lg leading-relaxed text-muted-foreground">A focused workspace for PBS pricing, ARTG registrations and the stock records that belong to your pharmacy — not a generic admin system.</p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
-              <a href="/sign-up" className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-bold text-primary-foreground shadow-md hover:-translate-y-1 hover:shadow-lg" data-testid="button-home-start">Start with dispense <ArrowRight className="h-4 w-4" /></a>
-              <a href="/sign-in" className="rounded-xl border border-border bg-card px-5 py-3.5 text-sm font-bold hover:-translate-y-0.5 hover:shadow-sm" data-testid="button-home-existing">I already have an account</a>
+              <a href="/sign-up" className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-md hover:-translate-y-1 hover:shadow-lg" data-testid="button-home-start">Start with dispense <ArrowRight className="h-4 w-4" /></a>
+              <a href="/sign-in" className="inline-flex h-12 items-center rounded-xl border border-border bg-card px-5 text-sm font-bold hover:-translate-y-0.5 hover:shadow-sm" data-testid="button-home-existing">I already have an account</a>
             </div>
-            <div className="mt-10 flex items-center gap-3 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4 text-chart-3" /> Your stock stays private to your account</div>
+            <div className="mt-10 flex items-center gap-3 text-xs text-muted-foreground"><ShieldCheck className="h-4 w-4 text-success" /> Your stock stays private to your account</div>
           </div>
           <div className="relative animate-rise-in delay-2">
             <div className="absolute -right-16 -top-20 h-64 w-64 rounded-full bg-accent/25 blur-3xl" />
@@ -126,10 +126,10 @@ function Home() {
             </div>
           </div>
         </section>
-        <section className="border-y border-border bg-card/60"><div className="mx-auto grid max-w-7xl gap-px bg-border sm:grid-cols-3"><div className="bg-card/60 px-6 py-8 lg:px-10"><BookOpen className="h-5 w-5 text-primary" /><h2 className="mt-4 font-bold">PBS, without the noise</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Find a listing, see current ex-manufacturer and wholesale prices, and follow the price trail from one calm screen.</p></div><div className="bg-card/60 px-6 py-8 lg:px-10"><Database className="h-5 w-5 text-primary" /><h2 className="mt-4 font-bold">Registration confidence</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Search ARTG details by product, ingredient, sponsor or status when a decision needs a second check.</p></div><div className="bg-card/60 px-6 py-8 lg:px-10"><LockKeyhole className="h-5 w-5 text-primary" /><h2 className="mt-4 font-bold">Your shelves, your view</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Track quantities and purchase prices in a private workspace designed for the people who use it.</p></div></div></section>
-        <section className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-6 py-20 lg:flex-row lg:items-end lg:px-10"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[.18em] text-primary">Built for the counter</p><h2 className="mt-3 max-w-xl text-4xl font-bold leading-tight tracking-[-.06em] md:text-5xl">Less hunting.<br />More certainty.</h2></div><div className="max-w-md"><p className="text-sm leading-relaxed text-muted-foreground">Dispense keeps the public reference desk and private stock shelf close together, without mixing the two. It is quick enough for a busy dispensary and thoughtful enough to trust.</p><a href="/sign-up" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary hover:gap-3" data-testid="link-home-bottom-cta">Create your workspace <ArrowRight className="h-4 w-4" /></a></div></section>
+        <section className="border-y border-border bg-card/60"><div className="mx-auto grid max-w-7xl gap-px bg-border sm:grid-cols-3"><div className="bg-card/60 px-6 py-8 lg:px-10"><BookOpen className="h-5 w-5 text-info" /><h2 className="mt-4 font-bold">PBS, without the noise</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Find a listing, see current ex-manufacturer and wholesale prices, and follow the price trail from one calm screen.</p></div><div className="bg-card/60 px-6 py-8 lg:px-10"><Database className="h-5 w-5 text-info" /><h2 className="mt-4 font-bold">Registration confidence</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Search ARTG details by product, ingredient, sponsor or status when a decision needs a second check.</p></div><div className="bg-card/60 px-6 py-8 lg:px-10"><LockKeyhole className="h-5 w-5 text-info" /><h2 className="mt-4 font-bold">Your shelves, your view</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Track quantities and purchase prices in a private workspace designed for the people who use it.</p></div></div></section>
+        <section className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 px-6 py-20 lg:flex-row lg:items-end lg:px-10"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Built for the counter</p><h2 className="mt-3 max-w-xl text-4xl font-bold leading-tight tracking-[-.06em] md:text-5xl">Less hunting.<br />More certainty.</h2></div><div className="max-w-md"><p className="text-sm leading-relaxed text-muted-foreground">Dispense keeps the public reference desk and private stock shelf close together, without mixing the two. It is quick enough for a busy dispensary and thoughtful enough to trust.</p><a href="/sign-up" className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary hover:gap-3" data-testid="link-home-bottom-cta">Create your workspace <ArrowRight className="h-4 w-4" /></a></div></section>
       </main>
-      <footer className="border-t border-border px-6 py-6 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span className="font-mono text-[10px] uppercase tracking-[.14em]">dispense / PBS manager</span><span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-chart-3" /> A practical workspace for pharmacy teams</span></div></footer>
+      <footer className="border-t border-border px-6 py-6 lg:px-10"><div className="mx-auto flex max-w-7xl flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between"><span className="font-mono text-[10px] uppercase tracking-[.14em]">dispense / PBS manager</span><span className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-success" /> A practical workspace for pharmacy teams</span></div></footer>
     </div>
   );
 }
