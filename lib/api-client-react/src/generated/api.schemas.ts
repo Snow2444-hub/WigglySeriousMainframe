@@ -494,6 +494,43 @@ export interface ArtgEntry {
   registrationDate: string;
   productName: string;
   status: string;
+  /** @nullable */
+  matchedDrugId: number | null;
+  pbsListed: boolean;
+  pbsBrandNames: string[];
+  daysSinceRegistration: number;
+}
+
+export type ArtgImportRunStatus = typeof ArtgImportRunStatus[keyof typeof ArtgImportRunStatus];
+
+
+export const ArtgImportRunStatus = {
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface ArtgImportRun {
+  id: number;
+  sourceType: string;
+  sourceFileName: string;
+  /** @nullable */
+  contentType: string | null;
+  fileSha256: string;
+  parserVersion: string;
+  status: ArtgImportRunStatus;
+  rowsRead: number;
+  recordsAccepted: number;
+  recordsRejected: number;
+  recordsSkipped: number;
+  matchedDrugRecords: number;
+  pbsUnlistedRecords: number;
+  warnings: string[];
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+  /** @nullable */
+  errorMessage: string | null;
 }
 
 export interface PharmacyStock {

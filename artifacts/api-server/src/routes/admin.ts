@@ -1,6 +1,15 @@
-import { Router, type IRouter } from "express";
+import { raw, Router, type IRouter } from "express";
+import { createHash } from "node:crypto";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
-import { db, ingestionRunsTable, pbsWatchlistTable } from "@workspace/db";
+import {
+  artgEntriesTable,
+  artgIngestionRunsTable,
+  db,
+  drugsTable,
+  ingestionRunsTable,
+  pbsItemsTable,
+  pbsWatchlistTable,
+} from "@workspace/db";
 import {
   CreatePbsWatchlistEntryBody,
   CreatePbsWatchlistEntryResponse,
@@ -10,8 +19,10 @@ import {
   ListAdminPublishedFilesResponse,
   ListPbsWatchlistEntriesResponse,
   ListAdminIngestionRunsResponse,
+  ListAdminArtgImportRunsResponse,
   TriggerAdminIngestionBody,
   TriggerAdminIngestionResponse,
+  UploadAdminArtgExportResponse,
   UpdateScheduleChangeSettingsBody,
   UpdateScheduleChangeSettingsResponse,
   UpdatePbsWatchlistEntryBody,
@@ -38,11 +49,18 @@ import {
   syncScheduleChangesFromStagedData,
   updatePriceChangeThresholds,
 } from "../lib/schedule-changes";
+import {
+  ARTG_PARSER_VERSION,
+  parseArtgExport,
+  pbsBrandMatchesArtgProduct,
+  shouldReplaceLegacySeedRecords,
+} from "../lib/artg-import";
 import { requireAdmin } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
 const ACTIVE_STATUSES = ["queued", "running"] as const;
 const INGESTION_RUN_LOCK_KEY = 502_668_451;
+const ARTG_UPLOAD_LIMIT_BYTES = 15 * 1024 * 1024;
 
 function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -514,6 +532,141 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
 
   res.json(GetCurrentAdminIngestionRunResponse.parse({ currentRun: run ?? null }));
 });
+
+function uploadFileName(value: string | undefined): string {
+  const decoded = value ? decodeURIComponent(value) : "unknown-artg-export";
+  return decoded.replace(/[\\/\0]/g, "_").slice(0, 255) || "unknown-artg-export";
+}
+
+function uploadErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "The ARTG upload could not be processed.";
+}
+
+router.get("/admin/artg-imports", requireAdmin, async (_req, res): Promise<void> => {
+  const runs = await db
+    .select()
+    .from(artgIngestionRunsTable)
+    .orderBy(desc(artgIngestionRunsTable.startedAt))
+    .limit(25);
+  res.json(ListAdminArtgImportRunsResponse.parse(runs));
+});
+
+router.post(
+  "/admin/artg-imports",
+  requireAdmin,
+  raw({ type: () => true, limit: "16mb" }),
+  async (req, res): Promise<void> => {
+    const sourceFileName = uploadFileName(req.header("x-artg-file-name") ?? undefined);
+    const contentType = req.header("content-type") ?? null;
+    const upload = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    const fileSha256 = createHash("sha256").update(upload).digest("hex");
+    const [run] = await db
+      .insert(artgIngestionRunsTable)
+      .values({
+        sourceFileName,
+        contentType,
+        fileSha256,
+        parserVersion: ARTG_PARSER_VERSION,
+        status: "running",
+      })
+      .returning();
+
+    try {
+      if (!upload.length) throw new Error("The uploaded ARTG file was empty.");
+      if (upload.length > ARTG_UPLOAD_LIMIT_BYTES) {
+        throw new Error("The ARTG export exceeds the 15 MB upload limit.");
+      }
+      const drugs = await db
+        .select({
+          id: drugsTable.id,
+          name: drugsTable.name,
+          activeIngredient: drugsTable.activeIngredient,
+        })
+        .from(drugsTable);
+      const parsed = parseArtgExport(upload, sourceFileName, drugs);
+      const drugIds = [...new Set(parsed.records.map((record) => record.matchedDrugId))];
+      const pbsBrands = drugIds.length
+        ? await db
+          .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
+          .from(pbsItemsTable)
+          .where(inArray(pbsItemsTable.drugId, drugIds))
+        : [];
+      const brandsByDrug = new Map<number, string[]>();
+      for (const row of pbsBrands) {
+        brandsByDrug.set(row.drugId, [...(brandsByDrug.get(row.drugId) ?? []), row.brandName]);
+      }
+      const pbsUnlistedRecords = parsed.records.filter((record) =>
+        !(brandsByDrug.get(record.matchedDrugId) ?? []).some((brand) =>
+          pbsBrandMatchesArtgProduct(record.productName, brand),
+        ),
+      ).length;
+
+      const completed = await db.transaction(async (tx) => {
+        if (shouldReplaceLegacySeedRecords(parsed.recordsAccepted)) {
+          await tx.delete(artgEntriesTable).where(eq(artgEntriesTable.source, "legacy_seed"));
+          await tx
+            .insert(artgEntriesTable)
+            .values(parsed.records.map((record) => ({
+              ...record,
+              source: "manual_upload",
+              ingestionRunId: run.id,
+            })))
+            .onConflictDoUpdate({
+              target: artgEntriesTable.artgId,
+              set: {
+                activeIngredient: sql`excluded.active_ingredient`,
+                normalizedIngredient: sql`excluded.normalized_ingredient`,
+                matchedDrugId: sql`excluded.matched_drug_id`,
+                sponsor: sql`excluded.sponsor`,
+                registrationDate: sql`excluded.registration_date`,
+                productName: sql`excluded.product_name`,
+                status: sql`excluded.status`,
+                source: sql`excluded.source`,
+                ingestionRunId: sql`excluded.ingestion_run_id`,
+              },
+            });
+        }
+        const [result] = await tx
+          .update(artgIngestionRunsTable)
+          .set({
+            status: "completed",
+            rowsRead: parsed.rowsRead,
+            recordsAccepted: parsed.recordsAccepted,
+            recordsRejected: parsed.recordsRejected,
+            recordsSkipped: parsed.recordsSkipped,
+            matchedDrugRecords: parsed.matchedDrugRecords,
+            pbsUnlistedRecords,
+            warnings: parsed.warnings,
+            finishedAt: new Date(),
+          })
+          .where(eq(artgIngestionRunsTable.id, run.id))
+          .returning();
+        return result;
+      });
+      req.log.info(
+        {
+          runId: completed.id,
+          rowsRead: completed.rowsRead,
+          accepted: completed.recordsAccepted,
+          rejected: completed.recordsRejected,
+          skipped: completed.recordsSkipped,
+          pbsUnlistedRecords,
+        },
+        "Manual ARTG import completed",
+      );
+      res.json(UploadAdminArtgExportResponse.parse(completed));
+    } catch (error) {
+      const errorMessage = uploadErrorMessage(error).slice(0, 2_000);
+      const [failed] = await db
+        .update(artgIngestionRunsTable)
+        .set({ status: "failed", finishedAt: new Date(), errorMessage })
+        .where(eq(artgIngestionRunsTable.id, run.id))
+        .returning();
+      req.log.error({ err: error, runId: run.id }, "Manual ARTG import failed");
+      res.status(400).json({ error: errorMessage, run: failed });
+    }
+  },
+);
 
 router.get("/admin/published-files", requireAdmin, async (_req, res): Promise<void> => {
   res.json(ListAdminPublishedFilesResponse.parse(await listLatestPublishedFiles()));

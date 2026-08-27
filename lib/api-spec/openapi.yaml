@@ -638,6 +638,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/artg-imports:
+    get:
+      operationId: listAdminArtgImportRuns
+      tags: [admin]
+      summary: List recent manual ARTG imports
+      responses:
+        "200":
+          description: Recent ARTG import outcomes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArtgImportRun"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      operationId: uploadAdminArtgExport
+      tags: [admin]
+      summary: Import a CSV or Excel ARTG export
+      parameters:
+        - name: X-ARTG-File-Name
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Original CSV or Excel file name
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: ARTG import completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtgImportRun"
+        "400":
+          description: Unsupported or invalid ARTG export
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/published-files:
     get:
       operationId: listAdminPublishedFiles
@@ -1430,7 +1499,60 @@ components:
           type: string
         status:
           type: string
-      required: [artgId, activeIngredient, sponsor, registrationDate, productName, status]
+        matchedDrugId:
+          type: ["integer", "null"]
+        pbsListed:
+          type: boolean
+        pbsBrandNames:
+          type: array
+          items:
+            type: string
+        daysSinceRegistration:
+          type: integer
+      required: [artgId, activeIngredient, sponsor, registrationDate, productName, status, matchedDrugId, pbsListed, pbsBrandNames, daysSinceRegistration]
+    ArtgImportRun:
+      type: object
+      properties:
+        id:
+          type: integer
+        sourceType:
+          type: string
+        sourceFileName:
+          type: string
+        contentType:
+          type: ["string", "null"]
+        fileSha256:
+          type: string
+        parserVersion:
+          type: string
+        status:
+          type: string
+          enum: [running, completed, failed]
+        rowsRead:
+          type: integer
+        recordsAccepted:
+          type: integer
+        recordsRejected:
+          type: integer
+        recordsSkipped:
+          type: integer
+        matchedDrugRecords:
+          type: integer
+        pbsUnlistedRecords:
+          type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        errorMessage:
+          type: ["string", "null"]
+      required: [id, sourceType, sourceFileName, contentType, fileSha256, parserVersion, status, rowsRead, recordsAccepted, recordsRejected, recordsSkipped, matchedDrugRecords, pbsUnlistedRecords, warnings, startedAt, finishedAt, errorMessage]
     PharmacyStock:
       type: object
       properties:

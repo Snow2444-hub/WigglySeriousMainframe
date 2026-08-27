@@ -611,7 +611,11 @@ export const ListArtgEntriesResponseItem = zod.object({
   "sponsor": zod.string(),
   "registrationDate": zod.coerce.date(),
   "productName": zod.string(),
-  "status": zod.string()
+  "status": zod.string(),
+  "matchedDrugId": zod.int().nullable(),
+  "pbsListed": zod.boolean(),
+  "pbsBrandNames": zod.array(zod.string()),
+  "daysSinceRegistration": zod.int()
 })
 export const ListArtgEntriesResponse = zod.array(ListArtgEntriesResponseItem)
 
@@ -806,6 +810,59 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable()
 }),zod.null()])
+})
+
+
+/**
+ * @summary List recent manual ARTG imports
+ */
+export const ListAdminArtgImportRunsResponseItem = zod.object({
+  "id": zod.int(),
+  "sourceType": zod.string(),
+  "sourceFileName": zod.string(),
+  "contentType": zod.string().nullable(),
+  "fileSha256": zod.string(),
+  "parserVersion": zod.string(),
+  "status": zod.enum(['running', 'completed', 'failed']),
+  "rowsRead": zod.int(),
+  "recordsAccepted": zod.int(),
+  "recordsRejected": zod.int(),
+  "recordsSkipped": zod.int(),
+  "matchedDrugRecords": zod.int(),
+  "pbsUnlistedRecords": zod.int(),
+  "warnings": zod.array(zod.string()),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "errorMessage": zod.string().nullable()
+})
+export const ListAdminArtgImportRunsResponse = zod.array(ListAdminArtgImportRunsResponseItem)
+
+
+/**
+ * @summary Import a CSV or Excel ARTG export
+ */
+export const UploadAdminArtgExportHeader = zod.object({
+  "X-ARTG-File-Name": zod.string().describe('Original CSV or Excel file name')
+})
+
+export const UploadAdminArtgExportResponse = zod.object({
+  "id": zod.int(),
+  "sourceType": zod.string(),
+  "sourceFileName": zod.string(),
+  "contentType": zod.string().nullable(),
+  "fileSha256": zod.string(),
+  "parserVersion": zod.string(),
+  "status": zod.enum(['running', 'completed', 'failed']),
+  "rowsRead": zod.int(),
+  "recordsAccepted": zod.int(),
+  "recordsRejected": zod.int(),
+  "recordsSkipped": zod.int(),
+  "matchedDrugRecords": zod.int(),
+  "pbsUnlistedRecords": zod.int(),
+  "warnings": zod.array(zod.string()),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "errorMessage": zod.string().nullable()
 })
 
 

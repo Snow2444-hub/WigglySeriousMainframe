@@ -1,6 +1,5 @@
 import { db } from "@workspace/db";
 import {
-  artgEntriesTable,
   drugsTable,
   pbsItemsTable,
   priceHistoryTable,
@@ -88,44 +87,6 @@ export async function seedReferenceData(): Promise<void> {
       { itemCode: "5678R", priceDate: "2026-07-01", scheduleCode: 0, scheduleEffectiveDate: "2026-07-01", aemp: 34.8, dpmq: 39.95, reductionType: null },
       { itemCode: "5678R", priceDate: "2025-10-01", scheduleCode: 0, scheduleEffectiveDate: "2025-10-01", aemp: 36.2, dpmq: 41.2, reductionType: "Price disclosure" },
       { itemCode: "9012W", priceDate: "2026-07-01", scheduleCode: 0, scheduleEffectiveDate: "2026-07-01", aemp: 26.15, dpmq: 30.2, reductionType: null },
-    ])
-    .onConflictDoNothing();
-
-  await db
-    .insert(artgEntriesTable)
-    .values([
-      {
-        artgId: "198765",
-        activeIngredient: "Rosuvastatin calcium",
-        sponsor: "AstraZeneca Australia",
-        registrationDate: "2006-11-18",
-        productName: "Crestor tablets",
-        status: "Registered",
-      },
-      {
-        artgId: "224901",
-        activeIngredient: "Apixaban",
-        sponsor: "Bristol-Myers Squibb Australia",
-        registrationDate: "2012-05-22",
-        productName: "Eliquis tablets",
-        status: "Registered",
-      },
-      {
-        artgId: "246810",
-        activeIngredient: "Empagliflozin",
-        sponsor: "Boehringer Ingelheim",
-        registrationDate: "2014-03-07",
-        productName: "Jardiance tablets",
-        status: "Registered",
-      },
-      {
-        artgId: "135790",
-        activeIngredient: "Rosuvastatin calcium",
-        sponsor: "Generic Health",
-        registrationDate: "2018-08-14",
-        productName: "Rosuvastatin Generic tablets",
-        status: "Cancelled",
-      },
     ])
     .onConflictDoNothing();
 }

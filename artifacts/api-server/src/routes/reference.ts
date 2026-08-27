@@ -47,6 +47,7 @@ import {
 } from "@workspace/api-zod";
 import { getPriceChangeThresholds, priceChangeSignificance } from "../lib/schedule-changes";
 import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
+import { pbsBrandMatchesArtgProduct } from "../lib/artg-import";
 import { requireAuth } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
@@ -890,24 +891,54 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
     return;
   }
   const { search, status } = parsed.data;
-  const rows = await db
-    .select()
-    .from(artgEntriesTable)
-    .where(
-      and(
-        status ? eq(artgEntriesTable.status, status) : undefined,
-        search
-          ? or(
-              ilike(artgEntriesTable.artgId, `%${search}%`),
-              ilike(artgEntriesTable.activeIngredient, `%${search}%`),
-              ilike(artgEntriesTable.sponsor, `%${search}%`),
-              ilike(artgEntriesTable.productName, `%${search}%`),
-            )
-          : undefined,
-      ),
-    )
-    .orderBy(asc(artgEntriesTable.productName));
-  res.json(ListArtgEntriesResponse.parse(rows));
+  const [rows, pbsItems] = await Promise.all([
+    db
+      .select()
+      .from(artgEntriesTable)
+      .where(
+        and(
+          status ? ilike(artgEntriesTable.status, status) : undefined,
+          search
+            ? or(
+                ilike(artgEntriesTable.artgId, `%${search}%`),
+                ilike(artgEntriesTable.activeIngredient, `%${search}%`),
+                ilike(artgEntriesTable.sponsor, `%${search}%`),
+                ilike(artgEntriesTable.productName, `%${search}%`),
+              )
+            : undefined,
+        ),
+      )
+      .orderBy(asc(artgEntriesTable.productName)),
+    db.select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName }).from(pbsItemsTable),
+  ]);
+  const brandsByDrug = new Map<number, string[]>();
+  for (const item of pbsItems) {
+    brandsByDrug.set(item.drugId, [...(brandsByDrug.get(item.drugId) ?? []), item.brandName]);
+  }
+  const today = new Date();
+  const entries = rows.map((row) => {
+    const candidateBrands = row.matchedDrugId ? brandsByDrug.get(row.matchedDrugId) ?? [] : [];
+    const pbsBrandNames = [...new Set(candidateBrands.filter((brand) =>
+      pbsBrandMatchesArtgProduct(row.productName, brand),
+    ))].sort((a, b) => a.localeCompare(b));
+    const registration = new Date(`${row.registrationDate}T00:00:00Z`);
+    const daysSinceRegistration = Number.isNaN(registration.getTime())
+      ? 0
+      : Math.max(0, Math.floor((today.getTime() - registration.getTime()) / 86_400_000));
+    return {
+      artgId: row.artgId,
+      activeIngredient: row.activeIngredient,
+      sponsor: row.sponsor,
+      registrationDate: row.registrationDate,
+      productName: row.productName,
+      status: row.status,
+      matchedDrugId: row.matchedDrugId,
+      pbsListed: pbsBrandNames.length > 0,
+      pbsBrandNames,
+      daysSinceRegistration,
+    };
+  });
+  res.json(ListArtgEntriesResponse.parse(entries));
 });
 
 export default router;

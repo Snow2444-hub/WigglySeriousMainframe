@@ -4,13 +4,16 @@ import {
   getGetCurrentAdminIngestionRunQueryKey,
   getGetScheduleChangeSettingsQueryKey,
   getGetDashboardQueryKey,
+  getListAdminArtgImportRunsQueryKey,
   getListAdminIngestionRunsQueryKey,
+  getListArtgEntriesQueryKey,
   getListPbsWatchlistEntriesQueryKey,
   getListPbsItemsQueryKey,
   getListStockQueryKey,
   getHealthCheckQueryKey,
   type AdminIngestionRun,
   type ArtgEntry,
+  type ArtgImportRun,
   type PbsItem,
   type PbsWatchlistEntry,
   type PharmacyStock,
@@ -25,11 +28,13 @@ import {
   useGetDashboard,
   useHealthCheck,
   useListAdminIngestionRuns,
+  useListAdminArtgImportRuns,
   useListArtgEntries,
   useListPbsItems,
   useListPbsWatchlistEntries,
   useListStock,
   useTriggerAdminIngestion,
+  useUploadAdminArtgExport,
   useUpdatePbsWatchlistEntry,
   useUpdateScheduleChangeSettings,
   useUpdateStock,
@@ -40,6 +45,19 @@ import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+
+function daysSinceLabel(days: number) {
+  if (days < 31) return `${days} days ago`;
+  if (days < 365) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
+}
+
+function artgStatusClass(status: string) {
+  const normalized = status.trim().toLocaleUpperCase();
+  if (normalized.includes('CANCEL')) return 'status-error';
+  if (normalized.includes('REGISTER') || normalized === 'ACTIVE') return 'status-success';
+  return 'status-neutral';
+}
 
 function benefitTypeLabel(code: string | null) {
   return ({ U: 'Unrestricted', R: 'Restricted', A: 'Authority required', S: 'Authority required (streamlined)' } as Record<string, string>)[code ?? ''] ?? 'Benefit type not supplied';
@@ -99,12 +117,19 @@ function Dashboard() {
 function ArtgDirectory() {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [pbsState, setPbsState] = useState<'all' | 'listed' | 'unlisted'>('all');
   const params = useMemo(() => ({ search: search || undefined, status: status || undefined }), [search, status]);
   const query = useListArtgEntries(params);
-  const entries = query.data ?? [];
-  return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Keep registration status and sponsor details close while you validate a product." />
-    <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="Registered">Registered</option><option value="Cancelled">Cancelled</option></select></label></div>
-    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !entries.length ? <QueryState kind="empty" /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.65fr_1.4fr_1fr_1fr_.75fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground md:grid"><span>ARTG ID</span><span>Product</span><span>Ingredient</span><span>Sponsor</span><span>Status</span></div><div className="divide-y divide-border">{entries.map((entry: ArtgEntry) => <div key={entry.artgId} className="grid gap-2 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.65fr_1.4fr_1fr_1fr_.75fr] md:items-center md:gap-4" data-testid={`row-artg-${entry.artgId}`}><div className="font-mono text-xs font-bold text-info">{entry.artgId}</div><div><p className="text-sm font-bold">{entry.productName}</p><p className="mt-0.5 text-xs text-muted-foreground">Registered {date(entry.registrationDate)}</p></div><p className="text-xs text-muted-foreground md:text-sm">{entry.activeIngredient}</p><p className="text-xs text-muted-foreground md:text-sm">{entry.sponsor}</p><span className={`status-badge ${entry.status.toLowerCase() === 'active' ? 'status-success' : 'status-error'}`}>{entry.status}</span></div>)}</div></div>}
+  const entries = (query.data ?? []).filter((entry) =>
+    pbsState === 'all' || (pbsState === 'listed' ? entry.pbsListed : !entry.pbsListed),
+  );
+  return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Review registered products against current PBS brand listings. Data is maintained through reviewed TGA CSV or Excel uploads." />
+    <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="REGISTERED">Registered</option><option value="CANCELLED">Cancelled</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><select value={pbsState} onChange={(e) => setPbsState(e.target.value as typeof pbsState)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-pbs-status"><option value="all">All PBS matches</option><option value="unlisted">Not PBS-listed</option><option value="listed">PBS-listed</option></select></label></div>
+    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !entries.length ? <QueryState kind="empty" /> : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.6fr_1.25fr_1fr_1fr_.85fr_1fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground lg:grid"><span>ARTG ID</span><span>Product</span><span>Ingredient</span><span>Sponsor</span><span>Registration / PBS</span><span>Status</span></div><div className="divide-y divide-border">{entries.map((entry: ArtgEntry) => {
+      const isRegistered = entry.status.toLocaleUpperCase().includes('REGISTER');
+      const needsPbsReview = isRegistered && !entry.pbsListed;
+      return <div key={entry.artgId} className={`grid gap-2 px-5 py-4 transition-colors hover:bg-secondary/30 lg:grid-cols-[.6fr_1.25fr_1fr_1fr_.85fr_1fr] lg:items-center lg:gap-4 ${needsPbsReview ? 'bg-warning/5' : ''}`} data-testid={`row-artg-${entry.artgId}`}><div className="font-mono text-xs font-bold text-info">{entry.artgId}</div><div><p className="text-sm font-bold">{entry.productName}</p><p className="mt-0.5 text-xs text-muted-foreground">Registered {date(entry.registrationDate)} · {daysSinceLabel(entry.daysSinceRegistration)}</p></div><p className="text-xs text-muted-foreground lg:text-sm">{entry.activeIngredient}</p><p className="text-xs text-muted-foreground lg:text-sm">{entry.sponsor}</p><div>{entry.pbsListed ? <><span className="status-badge status-success">PBS-listed</span><p className="mt-1 text-[11px] text-muted-foreground">{entry.pbsBrandNames.join(', ')}</p></> : <><span className={`status-badge ${needsPbsReview ? 'status-warning' : 'status-neutral'}`}>{needsPbsReview ? 'Not PBS-listed' : 'No PBS match'}</span><p className="mt-1 text-[11px] text-muted-foreground">{needsPbsReview ? `${daysSinceLabel(entry.daysSinceRegistration)} since registration` : 'Not flagged for cancelled entries'}</p></>}</div><span className={`status-badge ${artgStatusClass(entry.status)}`}>{entry.status}</span></div>;
+    })}</div></div>}
   </AppShell>;
 }
 
@@ -462,6 +487,9 @@ function AdminPage() {
   const [highThreshold, setHighThreshold] = useState('');
   const [firstNewBrandHighSignificance, setFirstNewBrandHighSignificance] = useState(true);
   const [firstNewBrandReductionPercentage, setFirstNewBrandReductionPercentage] = useState('25');
+  const [artgFile, setArtgFile] = useState<File | null>(null);
+  const [artgNotice, setArtgNotice] = useState('');
+  const [artgError, setArtgError] = useState('');
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -477,6 +505,19 @@ function AdminPage() {
     },
   });
   const trigger = useTriggerAdminIngestion();
+  const artgImports = useListAdminArtgImportRuns({
+    query: {
+      queryKey: getListAdminArtgImportRunsQueryKey(),
+      refetchOnWindowFocus: true,
+    },
+  });
+  const uploadArtg = useUploadAdminArtgExport({
+    request: {
+      headers: {
+        'X-ARTG-File-Name': encodeURIComponent(artgFile?.name ?? 'unknown-artg-export'),
+      },
+    },
+  });
   const watchlist = useListPbsWatchlistEntries({
     query: { queryKey: getListPbsWatchlistEntriesQueryKey(), refetchOnWindowFocus: true },
   });
@@ -498,7 +539,7 @@ function AdminPage() {
   }, [significanceSettings.data]);
 
   const refresh = () => {
-    void Promise.all([runs.refetch(), current.refetch(), watchlist.refetch()]);
+    void Promise.all([runs.refetch(), current.refetch(), watchlist.refetch(), artgImports.refetch()]);
   };
 
   const refreshWatchlist = () => {
@@ -568,6 +609,37 @@ function AdminPage() {
         ]);
       },
     });
+  };
+
+  const uploadArtgExport = () => {
+    if (!artgFile) {
+      setArtgError('Choose a CSV or Excel export from the TGA ARTG search before uploading.');
+      return;
+    }
+    if (!/\.(csv|xlsx|xls)$/i.test(artgFile.name)) {
+      setArtgError('Upload a .csv, .xlsx, or .xls file exported from the TGA ARTG search.');
+      return;
+    }
+    setArtgError('');
+    setArtgNotice('');
+    uploadArtg.mutate(
+      { data: artgFile },
+      {
+        onSuccess: (run) => {
+          setArtgFile(null);
+          setArtgNotice(
+            run.recordsAccepted
+              ? `ARTG import complete: ${run.recordsAccepted.toLocaleString('en-AU')} tracked record${run.recordsAccepted === 1 ? '' : 's'} saved; ${run.pbsUnlistedRecords.toLocaleString('en-AU')} registered product${run.pbsUnlistedRecords === 1 ? '' : 's'} not PBS-listed.`
+              : 'ARTG import completed with no matching active tracked ingredients. Existing ARTG records were retained.',
+          );
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: getListAdminArtgImportRunsQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getListArtgEntriesQueryKey() }),
+          ]);
+        },
+        onError: (error) => setArtgError(mutationError(error, 'The ARTG import failed. Existing ARTG records were retained.')),
+      },
+    );
   };
 
   const saveSignificanceSettings = () => {
@@ -663,6 +735,32 @@ function AdminPage() {
         <button type="button" onClick={addWatchlistEntry} disabled={createWatchlistEntry.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-add-watchlist-entry"><Plus className="h-4 w-4" />Add filter</button>
       </div>
       {watchlist.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : watchlist.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => watchlist.refetch()} /></div> : !watchlist.data?.length ? <p className="p-5 text-sm text-muted-foreground">No filters configured. Add an enabled entry before starting an ingestion.</p> : <div className="divide-y divide-border">{watchlist.data.map((entry) => <div key={entry.id} className="flex flex-wrap items-center gap-3 px-5 py-3" data-testid={`row-watchlist-entry-${entry.id}`}><span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] font-bold text-muted-foreground">{entry.filterType}</span><span className="min-w-0 flex-1 truncate font-mono text-sm font-bold">{entry.filterValue}</span><button type="button" onClick={() => toggleWatchlistEntry(entry)} disabled={updateWatchlistEntry.isPending} className="status-badge status-neutral" data-testid={`button-toggle-watchlist-${entry.id}`}>{entry.enabled ? 'Enabled' : 'Disabled'}</button><button type="button" onClick={() => removeWatchlistEntry(entry)} disabled={deleteWatchlistEntry.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Remove ${entry.filterValue}`} data-testid={`button-delete-watchlist-${entry.id}`}><Trash2 className="h-4 w-4" /></button></div>)}</div>}
+    </section>
+
+    <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-artg-import">
+      <div className="flex flex-col gap-4 border-b border-border px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Manual reference import</p>
+          <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">ARTG registrations</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Upload a CSV or Excel export from the TGA ARTG search. The file must include ARTG ID, active ingredient, sponsor, start date, and product or good name. A failed upload never clears the last successful ARTG data.</p>
+        </div>
+        <span className="status-badge status-warning">Manual source</span>
+      </div>
+      <div className="border-b border-border bg-muted/20 p-5">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <label className="block min-w-0">
+            <span className="field-label">TGA export file</span>
+            <input type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setArtgFile(event.target.files?.[0] ?? null); setArtgError(''); setArtgNotice(''); }} className="block w-full cursor-pointer rounded-xl border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-info/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-info hover:file:bg-info/15" data-testid="input-artg-export-file" />
+          </label>
+          <button type="button" onClick={uploadArtgExport} disabled={!artgFile || uploadArtg.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-upload-artg-export">{uploadArtg.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}{uploadArtg.isPending ? 'Importing…' : 'Import ARTG export'}</button>
+        </div>
+        {artgNotice && <p className="mt-3 flex items-start gap-2 rounded-xl border border-success/25 bg-success/10 px-3 py-2.5 text-xs font-semibold text-success" role="status" data-testid="status-artg-import-success"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{artgNotice}</p>}
+        {(artgError || uploadArtg.isError) && <p className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-xs font-semibold text-destructive" role="alert" data-testid="status-artg-import-error"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{artgError || mutationError(uploadArtg.error, 'The ARTG import failed. Existing ARTG records were retained.')}</p>}
+      </div>
+      <div>
+        <div className="flex items-center justify-between border-b border-border px-5 py-3"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Recent ARTG imports</p><button type="button" onClick={() => artgImports.refetch()} disabled={artgImports.isFetching} className="text-xs font-bold text-info hover:text-primary disabled:opacity-50">Refresh</button></div>
+        {artgImports.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : artgImports.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => artgImports.refetch()} /></div> : !artgImports.data?.length ? <p className="p-5 text-sm text-muted-foreground">No ARTG import has been recorded. The directory will remain empty until a valid TGA export is uploaded.</p> : <div className="divide-y divide-border">{artgImports.data.map((run: ArtgImportRun) => <div key={run.id} className="grid gap-2 px-5 py-3 text-xs sm:grid-cols-[1.15fr_.65fr_.75fr_1fr] sm:items-center sm:gap-4" data-testid={`row-artg-import-${run.id}`}><div className="min-w-0"><p className="truncate font-bold">{run.sourceFileName}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Run #{run.id} · {formatDateTime(run.startedAt)}</p></div><span className={`status-badge ${run.status === 'completed' ? 'status-success' : run.status === 'failed' ? 'status-error' : 'status-info'}`}>{run.status}</span><span className="font-mono font-bold">{run.recordsAccepted.toLocaleString('en-AU')} saved</span><div className={run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{run.errorMessage ? <span className="inline-flex items-start gap-1.5"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{run.errorMessage}</span> : <span>{run.recordsRejected ? `${run.recordsRejected} invalid` : run.recordsSkipped ? `${run.recordsSkipped} not tracked` : `${run.pbsUnlistedRecords} not PBS-listed`}{run.warnings[0] ? ` · ${run.warnings[0]}` : ''}</span>}</div></div>)}</div>}
+      </div>
     </section>
 
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="card-current-ingestion">

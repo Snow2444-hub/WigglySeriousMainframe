@@ -13,4 +13,9 @@ export interface ArtgEntry {
   registrationDate: Date;
   productName: string;
   status: string;
+  /** @nullable */
+  matchedDrugId: number | null;
+  pbsListed: boolean;
+  pbsBrandNames: string[];
+  daysSinceRegistration: number;
 }
