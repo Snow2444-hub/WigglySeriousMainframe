@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -31,6 +31,8 @@ import {
   ListMedicineBrandsResponse,
   ListMedicineDirectoryQueryParams,
   ListMedicineDirectoryResponse,
+  ListUpcomingPredictedReductionsQueryParams,
+  ListUpcomingPredictedReductionsResponse,
   ListItemPredictedReductionsParams,
   ListItemPredictedReductionsResponse,
   ListItemPremiumHistoryParams,
@@ -149,9 +151,24 @@ function dateOnly(value: string): string {
   return value.slice(0, 10);
 }
 
+function queryDateOnly(value: string | Date | undefined): string | undefined {
+  if (!value) return undefined;
+  return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+}
+
 function strengthSortValue(strength: string | null): number {
   const value = strength?.match(/\d+(?:\.\d+)?/)?.[0];
   return value ? Number(value) : Number.POSITIVE_INFINITY;
+}
+
+function nextPrediction<T extends { predictedDate: string; predictedPercentage: number }>(predictions: T[]): T | null {
+  return (
+    [...predictions].sort(
+      (left, right) =>
+        left.predictedDate.localeCompare(right.predictedDate) ||
+        Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage),
+    )[0] ?? null
+  );
 }
 
 router.get("/medicine-directory", async (req, res): Promise<void> => {
@@ -276,7 +293,8 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [items, changes] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const [items, changes, predictions] = await Promise.all([
     db
       .select(pbsSelect)
       .from(pbsItemsTable)
@@ -290,6 +308,21 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       })
       .from(scheduleChangesTable)
       .where(eq(scheduleChangesTable.drugId, parsed.data.id)),
+    db
+      .select({
+        itemCode: predictedReductionsTable.itemCode,
+        predictedDate: predictedReductionsTable.predictedDate,
+        predictedPercentage: predictedReductionsTable.predictedPercentage,
+        predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+        confidence: predictedReductionsTable.confidence,
+      })
+      .from(predictedReductionsTable)
+      .where(
+        and(
+          eq(predictedReductionsTable.drugId, parsed.data.id),
+          gte(predictedReductionsTable.predictedDate, today),
+        ),
+      ),
   ]);
   const grouped = new Map<string, typeof items>();
   for (const item of items) {
@@ -308,6 +341,14 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       .filter((date): date is string => date !== null)
       .sort();
     const changeDates = brandChanges.map((change) => change.effectiveDate).sort();
+    const itemsByCode = new Map(group.map((item) => [item.itemCode, item]));
+    const prediction = nextPrediction(
+      predictions.filter((candidate) => {
+        const item = itemsByCode.get(candidate.itemCode);
+        return item && brandGroupKey(item.brandName) === brandGroupKey(first.brandName);
+      }),
+    );
+    const predictedItem = prediction ? itemsByCode.get(prediction.itemCode) : undefined;
     return {
       drugId: parsed.data.id,
       brandName: brandGroupName(first.brandName),
@@ -323,6 +364,11 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       changeCount: brandChanges.length,
       highChangeCount: brandChanges.filter((change) => change.significance === "high").length,
       latestChangeDate: changeDates.at(-1) ?? null,
+      nextPredictedReductionDate: prediction?.predictedDate ?? null,
+      nextPredictedReductionPercentage: prediction?.predictedPercentage ?? null,
+      nextPredictedNewPrice: prediction?.predictedNewPrice ?? null,
+      nextPredictedCurrentPrice: predictedItem?.currentAemp ?? null,
+      nextPredictedReductionConfidence: prediction?.confidence ?? null,
     };
   });
   summaries.sort((a, b) => {
@@ -342,29 +388,116 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const rows = await db
-    .select(pbsSelect)
-    .from(pbsItemsTable)
-    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(
-      and(
-        eq(pbsItemsTable.drugId, parsed.data.id),
-        parsed.data.brandName.trim().toLocaleLowerCase() === "crosuva"
-          ? or(
-              ilike(pbsItemsTable.brandName, "Crosuva 10"),
-              ilike(pbsItemsTable.brandName, "Crosuva 20"),
-              ilike(pbsItemsTable.brandName, "Crosuva 40"),
-            )
-          : ilike(pbsItemsTable.brandName, parsed.data.brandName),
+  const today = new Date().toISOString().slice(0, 10);
+  const [rows, predictions] = await Promise.all([
+    db
+      .select(pbsSelect)
+      .from(pbsItemsTable)
+      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
+      .where(
+        and(
+          eq(pbsItemsTable.drugId, parsed.data.id),
+          parsed.data.brandName.trim().toLocaleLowerCase() === "crosuva"
+            ? or(
+                ilike(pbsItemsTable.brandName, "Crosuva 10"),
+                ilike(pbsItemsTable.brandName, "Crosuva 20"),
+                ilike(pbsItemsTable.brandName, "Crosuva 40"),
+              )
+            : ilike(pbsItemsTable.brandName, parsed.data.brandName),
+        ),
+      )
+      .orderBy(asc(pbsItemsTable.itemCode)),
+    db
+      .select({
+        itemCode: predictedReductionsTable.itemCode,
+        predictedDate: predictedReductionsTable.predictedDate,
+        predictedPercentage: predictedReductionsTable.predictedPercentage,
+        predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+        confidence: predictedReductionsTable.confidence,
+        reductionType: predictedReductionsTable.reductionType,
+      })
+      .from(predictedReductionsTable)
+      .where(
+        and(
+          eq(predictedReductionsTable.drugId, parsed.data.id),
+          gte(predictedReductionsTable.predictedDate, today),
+        ),
       ),
-    )
-    .orderBy(asc(pbsItemsTable.itemCode));
+  ]);
   rows.sort((left, right) => {
     const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
     if (strengthOrder !== 0) return strengthOrder;
     return (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode);
   });
-  res.json(ListMedicineBrandItemsResponse.parse(rows));
+  const predictionsByItem = new Map<string, (typeof predictions)[number][]>();
+  for (const prediction of predictions) {
+    predictionsByItem.set(prediction.itemCode, [
+      ...(predictionsByItem.get(prediction.itemCode) ?? []),
+      prediction,
+    ]);
+  }
+  res.json(
+    ListMedicineBrandItemsResponse.parse(
+      rows.map((row) => {
+        const prediction = nextPrediction(predictionsByItem.get(row.itemCode) ?? []);
+        return {
+          ...row,
+          upcomingPrediction: prediction
+            ? {
+                predictedDate: prediction.predictedDate,
+                predictedPercentage: prediction.predictedPercentage,
+                predictedNewPrice: prediction.predictedNewPrice,
+                confidence: prediction.confidence,
+                reductionType: prediction.reductionType,
+              }
+            : null,
+        };
+      }),
+    ),
+  );
+});
+
+router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => {
+  const parsed = ListUpcomingPredictedReductionsQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const from = queryDateOnly(parsed.data.from) ?? new Date().toISOString().slice(0, 10);
+  const to = queryDateOnly(parsed.data.to);
+  const rows = await db
+    .select({
+      itemCode: predictedReductionsTable.itemCode,
+      drugId: predictedReductionsTable.drugId,
+      drugName: drugsTable.name,
+      brandName: pbsItemsTable.brandName,
+      strength: pbsItemsTable.strength,
+      currentPrice: pbsItemsTable.currentAemp,
+      predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+      predictedPercentage: predictedReductionsTable.predictedPercentage,
+      predictedDate: predictedReductionsTable.predictedDate,
+      confidence: predictedReductionsTable.confidence,
+      reductionType: predictedReductionsTable.reductionType,
+      subjectToMinisterialDiscretion: predictedReductionsTable.subjectToMinisterialDiscretion,
+      sourceNote: predictedReductionsTable.sourceNote,
+    })
+    .from(predictedReductionsTable)
+    .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
+    .innerJoin(drugsTable, eq(predictedReductionsTable.drugId, drugsTable.id))
+    .where(
+      and(
+        gte(predictedReductionsTable.predictedDate, from),
+        to ? lte(predictedReductionsTable.predictedDate, to) : undefined,
+        parsed.data.confidence ? eq(predictedReductionsTable.confidence, parsed.data.confidence) : undefined,
+      ),
+    );
+  rows.sort(
+    (left, right) =>
+      left.predictedDate.localeCompare(right.predictedDate) ||
+      Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage) ||
+      left.brandName.localeCompare(right.brandName),
+  );
+  res.json(ListUpcomingPredictedReductionsResponse.parse(rows));
 });
 
 router.get("/pbs-items", async (req, res): Promise<void> => {

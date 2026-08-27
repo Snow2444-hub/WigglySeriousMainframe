@@ -149,7 +149,12 @@ export const ListMedicineBrandsResponseItem = zod.object({
   "firstListedDate": zod.string().regex(listMedicineBrandsResponseFirstListedDateRegExp).nullable(),
   "changeCount": zod.int(),
   "highChangeCount": zod.int(),
-  "latestChangeDate": zod.string().regex(listMedicineBrandsResponseLatestChangeDateRegExp).nullable()
+  "latestChangeDate": zod.string().regex(listMedicineBrandsResponseLatestChangeDateRegExp).nullable(),
+  "nextPredictedReductionDate": zod.coerce.date().nullable(),
+  "nextPredictedReductionPercentage": zod.number().nullable(),
+  "nextPredictedNewPrice": zod.number().nullable(),
+  "nextPredictedCurrentPrice": zod.number().nullable(),
+  "nextPredictedReductionConfidence": zod.string().nullable()
 })
 export const ListMedicineBrandsResponse = zod.array(ListMedicineBrandsResponseItem)
 
@@ -198,8 +203,43 @@ export const ListMedicineBrandItemsResponseItem = zod.object({
   "proportionalPrice": zod.number().nullable(),
   "therapeuticGroupId": zod.string().nullable(),
   "innovatorIndicator": zod.string().nullable()
-})
+}).and(zod.object({
+  "upcomingPrediction": zod.union([zod.object({
+  "predictedDate": zod.coerce.date(),
+  "predictedPercentage": zod.number(),
+  "predictedNewPrice": zod.number(),
+  "confidence": zod.string(),
+  "reductionType": zod.string()
+}),zod.null()])
+}))
 export const ListMedicineBrandItemsResponse = zod.array(ListMedicineBrandItemsResponseItem)
+
+
+/**
+ * @summary List upcoming predicted PBS price reductions
+ */
+export const ListUpcomingPredictedReductionsQueryParams = zod.object({
+  "from": zod.date().optional().describe('Inclusive effective date. Defaults to today.'),
+  "to": zod.date().optional().describe('Inclusive effective date.'),
+  "confidence": zod.enum(['high', 'conditional', 'indicative', 'confirmed']).optional()
+})
+
+export const ListUpcomingPredictedReductionsResponseItem = zod.object({
+  "itemCode": zod.string(),
+  "drugId": zod.int(),
+  "drugName": zod.string(),
+  "brandName": zod.string(),
+  "strength": zod.string().nullable(),
+  "currentPrice": zod.number(),
+  "predictedNewPrice": zod.number(),
+  "predictedPercentage": zod.number(),
+  "predictedDate": zod.coerce.date(),
+  "confidence": zod.string(),
+  "reductionType": zod.string(),
+  "subjectToMinisterialDiscretion": zod.boolean(),
+  "sourceNote": zod.string()
+})
+export const ListUpcomingPredictedReductionsResponse = zod.array(ListUpcomingPredictedReductionsResponseItem)
 
 
 /**

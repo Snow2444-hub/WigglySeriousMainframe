@@ -34,6 +34,8 @@ import type {
   ListMedicineDirectoryParams,
   ListPbsItemsParams,
   ListScheduleChangesParams,
+  ListUpcomingPredictedReductionsParams,
+  MedicineBrandItemSummary,
   MedicineBrandSummary,
   MedicineDrugSummary,
   PbsItem,
@@ -49,6 +51,7 @@ import type {
   ScheduleChange,
   ScheduleChangeSettings,
   StockExposureResponse,
+  UpcomingPredictedReduction,
   UpdateScheduleChangeSettings
 } from './api.schemas';
 
@@ -569,9 +572,9 @@ export const getListMedicineBrandItemsUrl = (id: number,
  * @summary List PBS items for a medicine brand
  */
 export const listMedicineBrandItems = async (id: number,
-    brandName: string, options?: Parameters<typeof customFetch>[1]): Promise<PbsItem[]> => {
+    brandName: string, options?: Parameters<typeof customFetch>[1]): Promise<MedicineBrandItemSummary[]> => {
 
-  return customFetch<PbsItem[]>(getListMedicineBrandItemsUrl(id,brandName),
+  return customFetch<MedicineBrandItemSummary[]>(getListMedicineBrandItemsUrl(id,brandName),
   {
     ...options,
     method: 'GET'
@@ -626,6 +629,90 @@ export function useListMedicineBrandItems<TData = Awaited<ReturnType<typeof list
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListMedicineBrandItemsQueryOptions(id,brandName,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListUpcomingPredictedReductionsUrl = (params?: ListUpcomingPredictedReductionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/upcoming-predicted-reductions?${stringifiedParams}` : `/api/upcoming-predicted-reductions`
+}
+
+/**
+ * @summary List upcoming predicted PBS price reductions
+ */
+export const listUpcomingPredictedReductions = async (params?: ListUpcomingPredictedReductionsParams, options?: Parameters<typeof customFetch>[1]): Promise<UpcomingPredictedReduction[]> => {
+
+  return customFetch<UpcomingPredictedReduction[]>(getListUpcomingPredictedReductionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListUpcomingPredictedReductionsQueryKey = (params?: ListUpcomingPredictedReductionsParams,) => {
+    return [
+    `/api/upcoming-predicted-reductions`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListUpcomingPredictedReductionsQueryOptions = <TData = Awaited<ReturnType<typeof listUpcomingPredictedReductions>>, TError = ErrorType<unknown>>(params?: ListUpcomingPredictedReductionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUpcomingPredictedReductions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUpcomingPredictedReductionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUpcomingPredictedReductions>>> = ({ signal }) => listUpcomingPredictedReductions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUpcomingPredictedReductions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListUpcomingPredictedReductionsQueryResult = NonNullable<Awaited<ReturnType<typeof listUpcomingPredictedReductions>>>
+export type ListUpcomingPredictedReductionsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List upcoming predicted PBS price reductions
+ */
+
+export function useListUpcomingPredictedReductions<TData = Awaited<ReturnType<typeof listUpcomingPredictedReductions>>, TError = ErrorType<unknown>>(
+ params?: ListUpcomingPredictedReductionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUpcomingPredictedReductions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListUpcomingPredictedReductionsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -97,6 +97,24 @@ export interface MedicineBrandSummary {
      * @pattern ^\d{4}-\d{2}-\d{2}$
      */
   latestChangeDate: string | null;
+  /** @nullable */
+  nextPredictedReductionDate: string | null;
+  /** @nullable */
+  nextPredictedReductionPercentage: number | null;
+  /** @nullable */
+  nextPredictedNewPrice: number | null;
+  /** @nullable */
+  nextPredictedCurrentPrice: number | null;
+  /** @nullable */
+  nextPredictedReductionConfidence: string | null;
+}
+
+export interface UpcomingPrediction {
+  predictedDate: string;
+  predictedPercentage: number;
+  predictedNewPrice: number;
+  confidence: string;
+  reductionType: string;
 }
 
 export type PbsItemFormulary = typeof PbsItemFormulary[keyof typeof PbsItemFormulary];
@@ -166,6 +184,27 @@ export interface PbsItem {
   therapeuticGroupId: string | null;
   /** @nullable */
   innovatorIndicator: string | null;
+}
+
+export type MedicineBrandItemSummary = PbsItem & ({
+  upcomingPrediction: UpcomingPrediction | null;
+});
+
+export interface UpcomingPredictedReduction {
+  itemCode: string;
+  drugId: number;
+  drugName: string;
+  brandName: string;
+  /** @nullable */
+  strength: string | null;
+  currentPrice: number;
+  predictedNewPrice: number;
+  predictedPercentage: number;
+  predictedDate: string;
+  confidence: string;
+  reductionType: string;
+  subjectToMinisterialDiscretion: boolean;
+  sourceNote: string;
 }
 
 export interface PriceHistory {
@@ -601,6 +640,28 @@ export type ListMedicineDirectoryParams = {
  */
 search?: string;
 };
+
+export type ListUpcomingPredictedReductionsParams = {
+/**
+ * Inclusive effective date. Defaults to today.
+ */
+from?: string;
+/**
+ * Inclusive effective date.
+ */
+to?: string;
+confidence?: ListUpcomingPredictedReductionsConfidence;
+};
+
+export type ListUpcomingPredictedReductionsConfidence = typeof ListUpcomingPredictedReductionsConfidence[keyof typeof ListUpcomingPredictedReductionsConfidence];
+
+
+export const ListUpcomingPredictedReductionsConfidence = {
+  high: 'high',
+  conditional: 'conditional',
+  indicative: 'indicative',
+  confirmed: 'confirmed',
+} as const;
 
 export type ListPbsItemsParams = {
 /**

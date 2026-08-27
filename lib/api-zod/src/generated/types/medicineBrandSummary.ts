@@ -26,4 +26,14 @@ export interface MedicineBrandSummary {
      * @pattern ^\d{4}-\d{2}-\d{2}$
      */
   latestChangeDate: string | null;
+  /** @nullable */
+  nextPredictedReductionDate: Date | null;
+  /** @nullable */
+  nextPredictedReductionPercentage: number | null;
+  /** @nullable */
+  nextPredictedNewPrice: number | null;
+  /** @nullable */
+  nextPredictedCurrentPrice: number | null;
+  /** @nullable */
+  nextPredictedReductionConfidence: string | null;
 }

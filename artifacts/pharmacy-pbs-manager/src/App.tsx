@@ -22,6 +22,7 @@ import { AdminGuard } from "@/components/admin-guard";
 import NotFound from "@/pages/not-found";
 import { PbsDirectory } from "@/pages/pbs/PbsDirectory";
 import { PbsItemEvidence } from "@/pages/pbs/PbsItemEvidence";
+import { UpcomingChangesPage } from "@/pages/UpcomingChanges";
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -172,7 +173,7 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 
 function Router() {
   return <RoutedErrorBoundary><Switch>
-    <Route path="/" component={Home} />
+    <Route path="/" component={() => <Protected><UpcomingChangesPage /></Protected>} />
     <Route path="/sign-in/*?" component={() => <AuthScreen mode="sign-in" />} />
     <Route path="/sign-up/*?" component={() => <AuthScreen mode="sign-up" />} />
     <Route path="/dashboard" component={() => <Protected><Dashboard /></Protected>} />

@@ -3,7 +3,7 @@ import {
   useListMedicineDirectory, getListMedicineDirectoryQueryKey,
   useListMedicineBrands, getListMedicineBrandsQueryKey,
   useListMedicineBrandItems, getListMedicineBrandItemsQueryKey,
-  type MedicineDrugSummary, type MedicineBrandSummary, type PbsItem
+  type MedicineDrugSummary, type MedicineBrandSummary, type MedicineBrandItemSummary
 } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
@@ -24,6 +24,28 @@ const reductionPercentageLabel = (value: number) => `-${Math.abs(value).toFixed(
 const benefitTypeLabel = (code: string | null) =>
   ({ U: 'Unrestricted', R: 'Restricted', A: 'Authority required', S: 'Authority streamlined' } as Record<string, string>)[code ?? '']
   ?? 'Not supplied';
+
+function PriceForecast({
+  currentPrice,
+  predictedPrice,
+  predictedDate,
+  confidence,
+}: {
+  currentPrice: number;
+  predictedPrice: number;
+  predictedDate: string;
+  confidence?: string;
+}) {
+  return (
+    <span className="inline-flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-0.5 font-mono text-xs font-bold text-foreground">
+      <span>{money(currentPrice)}</span>
+      <span className="text-info">→</span>
+      <span className="text-info">{money(predictedPrice)}</span>
+      <span className="font-sans text-[10px] font-semibold text-muted-foreground">on {shortDate(predictedDate)}</span>
+      {confidence && <span className="font-sans text-[10px] font-semibold capitalize text-info">{confidence}</span>}
+    </span>
+  );
+}
 
 type Tier = 
   | { level: 'drugs' }
@@ -267,10 +289,20 @@ export function PbsDirectory() {
                         <button
                           key={brand.brandName}
                           onClick={() => clickBrand(brand, tier.drug.drugName)}
-                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.4fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
+                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.25fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
                         >
-                           <span className="flex min-w-0 items-center gap-2">
-                            <span className="truncate text-sm font-bold tracking-tight">{brand.brandName}</span>
+                            <span className="flex min-w-0 flex-col gap-1">
+                             <span className="truncate text-sm font-bold tracking-tight">{brand.brandName}</span>
+                             {brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null && (
+                               <span className="md:hidden">
+                                 <PriceForecast
+                                   currentPrice={brand.nextPredictedCurrentPrice}
+                                   predictedPrice={brand.nextPredictedNewPrice}
+                                   predictedDate={brand.nextPredictedReductionDate}
+                                   confidence={brand.nextPredictedReductionConfidence ?? undefined}
+                                 />
+                               </span>
+                             )}
                           </span>
                           <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
                             {brand.itemCount} item{brand.itemCount === 1 ? '' : 's'}
@@ -278,6 +310,18 @@ export function PbsDirectory() {
                           <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">
                             {brand.firstListedDate ? `Listed ${date(brand.firstListedDate)}` : 'Listed unknown'}
                           </span>
+                           <span className="hidden min-w-[205px] text-right md:inline">
+                             {brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null ? (
+                               <PriceForecast
+                                 currentPrice={brand.nextPredictedCurrentPrice}
+                                 predictedPrice={brand.nextPredictedNewPrice}
+                                 predictedDate={brand.nextPredictedReductionDate}
+                                 confidence={brand.nextPredictedReductionConfidence ?? undefined}
+                               />
+                             ) : (
+                               <span className="text-xs font-medium text-muted-foreground">No forecast</span>
+                             )}
+                           </span>
                            <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
                         </button>
                       ))}
@@ -301,10 +345,11 @@ export function PbsDirectory() {
                      <span>Formulary: <span className="font-mono font-bold text-foreground">{allShareFormulary ? primaryFormulary : 'varies'}</span></span>
                      <span>Ex-manufacturer / wholesale price: <span className="font-mono font-bold text-foreground">{allSharePrice ? priceLabel(brands[0].minimumPrice, brands[0].maximumPrice) : priceLabel(sharedMinimumPrice, sharedMaximumPrice)}</span></span>
                    </div>
-                   <div className="hidden grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
+                   <div className="hidden grid-cols-[minmax(0,1.25fr)_auto_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
                     <span>Brand</span>
                     <span>Items</span>
                     <span>Listed</span>
+                     <span className="text-right">Current → predicted</span>
                      <span />
                   </div>
                   {renderBrandSection('Innovator', innovators)}
@@ -351,7 +396,7 @@ export function PbsDirectory() {
                       <span className="hidden w-4 md:block" />
                     </div>
                     <div className="divide-y divide-border/70">
-                      {items.map((item) => (
+                       {items.map((item: MedicineBrandItemSummary) => (
                         <Link
                           key={item.itemCode}
                           href={`/pbs/${item.itemCode}`}
@@ -373,8 +418,15 @@ export function PbsDirectory() {
                           <span className="hidden text-xs font-medium text-muted-foreground md:block">
                             {item.maximumQuantityUnits ?? 'Not supplied'}
                           </span>
-                          <span className="flex items-center justify-end gap-2 whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
-                            {money(item.currentAemp)}
+                           <span className="flex items-center justify-end gap-2 whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
+                             {item.upcomingPrediction ? (
+                               <PriceForecast
+                                 currentPrice={item.currentAemp}
+                                 predictedPrice={item.upcomingPrediction.predictedNewPrice}
+                                 predictedDate={item.upcomingPrediction.predictedDate}
+                                 confidence={item.upcomingPrediction.confidence}
+                               />
+                             ) : money(item.currentAemp)}
                             {item.formulary !== primaryFormulary && (
                               <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{item.formulary}</span>
                             )}

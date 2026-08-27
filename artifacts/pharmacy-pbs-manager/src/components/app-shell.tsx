@@ -14,11 +14,13 @@ import {
   PackageSearch,
   Settings2,
   ShieldCheck,
+  TrendingDown,
   X,
 } from 'lucide-react';
 import { useCurrentRole } from '@/components/admin-guard';
 
 const navItems = [
+  { href: '/', label: 'Upcoming changes', icon: TrendingDown },
   { href: '/dashboard', label: 'Overview', icon: Activity },
   { href: '/changes', label: 'PBS updates', icon: Bell },
   { href: '/pbs', label: 'PBS directory', icon: BookOpen },
