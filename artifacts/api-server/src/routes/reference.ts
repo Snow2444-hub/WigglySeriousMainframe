@@ -547,6 +547,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     listings: Array<{
       itemCode: string;
       pbsCode: string | null;
+      strength: string | null;
       currentPrice: number;
       predictedNewPrice: number;
       predictedPercentage: number;
@@ -562,27 +563,33 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     drugId: number;
     drugName: string;
     predictedDate: string;
+    currentPrice: number;
+    predictedNewPrice: number;
+    predictedPercentage: number;
     brands: Map<string, BrandGroup>;
   }>();
   for (const row of visibleRows) {
     const predictedDate = dateOnly(row.predictedDate);
-    const groupKey = `${row.drugId}:${predictedDate}`;
+    const groupKey = [
+      row.drugId,
+      predictedDate,
+      row.currentPrice,
+      row.predictedNewPrice,
+      row.predictedPercentage,
+    ].join(":");
     const group = groups.get(groupKey) ?? {
       drugId: row.drugId,
       drugName: row.drugName,
       predictedDate,
+      currentPrice: row.currentPrice,
+      predictedNewPrice: row.predictedNewPrice,
+      predictedPercentage: row.predictedPercentage,
       brands: new Map<string, BrandGroup>(),
     };
-    const brandKey = [
-      row.brandName.trim().toLocaleLowerCase(),
-      row.strength ?? "",
-      predictedDate,
-      row.currentPrice,
-      row.predictedNewPrice,
-    ].join(":");
+    const brandKey = brandGroupKey(row.brandName);
     const significance = predictedReductionSignificance(row.predictedPercentage, thresholds);
     const brand = group.brands.get(brandKey) ?? {
-      brandName: row.brandName,
+      brandName: brandGroupName(row.brandName),
       strength: row.strength,
       currentPrice: row.currentPrice,
       predictedNewPrice: row.predictedNewPrice,
@@ -593,9 +600,11 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
       significance,
       listings: [],
     };
+    if (brand.strength !== row.strength) brand.strength = null;
     brand.listings.push({
       itemCode: row.itemCode,
       pbsCode: row.pbsCode,
+      strength: row.strength,
       currentPrice: row.currentPrice,
       predictedNewPrice: row.predictedNewPrice,
       predictedPercentage: row.predictedPercentage,
@@ -612,27 +621,23 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
   const response = [...groups.values()].map((group) => {
     const brands = [...group.brands.values()]
       .map((brand) => ({ ...brand, listingCount: brand.listings.length, listings: brand.listings.sort((left, right) => (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode)) }))
-      .sort((left, right) =>
-        Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage) ||
-        left.brandName.localeCompare(right.brandName),
-      );
-    const percentages = brands.map((brand) => Math.abs(brand.predictedPercentage));
-    const largestReductionPercentage = Math.max(...percentages);
+      .sort((left, right) => left.brandName.localeCompare(right.brandName));
     return {
       drugId: group.drugId,
       drugName: group.drugName,
       predictedDate: group.predictedDate,
-      brandCount: new Set(brands.map((brand) => brand.brandName.trim().toLocaleLowerCase())).size,
+      currentPrice: group.currentPrice,
+      predictedNewPrice: group.predictedNewPrice,
+      predictedPercentage: group.predictedPercentage,
+      brandCount: brands.length,
       listingCount: brands.reduce((total, brand) => total + brand.listingCount, 0),
-      smallestReductionPercentage: Math.min(...percentages),
-      largestReductionPercentage,
-      significance: predictedReductionSignificance(largestReductionPercentage, thresholds),
+      significance: predictedReductionSignificance(group.predictedPercentage, thresholds),
       brands,
     };
   }).sort(
     (left, right) =>
+      Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage) ||
       left.predictedDate.localeCompare(right.predictedDate) ||
-      right.largestReductionPercentage - left.largestReductionPercentage ||
       left.drugName.localeCompare(right.drugName),
   );
   res.json(ListUpcomingPredictedReductionsResponse.parse(response));
@@ -949,6 +954,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
 });
 
 router.get("/artg-import-status", async (_req, res): Promise<void> => {
+  const artgStaleAfterMs = 45 * 24 * 60 * 60 * 1_000;
   const [successful] = await db
     .select({ finishedAt: artgIngestionRunsTable.finishedAt })
     .from(artgIngestionRunsTable)
@@ -966,6 +972,7 @@ router.get("/artg-import-status", async (_req, res): Promise<void> => {
     .limit(1);
   res.json(GetArtgImportStatusResponse.parse({
     hasSuccessfulImport: Boolean(successful),
+    isStale: Boolean(successful?.finishedAt && Date.now() - successful.finishedAt.getTime() > artgStaleAfterMs),
     lastSuccessfulImportAt: successful?.finishedAt ?? null,
     lastAttemptAt: attempt?.startedAt ?? null,
     lastAttemptStatus: attempt?.status ?? null,

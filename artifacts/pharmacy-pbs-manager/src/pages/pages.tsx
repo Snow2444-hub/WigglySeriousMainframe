@@ -20,6 +20,7 @@ import {
   type PharmacyStock,
   type StockExposureLine,
   type StockExposureResponse,
+  uploadAdminArtgExport,
   useCreatePbsWatchlistEntry,
   useCreateStock,
   useDeletePbsWatchlistEntry,
@@ -42,7 +43,7 @@ import {
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
-import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
+import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -118,45 +119,59 @@ function Dashboard() {
 
 function ArtgUploadControl() {
   const queryClient = useQueryClient();
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [completedCount, setCompletedCount] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const upload = useUploadAdminArtgExport({
-    request: {
-      headers: {
-        'X-ARTG-File-Name': encodeURIComponent(file?.name ?? 'unknown-artg-export'),
-      },
-    },
-  });
 
-  const submit = () => {
-    if (!file) {
+  const submit = async () => {
+    if (!files.length) {
       setError('Choose a CSV or Excel export from the TGA ARTG search before uploading.');
       return;
     }
-    if (!/\.(csv|xlsx|xls)$/i.test(file.name)) {
-      setError('Upload a .csv, .xlsx, or .xls file exported from the TGA ARTG search.');
+    const invalidFiles = files.filter((file) => !/\.(csv|xlsx|xls)$/i.test(file.name));
+    if (invalidFiles.length) {
+      setError(`Unsupported file${invalidFiles.length === 1 ? '' : 's'}: ${invalidFiles.map((file) => file.name).join(', ')}. Upload only .csv, .xlsx, or .xls TGA exports.`);
       return;
     }
     setNotice('');
     setError('');
-    upload.mutate(
-      { data: file },
-      {
-        onSuccess: (run) => {
-          setFile(null);
-          setNotice(run.recordsAccepted
-            ? `Import complete: ${run.recordsAccepted.toLocaleString('en-AU')} tracked record${run.recordsAccepted === 1 ? '' : 's'} saved.`
-            : 'Import completed with no matching tracked ingredients. Existing ARTG records were retained.');
-          void Promise.all([
-            queryClient.invalidateQueries({ queryKey: getListArtgEntriesQueryKey() }),
-            queryClient.invalidateQueries({ queryKey: getGetArtgImportStatusQueryKey() }),
-            queryClient.invalidateQueries({ queryKey: getListAdminArtgImportRunsQueryKey() }),
-          ]);
-        },
-        onError: (uploadError) => setError(mutationError(uploadError, 'The ARTG import failed. Existing records were retained.')),
-      },
-    );
+    setIsUploading(true);
+    setCompletedCount(0);
+    let acceptedRecords = 0;
+    let completed = 0;
+    const failedFiles: string[] = [];
+    try {
+      for (const file of files) {
+        try {
+          const run = await uploadAdminArtgExport(file, {
+            headers: { 'X-ARTG-File-Name': encodeURIComponent(file.name) },
+          });
+          acceptedRecords += run.recordsAccepted;
+        } catch (uploadError) {
+          failedFiles.push(`${file.name}: ${mutationError(uploadError, 'import failed').slice(0, 160)}`);
+        } finally {
+          completed += 1;
+          setCompletedCount(completed);
+        }
+      }
+      setFiles([]);
+      if (completed > failedFiles.length) {
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListArtgEntriesQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getGetArtgImportStatusQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getListAdminArtgImportRunsQueryKey() }),
+        ]);
+      }
+      if (failedFiles.length) {
+        setError(`${completed - failedFiles.length} file${completed - failedFiles.length === 1 ? '' : 's'} imported, but ${failedFiles.length} failed: ${failedFiles.join(', ')}. Successful imports were retained.`);
+      } else {
+        setNotice(`${files.length} file${files.length === 1 ? '' : 's'} imported: ${acceptedRecords.toLocaleString('en-AU')} tracked record${acceptedRecords === 1 ? '' : 's'} saved.`);
+      }
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
@@ -165,17 +180,17 @@ function ArtgUploadControl() {
         <div className="min-w-0">
           <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-info">ARTG data source</p>
           <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Upload a TGA export</h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Add a CSV or Excel export with ARTG ID, active ingredient, sponsor, start date, and product or good name.</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Add one or more CSV or Excel exports with ARTG ID, active ingredient, sponsor, start date, and product or good name.</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
           <label className="min-w-0 flex-1">
             <span className="sr-only">TGA ARTG export file</span>
-            <input type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setError(''); setNotice(''); }} className="block h-11 w-full cursor-pointer rounded-xl border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-info/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-info hover:file:bg-info/15" data-testid="input-artg-register-export-file" />
+            <input type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setError(''); setNotice(''); }} className="block h-11 w-full cursor-pointer rounded-xl border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-info/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-info hover:file:bg-info/15" data-testid="input-artg-register-export-file" />
           </label>
-          <button type="button" onClick={submit} disabled={!file || upload.isPending} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-upload-artg-register-export">{upload.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}{upload.isPending ? 'Importing…' : 'Import export'}</button>
+          <button type="button" onClick={submit} disabled={!files.length || isUploading} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-upload-artg-register-export">{isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}{isUploading ? `Importing ${completedCount}/${files.length}…` : files.length > 1 ? `Import ${files.length} files` : 'Import export'}</button>
         </div>
       </div>
-      {(notice || error || upload.isError) && <div className="border-t border-info/15 px-5 py-3">{(error || upload.isError) ? <p className="flex items-start gap-2 text-xs font-semibold text-destructive" role="alert"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{error || mutationError(upload.error, 'The ARTG import failed. Existing records were retained.')} <Link href="/admin" className="ml-1 shrink-0 underline">Open Data updates</Link></p> : <p className="flex items-start gap-2 text-xs font-semibold text-success" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</p>}</div>}
+      {(notice || error || files.length > 0) && <div className="border-t border-info/15 px-5 py-3">{files.length > 0 && !isUploading && <p className="mb-2 text-xs font-semibold text-muted-foreground">{files.length} file{files.length === 1 ? '' : 's'} selected</p>}{error && <p className="flex items-start gap-2 text-xs font-semibold text-destructive" role="alert"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{error} <Link href="/admin" className="ml-1 shrink-0 underline">Open Data updates</Link></p>}{notice && !error && <p className="flex items-start gap-2 text-xs font-semibold text-success" role="status"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</p>}</div>}
     </section>
   );
 }
@@ -195,7 +210,9 @@ function ArtgDirectory() {
   const entries = (query.data ?? []).filter((entry) =>
     pbsState === 'all' || (pbsState === 'listed' ? entry.pbsListed : !entry.pbsListed),
   );
-  return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Review registered products against current PBS brand listings. Data is maintained through reviewed TGA CSV or Excel uploads." /><ArtgUploadControl />
+  return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Review registered products against current PBS brand listings. Data is maintained through reviewed TGA CSV or Excel uploads." />
+    {importStatus.data?.isStale && importStatus.data.lastSuccessfulImportAt && <div className="mb-5 flex items-start gap-3 rounded-2xl border-2 border-warning/40 bg-warning/10 px-5 py-4 text-warning shadow-sm" role="alert" data-testid="warning-artg-stale"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><div><h2 className="text-sm font-bold">ARTG data may be out of date</h2><p className="mt-1 text-xs font-medium leading-relaxed">The last successful import was <strong>{formatDateTime(importStatus.data.lastSuccessfulImportAt)}</strong>, more than 45 days ago. Import a current TGA export before relying on registration results.</p></div></div>}
+    <ArtgUploadControl />
     <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="REGISTERED">Registered</option><option value="CANCELLED">Cancelled</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><select value={pbsState} onChange={(e) => setPbsState(e.target.value as typeof pbsState)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-pbs-status"><option value="all">All PBS matches</option><option value="unlisted">Not PBS-listed</option><option value="listed">PBS-listed</option></select></label></div>
     {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !entries.length ? (
       importStatus.isLoading ? <QueryState kind="loading" /> : importStatus.isError ? <div className="rounded-2xl border border-dashed border-border p-10 text-center" data-testid="empty-artg-status-error"><h2 className="text-lg font-bold">ARTG data status is unavailable</h2><p className="mt-2 text-sm text-muted-foreground">We could not confirm whether an ARTG export has been imported.</p><button type="button" onClick={() => importStatus.refetch()} className="mt-4 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-bold hover:bg-muted">Try again</button></div> : !importStatus.data?.hasSuccessfulImport ? <div className="rounded-2xl border border-dashed border-info/30 bg-info/5 p-10 text-center" data-testid="empty-artg-no-import"><DatabaseZap className="mx-auto h-9 w-9 text-info" /><h2 className="mt-4 text-lg font-bold">No ARTG import has succeeded yet</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">The ARTG register is empty because no data-bearing TGA export has been imported. Use the upload control above to add the first reviewed register snapshot.</p><Link href="/admin" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-info/25 bg-background px-4 py-2.5 text-sm font-bold text-info hover:bg-info/5" data-testid="link-artg-upload-screen">Open Data updates <ArrowRight className="h-4 w-4" /></Link></div> : <QueryState kind="empty" />
