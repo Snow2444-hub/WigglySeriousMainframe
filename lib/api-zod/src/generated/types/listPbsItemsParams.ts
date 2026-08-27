@@ -9,7 +9,7 @@ import type { ListPbsItemsFormulary } from './listPbsItemsFormulary';
 
 export type ListPbsItemsParams = {
 /**
- * Search by item code, brand name, or drug name
+ * Tokenised search across item code, PBS code, brand name, drug name, active ingredient, and normalised strength
  */
 search?: string;
 formulary?: ListPbsItemsFormulary;

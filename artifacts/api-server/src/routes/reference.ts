@@ -369,6 +369,10 @@ router.get("/pbs-items", async (req, res): Promise<void> => {
     return;
   }
   const { search, formulary, limit = 50 } = parsed.data;
+  const searchTokens = search
+    ? [...new Set(search.toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean))]
+    : [];
+  const normalizedStrength = sql<string>`regexp_replace(lower(coalesce(${pbsItemsTable.strength}, '')), '[^a-z0-9]+', '', 'g')`;
   const rows = await db
     .select(pbsSelect)
     .from(pbsItemsTable)
@@ -376,14 +380,16 @@ router.get("/pbs-items", async (req, res): Promise<void> => {
     .where(
       and(
         formulary ? eq(pbsItemsTable.formulary, formulary) : undefined,
-        search
-          ? or(
-              ilike(pbsItemsTable.itemCode, `%${search}%`),
-              ilike(pbsItemsTable.brandName, `%${search}%`),
-              ilike(drugsTable.name, `%${search}%`),
-              ilike(drugsTable.activeIngredient, `%${search}%`),
-            )
-          : undefined,
+        ...searchTokens.map((token) =>
+          or(
+            ilike(pbsItemsTable.itemCode, `%${token}%`),
+            ilike(pbsItemsTable.pbsCode, `%${token}%`),
+            ilike(pbsItemsTable.brandName, `%${token}%`),
+            ilike(drugsTable.name, `%${token}%`),
+            ilike(drugsTable.activeIngredient, `%${token}%`),
+            ilike(normalizedStrength, `%${token}%`),
+          ),
+        ),
       ),
     )
     .orderBy(asc(pbsItemsTable.brandName))

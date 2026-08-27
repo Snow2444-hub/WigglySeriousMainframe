@@ -99,7 +99,11 @@ function itemLabel(item: Pick<PbsItem, 'brandName' | 'drugName' | 'strength' | '
   return [item.brandName, item.drugName, item.strength, item.form, item.packSize].filter(Boolean).join(' · ');
 }
 
-function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLine; onClose: () => void; onSaved: (message: string) => void }) {
+function mutationError(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback;
+}
+
+function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLine; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
   const [form, setForm] = useState<StockForm>(initial ? { itemCode: initial.itemCode, quantity: String(initial.quantity), purchasePrice: String(initial.purchasePrice), purchaseDate: initial.purchaseDate.slice(0, 10), invoiceReference: initial.invoiceReference ?? '' } : blankStock);
   const [itemSearch, setItemSearch] = useState(initial ? `${initial.itemCode} · ${initial.brandName}` : '');
   const [showItemResults, setShowItemResults] = useState(false);
@@ -115,9 +119,17 @@ function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLin
   const submit = () => {
     if (!form.itemCode.trim() || Number(form.quantity) < 0 || Number(form.purchasePrice) < 0 || !form.purchaseDate) { setError('Choose a PBS item, then enter a non-negative quantity and price with a purchase date.'); return; }
     const baseData = { itemCode: form.itemCode.trim(), quantity: Number(form.quantity), purchasePrice: Number(form.purchasePrice), purchaseDate: form.purchaseDate };
-    const options = { onSuccess: () => { onSaved(initial ? 'Stock record updated.' : 'Stock record added.'); onClose(); }, onError: () => setError('The record could not be saved. Please try again.') };
-    if (initial) update.mutate({ id: initial.id, data: { ...baseData, invoiceReference: form.invoiceReference.trim() || null }, ...options });
-    else create.mutate({ data: { ...baseData, ...(form.invoiceReference.trim() ? { invoiceReference: form.invoiceReference.trim() } : {}) }, ...options });
+    const options = {
+      onSuccess: async () => {
+        setForm(blankStock);
+        setItemSearch('');
+        await onSaved(initial ? 'Stock record updated. Exposure recalculated.' : 'Stock record added. Exposure calculated.');
+        onClose();
+      },
+      onError: (mutationFailure: unknown) => setError(mutationError(mutationFailure, 'The record could not be saved. Please try again.')),
+    };
+    if (initial) update.mutate({ id: initial.id, data: { ...baseData, invoiceReference: form.invoiceReference.trim() || null } }, options);
+    else create.mutate({ data: { ...baseData, ...(form.invoiceReference.trim() ? { invoiceReference: form.invoiceReference.trim() } : {}) } }, options);
   };
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="dialog" aria-modal="true" data-testid="dialog-stock-form">
@@ -164,24 +176,88 @@ function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLin
   );
 }
 
+function StockQuantityControl({ row, onSaved, onFailed }: { row: StockExposureLine; onSaved: (message: string) => Promise<void>; onFailed: (message: string) => void }) {
+  const [quantity, setQuantity] = useState(String(row.quantity));
+  const update = useUpdateStock();
+
+  useEffect(() => setQuantity(String(row.quantity)), [row.quantity]);
+
+  const saveQuantity = (nextQuantity: number, message = 'Quantity updated. Exposure recalculated.') => {
+    if (!Number.isInteger(nextQuantity) || nextQuantity < 0) {
+      setQuantity(String(row.quantity));
+      onFailed('Quantity must be a whole number of zero or more.');
+      return;
+    }
+    if (nextQuantity === row.quantity) {
+      setQuantity(String(row.quantity));
+      return;
+    }
+    update.mutate(
+      { id: row.id, data: { quantity: nextQuantity } },
+      {
+        onSuccess: async () => {
+          setQuantity(String(nextQuantity));
+          await onSaved(message);
+        },
+        onError: (mutationFailure) => {
+          setQuantity(String(row.quantity));
+          onFailed(mutationError(mutationFailure, 'The quantity could not be updated.'));
+        },
+      },
+    );
+  };
+
+  const sold = (amount: number) => {
+    const currentQuantity = Number(quantity);
+    if (!Number.isFinite(currentQuantity)) {
+      onFailed('Enter a valid quantity before recording a sale.');
+      return;
+    }
+    const nextQuantity = Math.max(0, Math.trunc(currentQuantity) - amount);
+    saveQuantity(nextQuantity, `${Math.min(amount, Math.trunc(currentQuantity))} sold. Exposure recalculated.`);
+  };
+
+  return <div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor={`quantity-${row.id}`}>Quantity</label><div className="mt-1.5 flex flex-wrap items-center gap-1.5"><input id={`quantity-${row.id}`} type="number" min="0" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} onBlur={() => saveQuantity(Number(quantity))} onKeyDown={(event) => { if (event.key === 'Enter') { event.currentTarget.blur(); } }} disabled={update.isPending} className="h-9 w-20 rounded-lg border border-input bg-background px-2 font-mono text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50" aria-label={`Quantity for ${row.brandName}`} data-testid={`input-stock-quantity-${row.id}`} /><button type="button" onClick={() => sold(1)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-one-${row.id}`}>Sold 1</button><button type="button" onClick={() => sold(20)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-twenty-${row.id}`}>Sold 20</button>{update.isPending && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />}</div></div>;
+}
+
 function StockPage() {
   const queryClient = useQueryClient();
   const stock = useListStock();
   const remove = useDeleteStock();
   const [dialog, setDialog] = useState<'new' | StockExposureLine | null>(null);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const response = stock.data as StockExposureResponse | undefined;
   const rows = response?.rows ?? [];
   const summary = response?.summary;
   const atRiskRows = rows.filter((row) => row.totalExposure > 0);
   const neutralRows = rows.filter((row) => !row.prediction);
   const totalUnits = rows.reduce((total, row) => total + row.quantity, 0);
-  const saved = (message: string) => { setNotice(message); queryClient.invalidateQueries({ queryKey: getListStockQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }); window.setTimeout(() => setNotice(''), 3200); };
-  const deleteRow = (row: StockExposureLine) => { if (window.confirm(`Delete the stock record for ${row.itemCode}?`)) remove.mutate({ id: row.id }, { onSuccess: () => saved('Stock record deleted.'), onError: () => setNotice('Could not delete that record.') }); };
+  const showNotice = (message: string, tone: 'success' | 'error') => {
+    setNotice({ message, tone });
+    window.setTimeout(() => setNotice(null), 4200);
+  };
+  const saved = async (message: string) => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: getListStockQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetDashboardQueryKey() }),
+    ]);
+    showNotice(message, 'success');
+  };
+  const failed = (message: string) => showNotice(message, 'error');
+  const deleteRow = (row: StockExposureLine) => {
+    if (!window.confirm(`Delete ${row.brandName} (${row.itemCode}) from your stock list? This cannot be undone.`)) return;
+    remove.mutate(
+      { id: row.id },
+      {
+        onSuccess: async () => saved('Stock record deleted. Exposure recalculated.'),
+        onError: (mutationFailure) => failed(mutationError(mutationFailure, 'The stock record could not be deleted.')),
+      },
+    );
+  };
   const renderGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} at-risk {lineCount === 1 ? 'line' : 'lines'}</p></div><p className="font-mono text-sm font-bold text-destructive">{money(totalExposure)}</p></div>;
-  const renderRow = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 px-5 py-5 transition-colors hover:bg-secondary/25 lg:grid-cols-[minmax(0,1.4fr)_0.75fr_0.75fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-[10px] font-bold text-primary">{row.itemCode}</p><span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{row.formulary}</span></div><p className="mt-1 truncate text-sm font-bold">{row.brandName}</p><p className="mt-1 truncate text-xs text-muted-foreground">{row.drugName} · {[row.strength, row.form, row.packSize].filter(Boolean).join(' · ')}</p><p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span>{row.quantity} units at {money(row.purchasePrice)} each</span><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" />{date(row.purchaseDate)}</span>{row.invoiceReference && <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span>}</p></div><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Prediction</p>{row.prediction ? <><p className="mt-1 text-sm font-bold">{date(row.prediction.predictedDate)}</p><p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${row.prediction.confidence === 'confirmed' ? 'bg-chart-3' : 'bg-accent-foreground'}`} />{row.prediction.confidence === 'confirmed' ? 'Confirmed' : 'Indicative'} · {row.prediction.reductionType.replaceAll('_', ' ')}</p></> : <p className="mt-1 text-sm font-semibold text-muted-foreground">No future prediction</p>}</div><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Exposure</p>{row.prediction ? <><p className={`mt-1 text-lg font-bold tracking-[-0.04em] ${row.totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{row.totalExposure > 0 ? money(row.totalExposure) : 'No loss'}</p><p className="mt-1 text-xs text-muted-foreground">{money(row.perPackExposure)} per pack</p></> : <p className="mt-1 text-lg font-bold text-muted-foreground">Neutral</p>}</div><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.itemCode}`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.itemCode}`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
+  const renderRow = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 px-5 py-5 transition-colors hover:bg-secondary/25 lg:grid-cols-[minmax(0,1.35fr)_auto_0.72fr_0.72fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-[10px] font-bold text-primary">{row.itemCode}</p><span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{row.formulary}</span></div><p className="mt-1 truncate text-sm font-bold">{row.brandName}</p><p className="mt-1 truncate text-xs text-muted-foreground">{row.drugName} · {[row.strength, row.form, row.packSize].filter(Boolean).join(' · ')}</p><p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span>{money(row.purchasePrice)} each</span><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" />{date(row.purchaseDate)}</span>{row.invoiceReference && <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span>}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Prediction</p>{row.prediction ? <><p className="mt-1 text-sm font-bold">{date(row.prediction.predictedDate)}</p><p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${row.prediction.confidence === 'confirmed' ? 'bg-chart-3' : 'bg-accent-foreground'}`} />{row.prediction.confidence === 'confirmed' ? 'Confirmed' : 'Indicative'} · {row.prediction.reductionType.replaceAll('_', ' ')}</p></> : <p className="mt-1 text-sm font-semibold text-muted-foreground">No future prediction</p>}</div><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Exposure</p>{row.prediction ? <><p className={`mt-1 text-lg font-bold tracking-[-0.04em] ${row.totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{row.totalExposure > 0 ? money(row.totalExposure) : 'No loss'}</p><p className="mt-1 text-xs text-muted-foreground">{money(row.perPackExposure)} per pack</p></> : <p className="mt-1 text-lg font-bold text-muted-foreground">Neutral</p>}</div><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.itemCode}`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.itemCode}`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
   return <AppShell><PageHeading eyebrow="Private workspace / stock" title="Stock exposure" description="See which private stock lines are most exposed to upcoming PBS price reductions." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
-    {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-chart-3/25 bg-chart-3/10 px-4 py-3 text-sm font-semibold text-chart-3" role="status" data-testid="status-stock-success"><Check className="h-4 w-4" />{notice}</div>}
+    {notice && <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${notice.tone === 'success' ? 'border-chart-3/25 bg-chart-3/10 text-chart-3' : 'border-destructive/25 bg-destructive/10 text-destructive'}`} role={notice.tone === 'success' ? 'status' : 'alert'} data-testid={`status-stock-${notice.tone}`}>{notice.tone === 'success' ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{notice.message}</div>}
     {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add a private PBS stock record to see quantities, predictions, and potential exposure in one place.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total exposure" value={money(summary?.totalExposure ?? 0)} detail="potential loss" icon={TrendingDown} tone="amber" /><StatCard label="At-risk lines" value={summary?.totalAtRiskLines ?? atRiskRows.length} detail="stock records" icon={CircleAlert} /><StatCard label="Stock units" value={totalUnits} detail="on hand" icon={Boxes} tone="teal" /><StatCard label="Prediction dates" value={summary?.exposureByDate.length ?? 0} detail="upcoming dates" icon={CalendarDays} /></div><div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_.7fr]"><section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-stock-exposure"><div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Risk-first view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Stock lines</h2></div><p className="text-xs text-muted-foreground">{atRiskRows.length ? `${atRiskRows.length} lines with positive exposure` : 'No positive exposure detected'}</p></div><div className="divide-y divide-border">{atRiskRows.length ? atRiskRows.map(renderRow) : <div className="p-8 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-chart-3" /><p className="mt-3 text-sm font-bold">No stock is currently at risk.</p><p className="mt-1 text-xs text-muted-foreground">Future predictions are still shown below when a line has no positive loss.</p></div>}</div></section><section className="rounded-2xl border border-border bg-sidebar p-5 text-sidebar-foreground shadow-sm" data-testid="section-exposure-by-date"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Forward view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Exposure by date</h2><p className="mt-2 text-sm leading-relaxed text-sidebar-foreground/65">Potential loss grouped by the earliest future prediction for each PBS item.</p><div className="mt-5 space-y-2">{summary?.exposureByDate.length ? summary.exposureByDate.map((group) => renderGroup(group.predictedDate, group.lineCount, group.totalExposure)) : <p className="rounded-xl border border-sidebar-border bg-sidebar-accent/35 p-4 text-xs text-sidebar-foreground/65">No positive exposure has been calculated yet.</p>}</div></section></div>{neutralRows.length > 0 && <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-neutral-stock"><div className="border-b border-border px-5 py-4"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Neutral lines</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">No future prediction yet</h2><p className="mt-1 text-sm text-muted-foreground">These records remain visible without inventing an exposure amount.</p></div><div className="divide-y divide-border">{neutralRows.map(renderRow)}</div></section>}</>}
     {dialog && <StockDialog initial={dialog === 'new' ? undefined : dialog} onClose={() => setDialog(null)} onSaved={saved} />}
   </AppShell>;

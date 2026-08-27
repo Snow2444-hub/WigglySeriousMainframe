@@ -203,7 +203,7 @@ export const listPbsItemsQueryLimitMax = 100;
 
 
 export const ListPbsItemsQueryParams = zod.object({
-  "search": zod.coerce.string().optional().describe('Search by item code, brand name, or drug name'),
+  "search": zod.coerce.string().optional().describe('Tokenised search across item code, PBS code, brand name, drug name, active ingredient, and normalised strength'),
   "formulary": zod.enum(['F1', 'F2']).optional(),
   "limit": zod.coerce.number().int().min(1).max(listPbsItemsQueryLimitMax).default(listPbsItemsQueryLimitDefault)
 })

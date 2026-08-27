@@ -166,7 +166,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Search by item code, brand name, or drug name
+          description: Tokenised search across item code, PBS code, brand name, drug name, active ingredient, and normalised strength
         - name: formulary
           in: query
           schema:
