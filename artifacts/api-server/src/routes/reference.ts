@@ -12,6 +12,7 @@ import {
   priceHistoryTable,
   scheduleChangesTable,
 } from "@workspace/db";
+import type { ScheduleChangeAffectedItem } from "@workspace/db";
 import {
   GetDrugScheduleTimelineParams,
   GetDrugScheduleTimelineResponse,
@@ -755,6 +756,71 @@ const scheduleChangeSelect = {
   createdAt: scheduleChangesTable.createdAt,
 };
 
+async function enrichScheduleChangeRows<T extends {
+  liItemId: string | null;
+  affectedItems: ScheduleChangeAffectedItem[] | null;
+}>(rows: T[]): Promise<T[]> {
+  const itemIdentifiers = [
+    ...new Set([
+      ...rows.map((row) => row.liItemId),
+      ...rows.flatMap((row) => row.affectedItems?.map((item) => item.liItemId) ?? []),
+    ].filter((value): value is string => Boolean(value))),
+  ];
+  if (!itemIdentifiers.length) return rows;
+
+  const matchingItems = await db
+    .select({
+      itemCode: pbsItemsTable.itemCode,
+      liItemId: pbsItemsTable.liItemId,
+      pbsCode: pbsItemsTable.pbsCode,
+      brandName: pbsItemsTable.brandName,
+      strength: pbsItemsTable.strength,
+      determinedPrice: pbsItemsTable.determinedPrice,
+      formulary: pbsItemsTable.formulary,
+    })
+    .from(pbsItemsTable)
+    .where(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)));
+  const itemsByIdentifier = new Map(
+    matchingItems.flatMap((item) => [
+      [item.itemCode, item],
+      ...(item.liItemId ? [[item.liItemId, item] as const] : []),
+    ]),
+  );
+
+  return rows.map((row) => {
+    const fillItem = (item: ScheduleChangeAffectedItem): ScheduleChangeAffectedItem => {
+      const current = itemsByIdentifier.get(item.liItemId);
+      if (!current) return item;
+      return {
+        ...item,
+        pbsCode: item.pbsCode ?? current.pbsCode,
+        brandName: item.brandName || current.brandName,
+        strength: item.strength ?? current.strength,
+        determinedPrice: item.determinedPrice ?? current.determinedPrice,
+        formulary: item.formulary ?? current.formulary,
+      };
+    };
+    if (row.affectedItems?.length) {
+      return { ...row, affectedItems: row.affectedItems.map(fillItem) };
+    }
+    if (!row.liItemId) return row;
+    const current = itemsByIdentifier.get(row.liItemId);
+    return current
+      ? {
+          ...row,
+          affectedItems: [{
+            liItemId: current.liItemId ?? current.itemCode,
+            pbsCode: current.pbsCode,
+            brandName: current.brandName,
+            strength: current.strength,
+            determinedPrice: current.determinedPrice,
+            formulary: current.formulary,
+          }],
+        }
+      : row;
+  });
+}
+
 router.get("/pbs-items/:itemCode/schedule-changes", async (req, res): Promise<void> => {
   const parsed = ListItemScheduleChangesParams.safeParse(req.params);
   if (!parsed.success) {
@@ -774,7 +840,7 @@ router.get("/pbs-items/:itemCode/schedule-changes", async (req, res): Promise<vo
         ),
     )
     .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id));
-  res.json(ListItemScheduleChangesResponse.parse(rows));
+  res.json(ListItemScheduleChangesResponse.parse(await enrichScheduleChangeRows(rows)));
 });
 
 router.get("/schedule-changes", async (req, res): Promise<void> => {
@@ -799,43 +865,7 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     .limit(limit);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
   const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
-  const itemIdentifiers = [...new Set(visibleRows.map((row) => row.liItemId).filter((value): value is string => Boolean(value)))];
-  const matchingItems = itemIdentifiers.length
-    ? await db
-      .select({
-        itemCode: pbsItemsTable.itemCode,
-        liItemId: pbsItemsTable.liItemId,
-        pbsCode: pbsItemsTable.pbsCode,
-        brandName: pbsItemsTable.brandName,
-        strength: pbsItemsTable.strength,
-        determinedPrice: pbsItemsTable.determinedPrice,
-        formulary: pbsItemsTable.formulary,
-      })
-      .from(pbsItemsTable)
-      .where(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)))
-    : [];
-  const itemsByIdentifier = new Map(
-    matchingItems.flatMap((item) => [
-      [item.itemCode, item],
-      ...(item.liItemId ? [[item.liItemId, item] as const] : []),
-    ]),
-  );
-  res.json(ListScheduleChangesResponse.parse(visibleRows.map((row) => {
-    if (row.affectedItems?.length || !row.liItemId) return row;
-    const item = itemsByIdentifier.get(row.liItemId);
-    if (!item) return row;
-    return {
-      ...row,
-      affectedItems: [{
-        liItemId: item.liItemId ?? item.itemCode,
-        pbsCode: item.pbsCode,
-        brandName: item.brandName,
-        strength: item.strength,
-        determinedPrice: item.determinedPrice,
-        formulary: item.formulary,
-      }],
-    };
-  })));
+  res.json(ListScheduleChangesResponse.parse(await enrichScheduleChangeRows(visibleRows)));
 });
 
 router.get("/drugs/:id/schedule-timeline", async (req, res): Promise<void> => {
@@ -850,7 +880,7 @@ router.get("/drugs/:id/schedule-timeline", async (req, res): Promise<void> => {
     .innerJoin(drugsTable, eq(scheduleChangesTable.drugId, drugsTable.id))
     .where(eq(scheduleChangesTable.drugId, parsed.data.id))
     .orderBy(asc(scheduleChangesTable.effectiveDate), asc(scheduleChangesTable.id));
-  res.json(GetDrugScheduleTimelineResponse.parse(rows));
+  res.json(GetDrugScheduleTimelineResponse.parse(await enrichScheduleChangeRows(rows)));
 });
 
 router.get("/artg-entries", async (req, res): Promise<void> => {

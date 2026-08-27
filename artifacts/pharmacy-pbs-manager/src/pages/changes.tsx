@@ -124,6 +124,14 @@ function timelineGroupKey(change: ScheduleChange): string {
   return change.changeType;
 }
 
+function timelineGroupLabel(group: TimelineGroup): string {
+  const types = new Set(group.changes.map((change) => change.changeType));
+  if (types.has('new_brand') || types.has('new_item')) return 'New brands';
+  if (types.has('price_change')) return 'Price update';
+  if (types.has('formulary_change')) return 'Formulary update';
+  return typeLabels[group.representative.changeType] || group.representative.changeType;
+}
+
 function changeItemLabels(change: ScheduleChange): string[] {
   if (change.affectedItems?.length) {
     return change.affectedItems.map((item) => {
@@ -588,9 +596,6 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
         <span className={reductionTextClass(significance)}>
           {group.brands.length === 1 ? 'New brand listed' : `${group.brands.length} new brands listed`}
         </span>
-        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(significance)}`}>
-          {itemCount} listing{itemCount === 1 ? '' : 's'}
-        </span>
       </div>
     );
   }
@@ -964,7 +969,7 @@ export function ChangesPage() {
                     <div>
                       <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${reductionBadgeClass(impact)}`}>
                         {impact !== 'normal' && <AlertCircle className="h-3 w-3" />}
-                        {eventSummary(event)}
+                        {eventBadgeLabel(event)}
                       </span>
                     </div>
                     <EventDetails group={event} />
@@ -1074,7 +1079,7 @@ export function ChangesPage() {
                                   <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                                       <span className="text-xs font-bold text-foreground">
-                                        {typeLabels[group.representative.changeType] || group.representative.changeType}
+                        {timelineGroupLabel(group)}
                                       </span>
                                       {significance !== 'normal' && (
                                         <span className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${
