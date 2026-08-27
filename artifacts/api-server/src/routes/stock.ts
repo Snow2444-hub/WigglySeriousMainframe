@@ -20,7 +20,11 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 
-const router: IRouter = Router();
+export function createStockRouter(
+  database: typeof db = db,
+  authMiddleware: typeof requireAuth = requireAuth,
+): IRouter {
+  const router: IRouter = Router();
 
 const stockSelect = {
   id: pharmacyStockTable.id,
@@ -41,7 +45,7 @@ const stockSelect = {
 };
 
 async function getUserStock(userId: string) {
-  return db
+  return database
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
@@ -55,7 +59,7 @@ async function getUserExposure(userId: string) {
   const itemCodes = [...new Set(rows.map((row) => row.itemCode))];
   const today = new Date().toISOString().slice(0, 10);
   const predictions = itemCodes.length
-    ? await db
+    ? await database
         .select({
           itemCode: predictedReductionsTable.itemCode,
           predictedDate: predictedReductionsTable.predictedDate,
@@ -142,12 +146,12 @@ async function getUserExposure(userId: string) {
   return { rows: exposureRows, summary };
 }
 
-router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
+router.get("/dashboard", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.userId!;
   const rows = await getUserStock(userId);
   const itemCodes = new Set(rows.map((row) => row.itemCode));
   const itemDetails = itemCodes.size
-    ? await db
+    ? await database
         .select({ itemCode: pbsItemsTable.itemCode, formulary: pbsItemsTable.formulary })
         .from(pbsItemsTable)
         .where(sql`${pbsItemsTable.itemCode} in (${sql.join([...itemCodes].map((code) => sql`${code}`), sql`, `)})`)
@@ -169,18 +173,18 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
   res.json(GetDashboardResponse.parse(summary));
 });
 
-router.get("/stock", requireAuth, async (req, res): Promise<void> => {
+router.get("/stock", authMiddleware, async (req, res): Promise<void> => {
   const exposure = await getUserExposure(req.userId!);
   res.json(ListStockResponse.parse(exposure));
 });
 
-router.post("/stock", requireAuth, async (req, res): Promise<void> => {
+router.post("/stock", authMiddleware, async (req, res): Promise<void> => {
   const parsed = CreateStockBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const [item] = await db
+  const [item] = await database
     .select({ itemCode: pbsItemsTable.itemCode })
     .from(pbsItemsTable)
     .where(eq(pbsItemsTable.itemCode, parsed.data.itemCode));
@@ -188,7 +192,7 @@ router.post("/stock", requireAuth, async (req, res): Promise<void> => {
     res.status(400).json({ error: "PBS item code not found" });
     return;
   }
-  const [created] = await db
+  const [created] = await database
     .insert(pharmacyStockTable)
     .values({
       ...parsed.data,
@@ -197,7 +201,7 @@ router.post("/stock", requireAuth, async (req, res): Promise<void> => {
       invoiceReference: parsed.data.invoiceReference?.trim() || null,
     })
     .returning({ id: pharmacyStockTable.id });
-  const [row] = await db
+  const [row] = await database
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
@@ -206,7 +210,7 @@ router.post("/stock", requireAuth, async (req, res): Promise<void> => {
   res.status(201).json(CreateStockResponse.parse(row));
 });
 
-router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/stock/:id", authMiddleware, async (req, res): Promise<void> => {
   const params = UpdateStockParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -218,7 +222,7 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   if (parsed.data.itemCode) {
-    const [item] = await db
+    const [item] = await database
       .select({ itemCode: pbsItemsTable.itemCode })
       .from(pbsItemsTable)
       .where(eq(pbsItemsTable.itemCode, parsed.data.itemCode));
@@ -240,7 +244,7 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
       ? { invoiceReference: parsed.data.invoiceReference?.trim() || null }
       : {}),
   };
-  const [updated] = await db
+  const [updated] = await database
     .update(pharmacyStockTable)
     .set(updateData)
     .where(and(eq(pharmacyStockTable.id, params.data.id), eq(pharmacyStockTable.userId, req.userId!)))
@@ -249,7 +253,7 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Stock record not found" });
     return;
   }
-  const [row] = await db
+  const [row] = await database
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
@@ -258,13 +262,13 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(UpdateStockResponse.parse(row));
 });
 
-router.delete("/stock/:id", requireAuth, async (req, res): Promise<void> => {
+router.delete("/stock/:id", authMiddleware, async (req, res): Promise<void> => {
   const params = DeleteStockParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [deleted] = await db
+  const [deleted] = await database
     .delete(pharmacyStockTable)
     .where(and(eq(pharmacyStockTable.id, params.data.id), eq(pharmacyStockTable.userId, req.userId!)))
     .returning({ id: pharmacyStockTable.id });
@@ -275,4 +279,7 @@ router.delete("/stock/:id", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-export default router;
+  return router;
+}
+
+export default createStockRouter();
