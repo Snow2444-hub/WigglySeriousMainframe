@@ -1,0 +1,24 @@
+Fixes across several pages:
+
+PBS updates page:
+- Colour logic is inverted and inconsistent. New brand events show green in August but red in June; price reductions show red. A new brand on a previously single-brand drug is the strongest warning we have — it triggers the first-new-brand statutory reduction. Apply colour by significance, not event type, and keep it consistent for the same event type across dates.
+- Grouping stops at brand level. The 1 April 2026 rivaroxaban price update is 13 separate rows for 13 brands taking the same reduction on the same date. Group one level higher: one row per drug per schedule date ("Rivaroxaban — 1 Apr 2026 — price update across 13 brands, -25.7%"), expandable to brands, then listings. Same for the three ferric carboxymaltose new brands on 1 June.
+
+Stock page:
+- Stat card icons use red for $0.00 exposure and amber for 0 at-risk batches. Zero is a good state — use neutral styling when these are zero.
+- Three identical purchase batches (all $11.39, 27 Jan 2026, 200 units) appear under one item. Check whether this is duplicate data from repeated form submissions. If the add form can be submitted twice, disable the button while a save is in flight and warn when an identical batch already exists for the same item, price and date.
+- The "Sold qty" field and "Record sale" button look disabled on some rows and empty on others. Make them consistently styled and clearly interactive.
+- "Predictions by date" takes a full-width panel for one row — make it a compact summary strip.
+- Two Xarelto 20 mg pack 28 items differ only by max quantity. Put the max quantity in the item title rather than a secondary badge.
+
+Data updates page:
+- The header controls (Run mode, Test page cap, Refresh, Start ingestion) sit at four different heights with inconsistent label positions, and the title wraps awkwardly. Align them on a single baseline with consistent heights.
+- The thresholds section has lost its grid — the checkbox sits under "Medium reduction" while "First new-brand reduction" sits under "High reduction", and "Save thresholds" hangs off the bottom left. Lay them out on a consistent grid.
+
+Directory:
+- Item detail page: the chart column is full-height for 3 data points while the right column scrolls cramped. Fix the chart at a reasonable height at the top, then use full page width below for the panels.
+- Collapse the premium panels when both premiums are $0.00 to a single line, expanding to full panels with history only when a premium exists.
+- Move Predicted Reductions above the premium panels.
+- Demote the Listing ID in the item header.
+- Tier 2: 13 of 16 brands show identical values. Show the shared value once in the header and only per-row values where a brand differs, with exceptions visually marked.
+- Tier 3: group by strength, since all listings of a strength share a price and prediction. One row per strength, expandable to individual PBS codes, benefit types and max quantities.

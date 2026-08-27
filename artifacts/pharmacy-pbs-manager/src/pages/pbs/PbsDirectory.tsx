@@ -8,7 +8,7 @@ import {
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionTextClass } from '@/lib/percentage-significance';
-import { Search, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
@@ -289,6 +289,24 @@ export function PbsDirectory() {
                );
                const sharedMinimumPrice = Math.min(...brands.map((brand) => brand.minimumPrice));
                const sharedMaximumPrice = Math.max(...brands.map((brand) => brand.maximumPrice));
+                const predictionKey = (brand: MedicineBrandSummary) => JSON.stringify([
+                  brand.nextPredictedReductionDate,
+                  brand.nextPredictedCurrentPrice,
+                  brand.nextPredictedNewPrice,
+                  brand.nextPredictedReductionPercentage,
+                  brand.nextPredictedReductionSignificance,
+                ]);
+                const predictionBuckets = [...brands.reduce((buckets, brand) => {
+                  if (brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null) {
+                    const key = predictionKey(brand);
+                    const bucket = buckets.get(key) ?? { key, brand, count: 0 };
+                    bucket.count += 1;
+                    buckets.set(key, bucket);
+                  }
+                  return buckets;
+                }, new Map<string, { key: string; brand: MedicineBrandSummary; count: number }>()).values()];
+                const commonPrediction = predictionBuckets.sort((left, right) => right.count - left.count)[0];
+                const hasSharedPrediction = Boolean(commonPrediction && commonPrediction.count > 1);
               const renderBrandSection = (label: string, sectionBrands: MedicineBrandSummary[]) => (
                 sectionBrands.length > 0 && (
                   <section aria-label={label}>
@@ -304,7 +322,7 @@ export function PbsDirectory() {
                         >
                             <span className="flex min-w-0 flex-col gap-1">
                              <span className="truncate text-sm font-bold tracking-tight">{brand.brandName}</span>
-                             {brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null && (
+                              {(!hasSharedPrediction || predictionKey(brand) !== commonPrediction?.key) && brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null && (
                                <span className="md:hidden">
                                  <PriceForecast
                                    currentPrice={brand.nextPredictedCurrentPrice}
@@ -324,15 +342,25 @@ export function PbsDirectory() {
                             {brand.firstListedDate ? `Listed ${date(brand.firstListedDate)}` : 'Listed unknown'}
                           </span>
                            <span className="hidden min-w-[205px] text-right md:inline">
-                             {brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null ? (
-                               <PriceForecast
-                                 currentPrice={brand.nextPredictedCurrentPrice}
-                                 predictedPrice={brand.nextPredictedNewPrice}
-                                 predictedDate={brand.nextPredictedReductionDate}
-                                 confidence={brand.nextPredictedReductionConfidence ?? undefined}
-                                 significance={brand.nextPredictedReductionSignificance}
-                                 predictedPercentage={brand.nextPredictedReductionPercentage}
-                               />
+                              {hasSharedPrediction && predictionKey(brand) === commonPrediction?.key ? (
+                                <span className="text-xs font-medium text-muted-foreground">Shared value above</span>
+                              ) : brand.nextPredictedReductionDate && brand.nextPredictedCurrentPrice !== null && brand.nextPredictedNewPrice !== null ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <PriceForecast
+                                    currentPrice={brand.nextPredictedCurrentPrice}
+                                    predictedPrice={brand.nextPredictedNewPrice}
+                                    predictedDate={brand.nextPredictedReductionDate}
+                                    confidence={brand.nextPredictedReductionConfidence ?? undefined}
+                                    significance={brand.nextPredictedReductionSignificance}
+                                    predictedPercentage={brand.nextPredictedReductionPercentage}
+                                  />
+                                  {hasSharedPrediction && <span className="rounded bg-warning/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-warning">Exception</span>}
+                                </span>
+                              ) : brand.nextPredictedReductionDate ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="text-xs font-medium text-muted-foreground">Forecast differs</span>
+                                  <span className="rounded bg-warning/15 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-warning">Exception</span>
+                                </span>
                              ) : (
                                <span className="text-xs font-medium text-muted-foreground">No forecast</span>
                              )}
@@ -359,6 +387,19 @@ export function PbsDirectory() {
                      <span className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Shared across brands</span>
                      <span>Formulary: <span className="font-mono font-bold text-foreground">{allShareFormulary ? primaryFormulary : 'varies'}</span></span>
                      <span>Ex-manufacturer / wholesale price: <span className="font-mono font-bold text-foreground">{allSharePrice ? priceLabel(brands[0].minimumPrice, brands[0].maximumPrice) : priceLabel(sharedMinimumPrice, sharedMaximumPrice)}</span></span>
+                     {hasSharedPrediction && commonPrediction && (
+                       <span className="flex items-center gap-2">
+                         Shared upcoming change ({commonPrediction.count} brands):
+                         <PriceForecast
+                           currentPrice={commonPrediction.brand.nextPredictedCurrentPrice as number}
+                           predictedPrice={commonPrediction.brand.nextPredictedNewPrice as number}
+                           predictedDate={commonPrediction.brand.nextPredictedReductionDate as string}
+                           confidence={commonPrediction.brand.nextPredictedReductionConfidence ?? undefined}
+                           significance={commonPrediction.brand.nextPredictedReductionSignificance}
+                           predictedPercentage={commonPrediction.brand.nextPredictedReductionPercentage}
+                         />
+                       </span>
+                     )}
                    </div>
                    <div className="hidden grid-cols-[minmax(0,1.25fr)_auto_auto_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-6 py-2 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70 md:grid">
                     <span>Brand</span>
@@ -389,6 +430,14 @@ export function PbsDirectory() {
                 const primaryFormulary = [...formularyCounts.entries()]
                   .sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
                 const allShareFormulary = formularyCounts.size === 1;
+                const strengthGroups = [...items.reduce((groups, item: MedicineBrandItemSummary) => {
+                  const key = item.strength ?? 'Unknown strength';
+                  const group = groups.get(key) ?? { strength: item.strength, items: [] as MedicineBrandItemSummary[] };
+                  group.items.push(item);
+                  groups.set(key, group);
+                  return groups;
+                }, new Map<string, { strength: string | null; items: MedicineBrandItemSummary[] }>()).values()]
+                  .sort((left, right) => (left.strength ?? '').localeCompare(right.strength ?? '', undefined, { numeric: true }));
 
                 return (
                   <>
@@ -401,56 +450,62 @@ export function PbsDirectory() {
                         {primaryFormulary && <> · {allShareFormulary ? 'Formulary' : 'Default'} {primaryFormulary}</>}
                       </span>
                     </div>
-                    <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-muted/20 px-4 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/70 md:grid-cols-[1fr_1fr_1fr_1.2fr_1fr_1fr_auto] md:px-6">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-border bg-muted/20 px-4 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/70 md:grid-cols-[1fr_auto_minmax(240px,1.2fr)_auto] md:px-6">
                       <span>Strength</span>
-                      <span>Pack size</span>
-                      <span>PBS code</span>
-                      <span className="hidden md:block">Benefit</span>
-                      <span className="hidden md:block">Max quantity</span>
+                      <span className="hidden md:block">Listings</span>
                       <span className="text-right">Ex-manufacturer / wholesale price</span>
-                      <span className="hidden w-4 md:block" />
+                      <span className="w-4" />
                     </div>
                     <div className="divide-y divide-border/70">
-                       {items.map((item: MedicineBrandItemSummary) => (
-                        <Link
-                          key={item.itemCode}
-                          href={`/pbs/${item.itemCode}`}
-                          className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_1fr_1fr_1.2fr_1fr_1fr_auto] md:px-6 md:py-1.5"
-                          title={`Open listing details · Internal listing ID: ${item.liItemId ?? item.itemCode}`}
-                        >
-                          <span className="whitespace-nowrap text-sm font-bold tracking-tight text-foreground">
-                            {item.strength || 'Unknown strength'}
-                          </span>
-                          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
-                            {item.packSize ? `Pack of ${item.packSize}` : 'Pack not supplied'}
-                          </span>
-                          <span className="min-w-0 truncate font-mono text-xs font-medium text-muted-foreground">
-                            PBS {item.pbsCode || 'not supplied'}
-                          </span>
-                          <span className="hidden text-xs font-medium text-muted-foreground md:block">
-                            {benefitTypeLabel(item.benefitTypeCode)}
-                          </span>
-                          <span className="hidden text-xs font-medium text-muted-foreground md:block">
-                            {item.maximumQuantityUnits ?? 'Not supplied'}
-                          </span>
-                           <span className="flex items-center justify-end gap-2 whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
-                             {item.upcomingPrediction ? (
-                               <PriceForecast
-                                 currentPrice={item.currentAemp}
-                                 predictedPrice={item.upcomingPrediction.predictedNewPrice}
-                                 predictedDate={item.upcomingPrediction.predictedDate}
-                                 confidence={item.upcomingPrediction.confidence}
-                                 significance={item.upcomingPrediction.significance}
-                                 predictedPercentage={item.upcomingPrediction.predictedPercentage}
-                               />
-                             ) : money(item.currentAemp)}
-                            {item.formulary !== primaryFormulary && (
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{item.formulary}</span>
-                            )}
-                          </span>
-                          <ChevronRight className="hidden h-4 w-4 text-muted-foreground/40 md:block" />
-                        </Link>
-                      ))}
+                       {strengthGroups.map((group) => {
+                         const representative = group.items[0];
+                         const groupKey = `${tier.drugId}:${tier.brand.brandName}:${group.strength ?? 'unknown'}`;
+                         const expanded = expandedStrengths.includes(groupKey);
+                         return (
+                           <div key={groupKey}>
+                             <button
+                               type="button"
+                               onClick={() => setExpandedStrengths((current) => current.includes(groupKey) ? current.filter((key) => key !== groupKey) : [...current, groupKey])}
+                               aria-expanded={expanded}
+                               className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_auto_minmax(240px,1.2fr)_auto] md:px-6"
+                             >
+                               <span className="whitespace-nowrap text-sm font-bold tracking-tight text-foreground">{group.strength || 'Unknown strength'}</span>
+                               <span className="hidden whitespace-nowrap text-xs font-medium text-muted-foreground md:inline">{group.items.length} listing{group.items.length === 1 ? '' : 's'}</span>
+                               <span className="flex justify-end text-right">
+                                 {representative.upcomingPrediction ? (
+                                   <PriceForecast
+                                     currentPrice={representative.currentAemp}
+                                     predictedPrice={representative.upcomingPrediction.predictedNewPrice}
+                                     predictedDate={representative.upcomingPrediction.predictedDate}
+                                     confidence={representative.upcomingPrediction.confidence}
+                                     significance={representative.upcomingPrediction.significance}
+                                     predictedPercentage={representative.upcomingPrediction.predictedPercentage}
+                                   />
+                                 ) : money(representative.currentAemp)}
+                               </span>
+                               <ChevronDown className={`h-4 w-4 text-muted-foreground/50 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                             </button>
+                             {expanded && (
+                               <div className="border-t border-border/70 bg-muted/20 px-4 py-2 md:px-6">
+                                 <div className="hidden grid-cols-[1fr_1fr_1.2fr_1fr_auto] gap-3 px-2 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70 md:grid">
+                                   <span>PBS code</span><span>Pack size</span><span>Benefit</span><span>Max quantity</span><span />
+                                 </div>
+                                 <div className="divide-y divide-border/70">
+                                   {group.items.map((item) => (
+                                     <Link key={item.itemCode} href={`/pbs/${item.itemCode}`} className="grid gap-1.5 px-2 py-2.5 text-xs transition-colors hover:bg-secondary/30 md:grid-cols-[1fr_1fr_1.2fr_1fr_auto] md:items-center md:gap-3" title={`Open listing details · Internal listing ID: ${item.liItemId ?? item.itemCode}`}>
+                                       <span className="font-mono font-bold text-foreground">PBS {item.pbsCode || 'not supplied'}</span>
+                                       <span className="font-medium text-muted-foreground">{item.packSize ? `Pack of ${item.packSize}` : 'Pack not supplied'}</span>
+                                       <span className="font-medium text-muted-foreground">{benefitTypeLabel(item.benefitTypeCode)}</span>
+                                       <span className="font-medium text-muted-foreground">Maximum {item.maximumQuantityUnits ?? 'not supplied'}</span>
+                                       <ChevronRight className="hidden h-4 w-4 text-muted-foreground/40 md:block" />
+                                     </Link>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
+                           </div>
+                         );
+                       })}
                     </div>
                   </>
                 );
