@@ -103,6 +103,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /pharmacy-brand-preferences/bulk:
+    put:
+      operationId: setPharmacyBrandPreferences
+      tags: [preferences]
+      summary: Apply multiple brand display preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PharmacyBrandPreferencesInput"
+      responses:
+        "200":
+          description: Updated brand preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PharmacyBrandPreferences"
+        "400":
+          description: Invalid preference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       operationId: clearPharmacyBrandPreferences
       tags: [preferences]
@@ -220,7 +250,7 @@ paths:
     get:
       operationId: listUpcomingPredictedReductions
       tags: [pbs]
-      summary: List upcoming predicted PBS price reductions
+      summary: List upcoming predicted PBS price reductions grouped by exact price change
       parameters:
         - name: from
           in: query
@@ -1080,7 +1110,9 @@ components:
           type: integer
         hidden:
           type: boolean
-      required: [drugId, drugName, brandName, itemCount, hidden]
+        isInnovator:
+          type: boolean
+      required: [drugId, drugName, brandName, itemCount, hidden, isInnovator]
     PharmacyBrandPreferences:
       type: object
       properties:
@@ -1106,6 +1138,15 @@ components:
         hidden:
           type: boolean
       required: [drugId, brandName, hidden]
+    PharmacyBrandPreferencesInput:
+      type: object
+      properties:
+        preferences:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PharmacyBrandPreferenceInput"
+      required: [preferences]
     MedicineBrandSummary:
       type: object
       properties:
@@ -1259,6 +1300,8 @@ components:
           type: ["string", "null"]
         currentPrice:
           type: number
+        strength:
+          type: ["string", "null"]
         predictedNewPrice:
           type: number
         predictedPercentage:
@@ -1277,7 +1320,7 @@ components:
         significance:
           type: string
           enum: [normal, medium, high]
-      required: [itemCode, pbsCode, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, subjectToMinisterialDiscretion, sourceNote, significance]
+      required: [itemCode, pbsCode, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, subjectToMinisterialDiscretion, sourceNote, significance, strength]
     UpcomingPredictedBrandReductionGroup:
       type: object
       properties:
@@ -1318,14 +1361,16 @@ components:
         predictedDate:
           type: string
           format: date
+        currentPrice:
+          type: number
+        predictedNewPrice:
+          type: number
+        predictedPercentage:
+          type: number
         brandCount:
           type: integer
         listingCount:
           type: integer
-        smallestReductionPercentage:
-          type: number
-        largestReductionPercentage:
-          type: number
         significance:
           type: string
           enum: [normal, medium, high]
@@ -1333,7 +1378,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UpcomingPredictedBrandReductionGroup"
-      required: [drugId, drugName, predictedDate, brandCount, listingCount, smallestReductionPercentage, largestReductionPercentage, significance, brands]
+      required: [drugId, drugName, predictedDate, currentPrice, predictedNewPrice, predictedPercentage, brandCount, listingCount, significance, brands]
     PriceHistory:
       type: object
       properties:

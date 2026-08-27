@@ -12,6 +12,8 @@ import {
   GetPharmacyBrandPreferencesResponse,
   SetPharmacyBrandPreferenceBody,
   SetPharmacyBrandPreferenceResponse,
+  SetPharmacyBrandPreferencesBody,
+  SetPharmacyBrandPreferencesResponse,
 } from "@workspace/api-zod";
 import {
   brandPreferenceKey,
@@ -27,6 +29,7 @@ type PreferenceCatalogueBrand = {
   brandName: string;
   brandKey: string;
   itemCount: number;
+  isInnovator: boolean;
 };
 
 function watchlistMatches(
@@ -66,6 +69,7 @@ async function getPreferenceCatalogue(): Promise<PreferenceCatalogueBrand[]> {
         pbsCode: pbsItemsTable.pbsCode,
         formulary: pbsItemsTable.formulary,
         programCode: pbsItemsTable.programCode,
+        innovatorIndicator: pbsItemsTable.innovatorIndicator,
       })
       .from(pbsItemsTable)
       .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
@@ -81,8 +85,12 @@ async function getPreferenceCatalogue(): Promise<PreferenceCatalogueBrand[]> {
       brandName: displayBrandName(item.brandName),
       brandKey,
       itemCount: 0,
+      isInnovator: false,
     };
     brand.itemCount += 1;
+    if (item.innovatorIndicator && !["n", "no", "false", "0"].includes(item.innovatorIndicator.trim().toLowerCase())) {
+      brand.isInnovator = true;
+    }
     brands.set(key, brand);
   }
   return [...brands.values()].sort(
@@ -101,6 +109,7 @@ async function getPreferenceSummary(userId: string) {
     brandName: brand.brandName,
     itemCount: brand.itemCount,
     hidden: hiddenBrandKeys.has(brandPreferenceKey(brand.drugId, brand.brandName)),
+    isInnovator: brand.isInnovator,
   }));
   const hiddenBrands = brands.filter((brand) => brand.hidden);
   return {
@@ -156,6 +165,50 @@ router.put("/pharmacy-brand-preferences", async (req, res): Promise<void> => {
       },
     });
   res.json(SetPharmacyBrandPreferenceResponse.parse(await getPreferenceSummary(req.userId as string)));
+});
+
+router.put("/pharmacy-brand-preferences/bulk", async (req, res): Promise<void> => {
+  const parsed = SetPharmacyBrandPreferencesBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const catalogue = await getPreferenceCatalogue();
+  const selected = parsed.data.preferences.map((preference) => {
+    const brandKey = normalizeBrandName(preference.brandName);
+    return catalogue.find((brand) => brand.drugId === preference.drugId && brand.brandKey === brandKey);
+  });
+  if (selected.some((brand) => !brand)) {
+    res.status(400).json({ error: "Choose brands from the pharmacy's watchlisted medicines." });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    for (const [index, brand] of selected.entries()) {
+      const preference = parsed.data.preferences[index];
+      if (!brand || !preference) continue;
+      await tx
+        .insert(pharmacyBrandPreferencesTable)
+        .values({
+          userId: req.userId as string,
+          drugId: brand.drugId,
+          brandKey: brand.brandKey,
+          brandName: brand.brandName,
+          hidden: preference.hidden,
+        })
+        .onConflictDoUpdate({
+          target: [
+            pharmacyBrandPreferencesTable.userId,
+            pharmacyBrandPreferencesTable.drugId,
+            pharmacyBrandPreferencesTable.brandKey,
+          ],
+          set: {
+            brandName: brand.brandName,
+            hidden: preference.hidden,
+          },
+        });
+    }
+  });
+  res.json(SetPharmacyBrandPreferencesResponse.parse(await getPreferenceSummary(req.userId as string)));
 });
 
 router.delete("/pharmacy-brand-preferences", async (req, res): Promise<void> => {

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -149,11 +149,16 @@ function indicatorIsTrue(value: string | null): boolean {
 
 function brandGroupKey(brandName: string): string {
   const normalized = brandName.trim().toLocaleLowerCase();
-  return /^crosuva\s+(10|20|40)$/.test(normalized) ? "crosuva" : normalized;
+  if (/^crosuva(?:\s+(5|10|20|40))?$/.test(normalized)) return "crosuva";
+  if (/^pharmacor\s+rosuvastatin\s+(5|10|20|40)$/.test(normalized)) return "pharmacor rosuvastatin";
+  return normalized;
 }
 
 function brandGroupName(brandName: string): string {
-  return brandGroupKey(brandName) === "crosuva" ? "Crosuva" : brandName;
+  const key = brandGroupKey(brandName);
+  if (key === "crosuva") return "Crosuva";
+  if (key === "pharmacor rosuvastatin") return "Pharmacor Rosuvastatin";
+  return brandName;
 }
 
 function dateOnly(value: string): string {
@@ -947,7 +952,7 @@ router.get("/artg-import-status", async (_req, res): Promise<void> => {
   const [successful] = await db
     .select({ finishedAt: artgIngestionRunsTable.finishedAt })
     .from(artgIngestionRunsTable)
-    .where(eq(artgIngestionRunsTable.status, "completed"))
+    .where(and(eq(artgIngestionRunsTable.status, "completed"), gt(artgIngestionRunsTable.recordsAccepted, 0)))
     .orderBy(desc(artgIngestionRunsTable.finishedAt))
     .limit(1);
   const [attempt] = await db

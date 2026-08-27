@@ -7,11 +7,16 @@ export function brandPreferenceKey(drugId: number, brandName: string): string {
 
 export function normalizeBrandName(brandName: string): string {
   const normalized = brandName.trim().toLocaleLowerCase();
-  return /^crosuva\s+(10|20|40)$/.test(normalized) ? "crosuva" : normalized;
+  if (/^crosuva(?:\s+(5|10|20|40))?$/.test(normalized)) return "crosuva";
+  if (/^pharmacor\s+rosuvastatin\s+(5|10|20|40)$/.test(normalized)) return "pharmacor rosuvastatin";
+  return normalized;
 }
 
 export function displayBrandName(brandName: string): string {
-  return normalizeBrandName(brandName) === "crosuva" ? "Crosuva" : brandName;
+  const normalized = normalizeBrandName(brandName);
+  if (normalized === "crosuva") return "Crosuva";
+  if (normalized === "pharmacor rosuvastatin") return "Pharmacor Rosuvastatin";
+  return brandName;
 }
 
 export async function getHiddenBrandKeys(userId: string): Promise<Set<string>> {
