@@ -7,6 +7,7 @@ import {
 } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+import { reductionTextClass } from '@/lib/percentage-significance';
 import { Search, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -30,19 +31,28 @@ function PriceForecast({
   predictedPrice,
   predictedDate,
   confidence,
+  significance,
+  predictedPercentage,
 }: {
   currentPrice: number;
   predictedPrice: number;
   predictedDate: string;
   confidence?: string;
+  significance?: string | null;
+  predictedPercentage?: number | null;
 }) {
   return (
     <span className="inline-flex flex-wrap items-baseline justify-end gap-x-1.5 gap-y-0.5 font-mono text-xs font-bold text-foreground">
       <span>{money(currentPrice)}</span>
-      <span className="text-info">→</span>
-      <span className="text-info">{money(predictedPrice)}</span>
+      <span className={reductionTextClass(significance)}>→</span>
+      <span className={reductionTextClass(significance)}>{money(predictedPrice)}</span>
       <span className="font-sans text-[10px] font-semibold text-muted-foreground">on {shortDate(predictedDate)}</span>
-      {confidence && <span className="font-sans text-[10px] font-semibold capitalize text-info">{confidence}</span>}
+       {predictedPercentage !== null && predictedPercentage !== undefined && (
+         <span className={`font-sans text-[10px] font-bold ${reductionTextClass(significance)}`}>
+           {reductionPercentageLabel(predictedPercentage)}
+         </span>
+       )}
+       {confidence && <span className="font-sans text-[10px] font-semibold capitalize text-info">{confidence}</span>}
     </span>
   );
 }
@@ -56,6 +66,7 @@ export function PbsDirectory() {
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
   const [tier, setTier] = useState<Tier>({ level: 'drugs' });
+  const [expandedStrengths, setExpandedStrengths] = useState<string[]>([]);
 
   const drugParams = useMemo(() => ({ search: search || undefined }), [search]);
   const drugsQuery = useListMedicineDirectory(drugParams, {
@@ -204,8 +215,8 @@ export function PbsDirectory() {
                            {drug.nextPredictedReductionDate && drug.nextPredictedReductionType && drug.nextPredictedReductionPercentage !== null && (
                             <>
                               <span>•</span>
-                                <span className="font-semibold normal-case tracking-normal text-info">
-                                  {drug.nextPredictedReductionConfidence === 'indicative' ? 'Indicative price disclosure' : reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, {reductionPercentageLabel(drug.nextPredictedReductionPercentage)}
+                                <span className="font-semibold normal-case tracking-normal text-muted-foreground">
+                                   {drug.nextPredictedReductionConfidence === 'indicative' ? 'Indicative price disclosure' : reductionTypeLabel(drug.nextPredictedReductionType)} {shortDate(drug.nextPredictedReductionDate)}, <span className={reductionTextClass(drug.nextPredictedReductionSignificance)}>{reductionPercentageLabel(drug.nextPredictedReductionPercentage)}</span>
                                </span>
                             </>
                           )}
@@ -300,6 +311,8 @@ export function PbsDirectory() {
                                    predictedPrice={brand.nextPredictedNewPrice}
                                    predictedDate={brand.nextPredictedReductionDate}
                                    confidence={brand.nextPredictedReductionConfidence ?? undefined}
+                                   significance={brand.nextPredictedReductionSignificance}
+                                   predictedPercentage={brand.nextPredictedReductionPercentage}
                                  />
                                </span>
                              )}
@@ -317,6 +330,8 @@ export function PbsDirectory() {
                                  predictedPrice={brand.nextPredictedNewPrice}
                                  predictedDate={brand.nextPredictedReductionDate}
                                  confidence={brand.nextPredictedReductionConfidence ?? undefined}
+                                 significance={brand.nextPredictedReductionSignificance}
+                                 predictedPercentage={brand.nextPredictedReductionPercentage}
                                />
                              ) : (
                                <span className="text-xs font-medium text-muted-foreground">No forecast</span>
@@ -425,6 +440,8 @@ export function PbsDirectory() {
                                  predictedPrice={item.upcomingPrediction.predictedNewPrice}
                                  predictedDate={item.upcomingPrediction.predictedDate}
                                  confidence={item.upcomingPrediction.confidence}
+                                 significance={item.upcomingPrediction.significance}
+                                 predictedPercentage={item.upcomingPrediction.predictedPercentage}
                                />
                              ) : money(item.currentAemp)}
                             {item.formulary !== primaryFormulary && (

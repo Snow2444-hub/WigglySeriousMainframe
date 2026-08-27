@@ -181,13 +181,13 @@ paths:
             enum: [high, conditional, indicative, confirmed]
       responses:
         "200":
-          description: Upcoming predictions ordered by date then reduction size
+          description: Upcoming prediction events grouped by medicine and effective date, ordered by date then largest reduction size
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/UpcomingPredictedReduction"
+                  $ref: "#/components/schemas/UpcomingPredictedReductionGroup"
   /pbs-items:
     get:
       operationId: listPbsItems
@@ -887,6 +887,9 @@ components:
           type: ["number", "null"]
         nextPredictedReductionConfidence:
           type: ["string", "null"]
+        nextPredictedReductionSignificance:
+          type: ["string", "null"]
+          enum: [normal, medium, high, null]
         recentHighChangeCount:
           type: integer
         searchMatchLevel:
@@ -907,7 +910,7 @@ components:
         firstNewBrandReductionDate:
           type: ["string", "null"]
           pattern: '^\d{4}-\d{2}-\d{2}$'
-      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, nextPredictedReductionConfidence, recentHighChangeCount, subjectToPriceDisclosure, priceDisclosureCycles, hasTakenFirstNewBrandReduction, firstNewBrandReductionDate, searchMatchLevel, matchedBrandName, matchedItemCode]
+      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, nextPredictedReductionConfidence, nextPredictedReductionSignificance, recentHighChangeCount, subjectToPriceDisclosure, priceDisclosureCycles, hasTakenFirstNewBrandReduction, firstNewBrandReductionDate, searchMatchLevel, matchedBrandName, matchedItemCode]
     PriceDisclosureCycleSummary:
       type: object
       properties:
@@ -955,7 +958,10 @@ components:
           type: ["number", "null"]
         nextPredictedReductionConfidence:
           type: ["string", "null"]
-      required: [drugId, brandName, itemCount, formulary, minimumPrice, maximumPrice, isInnovator, firstListedDate, changeCount, highChangeCount, latestChangeDate, nextPredictedReductionDate, nextPredictedReductionPercentage, nextPredictedNewPrice, nextPredictedCurrentPrice, nextPredictedReductionConfidence]
+        nextPredictedReductionSignificance:
+          type: ["string", "null"]
+          enum: [normal, medium, high, null]
+      required: [drugId, brandName, itemCount, formulary, minimumPrice, maximumPrice, isInnovator, firstListedDate, changeCount, highChangeCount, latestChangeDate, nextPredictedReductionDate, nextPredictedReductionPercentage, nextPredictedNewPrice, nextPredictedCurrentPrice, nextPredictedReductionConfidence, nextPredictedReductionSignificance]
     UpcomingPrediction:
       type: object
       properties:
@@ -970,7 +976,10 @@ components:
           type: string
         reductionType:
           type: string
-      required: [predictedDate, predictedPercentage, predictedNewPrice, confidence, reductionType]
+        significance:
+          type: string
+          enum: [normal, medium, high]
+      required: [predictedDate, predictedPercentage, predictedNewPrice, confidence, reductionType, significance]
     PbsItem:
       type: object
       properties:
@@ -1055,18 +1064,12 @@ components:
                 - $ref: "#/components/schemas/UpcomingPrediction"
                 - type: "null"
           required: [upcomingPrediction]
-    UpcomingPredictedReduction:
+    UpcomingPredictedListing:
       type: object
       properties:
         itemCode:
           type: string
-        drugId:
-          type: integer
-        drugName:
-          type: string
-        brandName:
-          type: string
-        strength:
+        pbsCode:
           type: ["string", "null"]
         currentPrice:
           type: number
@@ -1085,7 +1088,66 @@ components:
           type: boolean
         sourceNote:
           type: string
-      required: [itemCode, drugId, drugName, brandName, strength, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, subjectToMinisterialDiscretion, sourceNote]
+        significance:
+          type: string
+          enum: [normal, medium, high]
+      required: [itemCode, pbsCode, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, subjectToMinisterialDiscretion, sourceNote, significance]
+    UpcomingPredictedBrandReductionGroup:
+      type: object
+      properties:
+        brandName:
+          type: string
+        strength:
+          type: ["string", "null"]
+        currentPrice:
+          type: number
+        predictedNewPrice:
+          type: number
+        predictedPercentage:
+          type: number
+        predictedDate:
+          type: string
+          format: date
+        confidence:
+          type: string
+        reductionType:
+          type: string
+        significance:
+          type: string
+          enum: [normal, medium, high]
+        listingCount:
+          type: integer
+        listings:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpcomingPredictedListing"
+      required: [brandName, strength, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, significance, listingCount, listings]
+    UpcomingPredictedReductionGroup:
+      type: object
+      properties:
+        drugId:
+          type: integer
+        drugName:
+          type: string
+        predictedDate:
+          type: string
+          format: date
+        brandCount:
+          type: integer
+        listingCount:
+          type: integer
+        smallestReductionPercentage:
+          type: number
+        largestReductionPercentage:
+          type: number
+        significance:
+          type: string
+          enum: [normal, medium, high]
+        brands:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpcomingPredictedBrandReductionGroup"
+      required: [drugId, drugName, predictedDate, brandCount, listingCount, smallestReductionPercentage, largestReductionPercentage, significance, brands]
     PriceHistory:
       type: object
       properties:
@@ -1160,7 +1222,10 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, itemCode, drugId, predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence, subjectToMinisterialDiscretion, sourceNote, createdAt]
+        significance:
+          type: string
+          enum: [normal, medium, high]
+      required: [id, itemCode, drugId, predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence, subjectToMinisterialDiscretion, sourceNote, createdAt, significance]
     ScheduleChangeAffectedItem:
       type: object
       properties:

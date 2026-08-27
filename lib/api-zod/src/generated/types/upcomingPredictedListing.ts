@@ -5,14 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UpcomingPredictedListingSignificance } from './upcomingPredictedListingSignificance';
 
-export interface UpcomingPredictedReduction {
+export interface UpcomingPredictedListing {
   itemCode: string;
-  drugId: number;
-  drugName: string;
-  brandName: string;
   /** @nullable */
-  strength: string | null;
+  pbsCode: string | null;
   currentPrice: number;
   predictedNewPrice: number;
   predictedPercentage: number;
@@ -21,4 +19,5 @@ export interface UpcomingPredictedReduction {
   reductionType: string;
   subjectToMinisterialDiscretion: boolean;
   sourceNote: string;
+  significance: UpcomingPredictedListingSignificance;
 }

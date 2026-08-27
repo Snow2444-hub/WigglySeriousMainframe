@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { MedicineDrugSummaryNextPredictedReductionSignificance } from './medicineDrugSummaryNextPredictedReductionSignificance';
 import type { MedicineDrugSummarySearchMatchLevel } from './medicineDrugSummarySearchMatchLevel';
 import type { PriceDisclosureCycleSummary } from './priceDisclosureCycleSummary';
 
@@ -29,6 +30,8 @@ export interface MedicineDrugSummary {
   nextPredictedReductionPercentage: number | null;
   /** @nullable */
   nextPredictedReductionConfidence: string | null;
+  /** @nullable */
+  nextPredictedReductionSignificance: MedicineDrugSummaryNextPredictedReductionSignificance;
   recentHighChangeCount: number;
   /** @nullable */
   searchMatchLevel: MedicineDrugSummarySearchMatchLevel;

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { MedicineBrandSummaryNextPredictedReductionSignificance } from './medicineBrandSummaryNextPredictedReductionSignificance';
 
 export interface MedicineBrandSummary {
   drugId: number;
@@ -36,4 +37,6 @@ export interface MedicineBrandSummary {
   nextPredictedCurrentPrice: number | null;
   /** @nullable */
   nextPredictedReductionConfidence: string | null;
+  /** @nullable */
+  nextPredictedReductionSignificance: MedicineBrandSummaryNextPredictedReductionSignificance;
 }

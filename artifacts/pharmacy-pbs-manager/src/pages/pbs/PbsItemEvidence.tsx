@@ -7,6 +7,7 @@ import {
   useListItemPremiumHistory, getListItemPremiumHistoryQueryKey,
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+import { reductionTextClass } from '@/lib/percentage-significance';
 import { Link } from 'wouter';
 import { ArrowLeft, TrendingDown, History, AlertTriangle, Info, CalendarDays, Activity, Building2, ArrowRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -36,18 +37,20 @@ function PremiumHistoryPanel({
   snapshots,
   loading,
   error,
+  className,
 }: {
   title: string;
   valueKey: 'brandPremium' | 'therapeuticGroupPremium';
   snapshots: PremiumSnapshot[];
   loading: boolean;
   error: boolean;
+  className?: string;
 }) {
   const latest = snapshots[0];
   const latestValue = latest?.[valueKey] ?? null;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+    <section className={`overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${className ?? ''}`}>
       <div className="border-b border-border bg-muted/20 px-6 py-5">
         <p className="font-bold text-foreground">{title}</p>
         <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -84,6 +87,14 @@ function PremiumHistoryPanel({
         )}
       </div>
     </section>
+  );
+}
+
+function PremiumSummary({ className }: { className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-border bg-card px-6 py-4 text-sm font-semibold text-muted-foreground shadow-sm ${className ?? ''}`}>
+      Brand premium: none <span className="mx-2 text-border">·</span> Therapeutic group premium: none
+    </div>
   );
 }
 
@@ -133,6 +144,9 @@ export function PbsItemEvidence() {
       return bySchedule;
     }, {}),
   ).sort((left, right) => right.scheduleEffectiveDate.localeCompare(left.scheduleEffectiveDate));
+  const hasPublishedPremium = premiumSnapshots.some(
+    (snapshot) => (snapshot.brandPremium ?? 0) > 0 || (snapshot.therapeuticGroupPremium ?? 0) > 0,
+  );
 
   return (
     <AppShell>
@@ -162,7 +176,7 @@ export function PbsItemEvidence() {
                 <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1.5"><Building2 className="h-4 w-4" /> {item.sponsor}</span>
                   <span className="flex items-center gap-1.5"><Info className="h-4 w-4" /> {item.form || 'Unknown form'} <span className="opacity-40 mx-1">•</span> {item.packSize || 'Unknown size'}</span>
-                   <span className="font-mono text-[10px] font-semibold text-muted-foreground/70" title="Internal PBS listing identifier">Listing ID {item.liItemId || item.itemCode}</span>
+                    <span className="font-mono text-[9px] font-medium text-muted-foreground/50" title="Internal PBS listing identifier">Listing ID {item.liItemId || item.itemCode}</span>
                 </div>
               </div>
               <div className="text-left md:text-right rounded-xl bg-muted/40 p-5 min-w-[200px] border border-border/50">
@@ -177,14 +191,14 @@ export function PbsItemEvidence() {
             </div>
           </div>
 
-           <div className="grid gap-6 animate-rise-in delay-2 lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-              <div className="flex min-h-[460px] min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="space-y-6 animate-rise-in delay-2">
+               <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="border-b border-border px-6 py-5 flex items-center justify-between">
                 <div className="flex items-center gap-2 font-bold text-foreground">
                   <Activity className="h-5 w-5 text-info" /> Ex-manufacturer / wholesale price history
                 </div>
               </div>
-               <div className="h-full min-w-0 max-w-full flex-1 overflow-hidden p-4 sm:p-6">
+                <div className="h-[360px] min-w-0 max-w-full overflow-hidden p-4 sm:p-6">
                 {priceHistory.isLoading ? <QueryState kind="loading" /> :
                  !chartData.length ? <div className="h-full flex items-center justify-center text-muted-foreground text-sm font-medium">No price history available.</div> : (
                    <ResponsiveContainer width="100%" height={380}>
@@ -240,13 +254,18 @@ export function PbsItemEvidence() {
               </div>
             </div>
 
-            <div className="flex flex-col gap-6">
+             <div className="grid gap-6 lg:grid-cols-2">
+              {!premiumHistory.isLoading && !premiumHistory.isError && !hasPublishedPremium ? (
+                <PremiumSummary className="order-2 lg:col-span-2" />
+              ) : (
+                <>
               <PremiumHistoryPanel
                 title="Brand premium"
                 valueKey="brandPremium"
                 snapshots={premiumSnapshots}
                 loading={premiumHistory.isLoading}
                 error={premiumHistory.isError}
+                 className="order-2"
               />
               <PremiumHistoryPanel
                 title="Therapeutic group premium"
@@ -254,8 +273,11 @@ export function PbsItemEvidence() {
                 snapshots={premiumSnapshots}
                 loading={premiumHistory.isLoading}
                 error={premiumHistory.isError}
+                 className="order-3"
               />
-               <div className={`order-2 rounded-2xl border border-border bg-card shadow-sm flex flex-col ${!hasPredictions ? 'lg:order-2' : 'lg:order-1'}`}>
+                </>
+              )}
+                <div className="order-1 rounded-2xl border border-border bg-card shadow-sm flex flex-col lg:col-span-2">
                 <div className="border-b border-border px-6 py-5 flex items-center justify-between bg-muted/20">
                   <div className="flex items-center gap-2 font-bold text-foreground">
                     <TrendingDown className="h-5 w-5 text-warning" /> Predicted Reductions
@@ -274,7 +296,7 @@ export function PbsItemEvidence() {
                                <span className="rounded bg-info/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-info">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
                            </div>
                            <div className="flex items-baseline gap-2 mb-2">
-                             <span className="text-2xl font-bold tracking-tight text-foreground">-{pred.predictedPercentage}%</span>
+                              <span className={`text-2xl font-bold tracking-tight ${reductionTextClass(pred.significance)}`}>-{pred.predictedPercentage}%</span>
                              <span className="text-sm font-medium text-muted-foreground line-through">{money(item.currentAemp)}</span>
                              <ArrowRight className="h-3 w-3 text-muted-foreground mx-1" />
                              <span className="text-lg font-mono font-bold text-warning">{money(pred.predictedNewPrice)}</span>
@@ -287,7 +309,7 @@ export function PbsItemEvidence() {
                 </div>
               </div>
 
-               <div className={`order-1 rounded-2xl border border-border bg-card shadow-sm flex flex-col ${!hasPredictions ? 'lg:order-1' : 'lg:order-2'}`}>
+                <div className="order-4 rounded-2xl border border-border bg-card shadow-sm flex flex-col lg:col-span-2">
                 <div className="border-b border-border px-6 py-5 flex items-center justify-between bg-muted/20">
                   <div className="flex items-center gap-2 font-bold text-foreground">
                     <History className="h-5 w-5 text-info" /> Schedule Changes

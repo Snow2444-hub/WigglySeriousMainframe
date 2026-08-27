@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UpcomingPredictionSignificance } from './upcomingPredictionSignificance';
 
 export interface UpcomingPrediction {
   predictedDate: Date;
@@ -12,4 +13,5 @@ export interface UpcomingPrediction {
   predictedNewPrice: number;
   confidence: string;
   reductionType: string;
+  significance: UpcomingPredictionSignificance;
 }

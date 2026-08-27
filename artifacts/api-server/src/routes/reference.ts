@@ -44,6 +44,7 @@ import {
   ListScheduleChangesQueryParams,
   ListScheduleChangesResponse,
 } from "@workspace/api-zod";
+import { getPriceChangeThresholds, priceChangeSignificance } from "../lib/schedule-changes";
 
 const router: IRouter = Router();
 
@@ -171,6 +172,13 @@ function nextPrediction<T extends { predictedDate: string; predictedPercentage: 
   );
 }
 
+function predictedReductionSignificance(
+  predictedPercentage: number,
+  thresholds: Awaited<ReturnType<typeof getPriceChangeThresholds>>,
+): "normal" | "medium" | "high" {
+  return priceChangeSignificance(-Math.abs(predictedPercentage), thresholds);
+}
+
 router.get("/medicine-directory", async (req, res): Promise<void> => {
   const parsed = ListMedicineDirectoryQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -181,7 +189,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
   const recentDate = new Date();
   recentDate.setUTCDate(recentDate.getUTCDate() - 90);
   const recentDateString = recentDate.toISOString().slice(0, 10);
-  const [items, predictions, highChanges, disclosureCycles, fnbReductions] = await Promise.all([
+  const [items, predictions, highChanges, disclosureCycles, fnbReductions, thresholds] = await Promise.all([
     db.select(pbsSelect).from(pbsItemsTable).innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
     db
       .select({
@@ -216,6 +224,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         effectDate: pbsFnbReductionsTable.effectDate,
       })
       .from(pbsFnbReductionsTable),
+    getPriceChangeThresholds(),
   ]);
   const cyclesByDrug = new Map<number, Array<{ cycleLabel: string; submissionDeadline: string }>>();
   for (const cycle of disclosureCycles) {
@@ -272,6 +281,9 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
          nextPredictedReductionType: upcoming[0]?.reductionType ?? null,
          nextPredictedReductionPercentage: upcoming[0]?.predictedPercentage ?? null,
          nextPredictedReductionConfidence: upcoming[0]?.confidence ?? null,
+         nextPredictedReductionSignificance: upcoming[0]
+           ? predictedReductionSignificance(upcoming[0].predictedPercentage, thresholds)
+           : null,
         recentHighChangeCount: highChanges.filter((change) => change.drugId === drugId).length,
          subjectToPriceDisclosure: (cyclesByDrug.get(drugId) ?? []).length > 0,
          priceDisclosureCycles: cyclesByDrug.get(drugId) ?? [],
@@ -294,7 +306,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
-  const [items, changes, predictions] = await Promise.all([
+  const [items, changes, predictions, thresholds] = await Promise.all([
     db
       .select(pbsSelect)
       .from(pbsItemsTable)
@@ -323,6 +335,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
           gte(predictedReductionsTable.predictedDate, today),
         ),
       ),
+    getPriceChangeThresholds(),
   ]);
   const grouped = new Map<string, typeof items>();
   for (const item of items) {
@@ -369,6 +382,9 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       nextPredictedNewPrice: prediction?.predictedNewPrice ?? null,
       nextPredictedCurrentPrice: predictedItem?.currentAemp ?? null,
       nextPredictedReductionConfidence: prediction?.confidence ?? null,
+      nextPredictedReductionSignificance: prediction
+        ? predictedReductionSignificance(prediction.predictedPercentage, thresholds)
+        : null,
     };
   });
   summaries.sort((a, b) => {
@@ -389,7 +405,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
     return;
   }
   const today = new Date().toISOString().slice(0, 10);
-  const [rows, predictions] = await Promise.all([
+  const [rows, predictions, thresholds] = await Promise.all([
     db
       .select(pbsSelect)
       .from(pbsItemsTable)
@@ -423,6 +439,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
           gte(predictedReductionsTable.predictedDate, today),
         ),
       ),
+    getPriceChangeThresholds(),
   ]);
   rows.sort((left, right) => {
     const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
@@ -449,6 +466,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
                 predictedNewPrice: prediction.predictedNewPrice,
                 confidence: prediction.confidence,
                 reductionType: prediction.reductionType,
+                significance: predictedReductionSignificance(prediction.predictedPercentage, thresholds),
               }
             : null,
         };
@@ -465,9 +483,11 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
   }
   const from = queryDateOnly(parsed.data.from) ?? new Date().toISOString().slice(0, 10);
   const to = queryDateOnly(parsed.data.to);
-  const rows = await db
+  const [rows, thresholds] = await Promise.all([
+    db
     .select({
       itemCode: predictedReductionsTable.itemCode,
+      pbsCode: pbsItemsTable.pbsCode,
       drugId: predictedReductionsTable.drugId,
       drugName: drugsTable.name,
       brandName: pbsItemsTable.brandName,
@@ -490,14 +510,111 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
         to ? lte(predictedReductionsTable.predictedDate, to) : undefined,
         parsed.data.confidence ? eq(predictedReductionsTable.confidence, parsed.data.confidence) : undefined,
       ),
-    );
-  rows.sort(
+    ),
+    getPriceChangeThresholds(),
+  ]);
+  type BrandGroup = {
+    brandName: string;
+    strength: string | null;
+    currentPrice: number;
+    predictedNewPrice: number;
+    predictedPercentage: number;
+    predictedDate: string;
+    confidence: string;
+    reductionType: string;
+    significance: "normal" | "medium" | "high";
+    listings: Array<{
+      itemCode: string;
+      pbsCode: string | null;
+      currentPrice: number;
+      predictedNewPrice: number;
+      predictedPercentage: number;
+      predictedDate: string;
+      confidence: string;
+      reductionType: string;
+      subjectToMinisterialDiscretion: boolean;
+      sourceNote: string;
+      significance: "normal" | "medium" | "high";
+    }>;
+  };
+  const groups = new Map<string, {
+    drugId: number;
+    drugName: string;
+    predictedDate: string;
+    brands: Map<string, BrandGroup>;
+  }>();
+  for (const row of rows) {
+    const predictedDate = dateOnly(row.predictedDate);
+    const groupKey = `${row.drugId}:${predictedDate}`;
+    const group = groups.get(groupKey) ?? {
+      drugId: row.drugId,
+      drugName: row.drugName,
+      predictedDate,
+      brands: new Map<string, BrandGroup>(),
+    };
+    const brandKey = [
+      row.brandName.trim().toLocaleLowerCase(),
+      row.strength ?? "",
+      predictedDate,
+      row.currentPrice,
+      row.predictedNewPrice,
+    ].join(":");
+    const significance = predictedReductionSignificance(row.predictedPercentage, thresholds);
+    const brand = group.brands.get(brandKey) ?? {
+      brandName: row.brandName,
+      strength: row.strength,
+      currentPrice: row.currentPrice,
+      predictedNewPrice: row.predictedNewPrice,
+      predictedPercentage: row.predictedPercentage,
+      predictedDate,
+      confidence: row.confidence,
+      reductionType: row.reductionType,
+      significance,
+      listings: [],
+    };
+    brand.listings.push({
+      itemCode: row.itemCode,
+      pbsCode: row.pbsCode,
+      currentPrice: row.currentPrice,
+      predictedNewPrice: row.predictedNewPrice,
+      predictedPercentage: row.predictedPercentage,
+      predictedDate,
+      confidence: row.confidence,
+      reductionType: row.reductionType,
+      subjectToMinisterialDiscretion: row.subjectToMinisterialDiscretion,
+      sourceNote: row.sourceNote,
+      significance,
+    });
+    group.brands.set(brandKey, brand);
+    groups.set(groupKey, group);
+  }
+  const response = [...groups.values()].map((group) => {
+    const brands = [...group.brands.values()]
+      .map((brand) => ({ ...brand, listingCount: brand.listings.length, listings: brand.listings.sort((left, right) => (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode)) }))
+      .sort((left, right) =>
+        Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage) ||
+        left.brandName.localeCompare(right.brandName),
+      );
+    const percentages = brands.map((brand) => Math.abs(brand.predictedPercentage));
+    const largestReductionPercentage = Math.max(...percentages);
+    return {
+      drugId: group.drugId,
+      drugName: group.drugName,
+      predictedDate: group.predictedDate,
+      brandCount: new Set(brands.map((brand) => brand.brandName.trim().toLocaleLowerCase())).size,
+      listingCount: brands.reduce((total, brand) => total + brand.listingCount, 0),
+      smallestReductionPercentage: Math.min(...percentages),
+      largestReductionPercentage,
+      significance: predictedReductionSignificance(largestReductionPercentage, thresholds),
+      brands,
+    };
+  }).sort(
     (left, right) =>
       left.predictedDate.localeCompare(right.predictedDate) ||
-      Math.abs(right.predictedPercentage) - Math.abs(left.predictedPercentage) ||
-      left.brandName.localeCompare(right.brandName),
+      right.largestReductionPercentage - left.largestReductionPercentage ||
+      left.drugName.localeCompare(right.drugName),
   );
-  res.json(ListUpcomingPredictedReductionsResponse.parse(rows));
+  res.json(ListUpcomingPredictedReductionsResponse.parse(response));
 });
 
 router.get("/pbs-items", async (req, res): Promise<void> => {
@@ -590,12 +707,22 @@ router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promis
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const rows = await db
+  const [rows, thresholds] = await Promise.all([
+    db
     .select()
     .from(predictedReductionsTable)
     .where(eq(predictedReductionsTable.itemCode, parsed.data.itemCode))
-    .orderBy(asc(predictedReductionsTable.predictedDate));
-  res.json(ListItemPredictedReductionsResponse.parse(rows));
+    .orderBy(asc(predictedReductionsTable.predictedDate)),
+    getPriceChangeThresholds(),
+  ]);
+  res.json(
+    ListItemPredictedReductionsResponse.parse(
+      rows.map((row) => ({
+        ...row,
+        significance: predictedReductionSignificance(row.predictedPercentage, thresholds),
+      })),
+    ),
+  );
 });
 
 const scheduleChangeSelect = {

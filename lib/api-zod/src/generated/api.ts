@@ -112,6 +112,7 @@ export const ListMedicineDirectoryResponseItem = zod.object({
   "nextPredictedReductionType": zod.string().nullable(),
   "nextPredictedReductionPercentage": zod.number().nullable(),
   "nextPredictedReductionConfidence": zod.string().nullable(),
+  "nextPredictedReductionSignificance": zod.union([zod.literal('normal'),zod.literal('medium'),zod.literal('high'),zod.literal(null)]).nullable(),
   "recentHighChangeCount": zod.int(),
   "searchMatchLevel": zod.union([zod.literal('drug'),zod.literal('brand'),zod.literal('item'),zod.literal(null)]).nullable(),
   "matchedBrandName": zod.string().nullable(),
@@ -154,7 +155,8 @@ export const ListMedicineBrandsResponseItem = zod.object({
   "nextPredictedReductionPercentage": zod.number().nullable(),
   "nextPredictedNewPrice": zod.number().nullable(),
   "nextPredictedCurrentPrice": zod.number().nullable(),
-  "nextPredictedReductionConfidence": zod.string().nullable()
+  "nextPredictedReductionConfidence": zod.string().nullable(),
+  "nextPredictedReductionSignificance": zod.union([zod.literal('normal'),zod.literal('medium'),zod.literal('high'),zod.literal(null)]).nullable()
 })
 export const ListMedicineBrandsResponse = zod.array(ListMedicineBrandsResponseItem)
 
@@ -209,7 +211,8 @@ export const ListMedicineBrandItemsResponseItem = zod.object({
   "predictedPercentage": zod.number(),
   "predictedNewPrice": zod.number(),
   "confidence": zod.string(),
-  "reductionType": zod.string()
+  "reductionType": zod.string(),
+  "significance": zod.enum(['normal', 'medium', 'high'])
 }),zod.null()])
 }))
 export const ListMedicineBrandItemsResponse = zod.array(ListMedicineBrandItemsResponseItem)
@@ -225,9 +228,15 @@ export const ListUpcomingPredictedReductionsQueryParams = zod.object({
 })
 
 export const ListUpcomingPredictedReductionsResponseItem = zod.object({
-  "itemCode": zod.string(),
   "drugId": zod.int(),
   "drugName": zod.string(),
+  "predictedDate": zod.coerce.date(),
+  "brandCount": zod.int(),
+  "listingCount": zod.int(),
+  "smallestReductionPercentage": zod.number(),
+  "largestReductionPercentage": zod.number(),
+  "significance": zod.enum(['normal', 'medium', 'high']),
+  "brands": zod.array(zod.object({
   "brandName": zod.string(),
   "strength": zod.string().nullable(),
   "currentPrice": zod.number(),
@@ -236,8 +245,22 @@ export const ListUpcomingPredictedReductionsResponseItem = zod.object({
   "predictedDate": zod.coerce.date(),
   "confidence": zod.string(),
   "reductionType": zod.string(),
+  "significance": zod.enum(['normal', 'medium', 'high']),
+  "listingCount": zod.int(),
+  "listings": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "pbsCode": zod.string().nullable(),
+  "currentPrice": zod.number(),
+  "predictedNewPrice": zod.number(),
+  "predictedPercentage": zod.number(),
+  "predictedDate": zod.coerce.date(),
+  "confidence": zod.string(),
+  "reductionType": zod.string(),
   "subjectToMinisterialDiscretion": zod.boolean(),
-  "sourceNote": zod.string()
+  "sourceNote": zod.string(),
+  "significance": zod.enum(['normal', 'medium', 'high'])
+}))
+}))
 })
 export const ListUpcomingPredictedReductionsResponse = zod.array(ListUpcomingPredictedReductionsResponseItem)
 
@@ -399,7 +422,8 @@ export const ListItemPredictedReductionsResponseItem = zod.object({
   "confidence": zod.string(),
   "subjectToMinisterialDiscretion": zod.boolean(),
   "sourceNote": zod.string(),
-  "createdAt": zod.coerce.date()
+  "createdAt": zod.coerce.date(),
+  "significance": zod.enum(['normal', 'medium', 'high'])
 })
 export const ListItemPredictedReductionsResponse = zod.array(ListItemPredictedReductionsResponseItem)
 

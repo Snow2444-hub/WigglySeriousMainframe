@@ -24,6 +24,18 @@ export interface Drug {
 /**
  * @nullable
  */
+export type MedicineDrugSummaryNextPredictedReductionSignificance = typeof MedicineDrugSummaryNextPredictedReductionSignificance[keyof typeof MedicineDrugSummaryNextPredictedReductionSignificance] | null;
+
+
+export const MedicineDrugSummaryNextPredictedReductionSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+/**
+ * @nullable
+ */
 export type MedicineDrugSummarySearchMatchLevel = typeof MedicineDrugSummarySearchMatchLevel[keyof typeof MedicineDrugSummarySearchMatchLevel] | null;
 
 
@@ -60,6 +72,8 @@ export interface MedicineDrugSummary {
   nextPredictedReductionPercentage: number | null;
   /** @nullable */
   nextPredictedReductionConfidence: string | null;
+  /** @nullable */
+  nextPredictedReductionSignificance: MedicineDrugSummaryNextPredictedReductionSignificance;
   recentHighChangeCount: number;
   /** @nullable */
   searchMatchLevel: MedicineDrugSummarySearchMatchLevel;
@@ -76,6 +90,18 @@ export interface MedicineDrugSummary {
      */
   firstNewBrandReductionDate: string | null;
 }
+
+/**
+ * @nullable
+ */
+export type MedicineBrandSummaryNextPredictedReductionSignificance = typeof MedicineBrandSummaryNextPredictedReductionSignificance[keyof typeof MedicineBrandSummaryNextPredictedReductionSignificance] | null;
+
+
+export const MedicineBrandSummaryNextPredictedReductionSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
 
 export interface MedicineBrandSummary {
   drugId: number;
@@ -107,7 +133,18 @@ export interface MedicineBrandSummary {
   nextPredictedCurrentPrice: number | null;
   /** @nullable */
   nextPredictedReductionConfidence: string | null;
+  /** @nullable */
+  nextPredictedReductionSignificance: MedicineBrandSummaryNextPredictedReductionSignificance;
 }
+
+export type UpcomingPredictionSignificance = typeof UpcomingPredictionSignificance[keyof typeof UpcomingPredictionSignificance];
+
+
+export const UpcomingPredictionSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
 
 export interface UpcomingPrediction {
   predictedDate: string;
@@ -115,6 +152,7 @@ export interface UpcomingPrediction {
   predictedNewPrice: number;
   confidence: string;
   reductionType: string;
+  significance: UpcomingPredictionSignificance;
 }
 
 export type PbsItemFormulary = typeof PbsItemFormulary[keyof typeof PbsItemFormulary];
@@ -190,10 +228,40 @@ export type MedicineBrandItemSummary = PbsItem & ({
   upcomingPrediction: UpcomingPrediction | null;
 });
 
-export interface UpcomingPredictedReduction {
+export type UpcomingPredictedListingSignificance = typeof UpcomingPredictedListingSignificance[keyof typeof UpcomingPredictedListingSignificance];
+
+
+export const UpcomingPredictedListingSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface UpcomingPredictedListing {
   itemCode: string;
-  drugId: number;
-  drugName: string;
+  /** @nullable */
+  pbsCode: string | null;
+  currentPrice: number;
+  predictedNewPrice: number;
+  predictedPercentage: number;
+  predictedDate: string;
+  confidence: string;
+  reductionType: string;
+  subjectToMinisterialDiscretion: boolean;
+  sourceNote: string;
+  significance: UpcomingPredictedListingSignificance;
+}
+
+export type UpcomingPredictedBrandReductionGroupSignificance = typeof UpcomingPredictedBrandReductionGroupSignificance[keyof typeof UpcomingPredictedBrandReductionGroupSignificance];
+
+
+export const UpcomingPredictedBrandReductionGroupSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface UpcomingPredictedBrandReductionGroup {
   brandName: string;
   /** @nullable */
   strength: string | null;
@@ -203,8 +271,30 @@ export interface UpcomingPredictedReduction {
   predictedDate: string;
   confidence: string;
   reductionType: string;
-  subjectToMinisterialDiscretion: boolean;
-  sourceNote: string;
+  significance: UpcomingPredictedBrandReductionGroupSignificance;
+  listingCount: number;
+  listings: UpcomingPredictedListing[];
+}
+
+export type UpcomingPredictedReductionGroupSignificance = typeof UpcomingPredictedReductionGroupSignificance[keyof typeof UpcomingPredictedReductionGroupSignificance];
+
+
+export const UpcomingPredictedReductionGroupSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
+export interface UpcomingPredictedReductionGroup {
+  drugId: number;
+  drugName: string;
+  predictedDate: string;
+  brandCount: number;
+  listingCount: number;
+  smallestReductionPercentage: number;
+  largestReductionPercentage: number;
+  significance: UpcomingPredictedReductionGroupSignificance;
+  brands: UpcomingPredictedBrandReductionGroup[];
 }
 
 export interface PriceHistory {
@@ -237,6 +327,15 @@ export interface PbsItemPremiumHistory {
   therapeuticExemptionIndicator: string | null;
 }
 
+export type PredictedReductionSignificance = typeof PredictedReductionSignificance[keyof typeof PredictedReductionSignificance];
+
+
+export const PredictedReductionSignificance = {
+  normal: 'normal',
+  medium: 'medium',
+  high: 'high',
+} as const;
+
 export interface PredictedReduction {
   id: number;
   itemCode: string;
@@ -250,6 +349,7 @@ export interface PredictedReduction {
   subjectToMinisterialDiscretion: boolean;
   sourceNote: string;
   createdAt: string;
+  significance: PredictedReductionSignificance;
 }
 
 /**

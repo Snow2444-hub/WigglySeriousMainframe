@@ -10,6 +10,7 @@ import {
   getGetDrugScheduleTimelineQueryKey
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+import { reductionTextClass } from '@/lib/percentage-significance';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
 import { Link } from 'wouter';
 
@@ -377,7 +378,7 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
         <span className="text-muted-foreground line-through opacity-70">{money(oldPrice)}</span>
         <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="font-bold text-foreground">{money(newPrice)}</span>
-        {typeof percentage === 'number' && <span className="text-[11px] font-bold text-destructive">{percentage.toFixed(2)}%</span>}
+        {typeof percentage === 'number' && <span className={`text-[11px] font-bold ${reductionTextClass(change.significance)}`}>{percentage.toFixed(2)}%</span>}
       </span>
     );
   }

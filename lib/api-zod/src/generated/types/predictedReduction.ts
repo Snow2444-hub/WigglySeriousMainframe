@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PredictedReductionSignificance } from './predictedReductionSignificance';
 
 export interface PredictedReduction {
   id: number;
@@ -19,4 +20,5 @@ export interface PredictedReduction {
   subjectToMinisterialDiscretion: boolean;
   sourceNote: string;
   createdAt: Date;
+  significance: PredictedReductionSignificance;
 }

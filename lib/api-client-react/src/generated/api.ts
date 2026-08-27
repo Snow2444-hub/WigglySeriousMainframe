@@ -51,7 +51,7 @@ import type {
   ScheduleChange,
   ScheduleChangeSettings,
   StockExposureResponse,
-  UpcomingPredictedReduction,
+  UpcomingPredictedReductionGroup,
   UpdateScheduleChangeSettings
 } from './api.schemas';
 
@@ -659,9 +659,9 @@ export const getListUpcomingPredictedReductionsUrl = (params?: ListUpcomingPredi
 /**
  * @summary List upcoming predicted PBS price reductions
  */
-export const listUpcomingPredictedReductions = async (params?: ListUpcomingPredictedReductionsParams, options?: Parameters<typeof customFetch>[1]): Promise<UpcomingPredictedReduction[]> => {
+export const listUpcomingPredictedReductions = async (params?: ListUpcomingPredictedReductionsParams, options?: Parameters<typeof customFetch>[1]): Promise<UpcomingPredictedReductionGroup[]> => {
 
-  return customFetch<UpcomingPredictedReduction[]>(getListUpcomingPredictedReductionsUrl(params),
+  return customFetch<UpcomingPredictedReductionGroup[]>(getListUpcomingPredictedReductionsUrl(params),
   {
     ...options,
     method: 'GET'
