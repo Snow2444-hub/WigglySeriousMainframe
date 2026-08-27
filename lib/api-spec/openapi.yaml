@@ -344,9 +344,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/PharmacyStock"
+                $ref: "#/components/schemas/StockExposureResponse"
         "401":
           description: Unauthorized
           content:
@@ -1142,7 +1140,86 @@ components:
         purchaseDate:
           type: string
           format: date
-      required: [id, userId, itemCode, brandName, quantity, purchasePrice, purchaseDate]
+        invoiceReference:
+          type: ["string", "null"]
+      required: [id, userId, itemCode, brandName, quantity, purchasePrice, purchaseDate, invoiceReference]
+    StockPrediction:
+      type: object
+      properties:
+        predictedDate:
+          type: string
+          format: date
+        reductionType:
+          type: string
+        predictedPercentage:
+          type: number
+        predictedNewPrice:
+          type: number
+        confidence:
+          type: string
+      required: [predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence]
+    StockExposureLine:
+      allOf:
+        - $ref: "#/components/schemas/PharmacyStock"
+        - type: object
+          properties:
+            pbsCode:
+              type: ["string", "null"]
+            drugName:
+              type: string
+            activeIngredient:
+              type: string
+            strength:
+              type: ["string", "null"]
+            form:
+              type: ["string", "null"]
+            packSize:
+              type: ["string", "null"]
+            formulary:
+              type: string
+              enum: [F1, F2]
+            prediction:
+              oneOf:
+                - $ref: "#/components/schemas/StockPrediction"
+                - type: "null"
+            perPackExposure:
+              type: number
+            totalExposure:
+              type: number
+          required: [pbsCode, drugName, activeIngredient, strength, form, packSize, formulary, prediction, perPackExposure, totalExposure]
+    StockExposureByDate:
+      type: object
+      properties:
+        predictedDate:
+          type: string
+          format: date
+        totalExposure:
+          type: number
+        lineCount:
+          type: integer
+      required: [predictedDate, totalExposure, lineCount]
+    StockExposureSummary:
+      type: object
+      properties:
+        totalExposure:
+          type: number
+        totalAtRiskLines:
+          type: integer
+        exposureByDate:
+          type: array
+          items:
+            $ref: "#/components/schemas/StockExposureByDate"
+      required: [totalExposure, totalAtRiskLines, exposureByDate]
+    StockExposureResponse:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/StockExposureLine"
+        summary:
+          $ref: "#/components/schemas/StockExposureSummary"
+      required: [rows, summary]
     PharmacyStockInput:
       type: object
       properties:
@@ -1158,6 +1235,9 @@ components:
         purchaseDate:
           type: string
           format: date
+        invoiceReference:
+          type: string
+          maxLength: 120
       required: [itemCode, quantity, purchasePrice, purchaseDate]
     PharmacyStockUpdate:
       type: object
@@ -1174,6 +1254,9 @@ components:
         purchaseDate:
           type: string
           format: date
+        invoiceReference:
+          type: ["string", "null"]
+          maxLength: 120
     DashboardSummary:
       type: object
       properties:

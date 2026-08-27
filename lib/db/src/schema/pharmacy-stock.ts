@@ -10,6 +10,7 @@ export const pharmacyStockTable = pgTable("pharmacy_stock", {
   quantity: integer("quantity").notNull(),
   purchasePrice: numeric("purchase_price", { precision: 10, scale: 2, mode: "number" }).notNull(),
   purchaseDate: date("purchase_date", { mode: "string" }).notNull(),
+  invoiceReference: text("invoice_reference"),
 });
 
 export const insertPharmacyStockSchema = createInsertSchema(pharmacyStockTable).omit({ id: true });

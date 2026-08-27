@@ -1,6 +1,12 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
-import { db, pharmacyStockTable, pbsItemsTable } from "@workspace/db";
+import {
+  db,
+  drugsTable,
+  pharmacyStockTable,
+  pbsItemsTable,
+  predictedReductionsTable,
+} from "@workspace/db";
 import {
   CreateStockBody,
   CreateStockResponse,
@@ -20,10 +26,18 @@ const stockSelect = {
   id: pharmacyStockTable.id,
   userId: pharmacyStockTable.userId,
   itemCode: pharmacyStockTable.itemCode,
+  pbsCode: pbsItemsTable.pbsCode,
   brandName: pbsItemsTable.brandName,
+  drugName: drugsTable.name,
+  activeIngredient: drugsTable.activeIngredient,
+  strength: pbsItemsTable.strength,
+  form: pbsItemsTable.form,
+  packSize: pbsItemsTable.packSize,
+  formulary: pbsItemsTable.formulary,
   quantity: pharmacyStockTable.quantity,
   purchasePrice: pharmacyStockTable.purchasePrice,
   purchaseDate: pharmacyStockTable.purchaseDate,
+  invoiceReference: pharmacyStockTable.invoiceReference,
 };
 
 async function getUserStock(userId: string) {
@@ -31,8 +45,92 @@ async function getUserStock(userId: string) {
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
+    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
     .where(eq(pharmacyStockTable.userId, userId))
     .orderBy(desc(pharmacyStockTable.purchaseDate), desc(pharmacyStockTable.id));
+}
+
+async function getUserExposure(userId: string) {
+  const rows = await getUserStock(userId);
+  const itemCodes = [...new Set(rows.map((row) => row.itemCode))];
+  const today = new Date().toISOString().slice(0, 10);
+  const predictions = itemCodes.length
+    ? await db
+        .select({
+          itemCode: predictedReductionsTable.itemCode,
+          predictedDate: predictedReductionsTable.predictedDate,
+          reductionType: predictedReductionsTable.reductionType,
+          predictedPercentage: predictedReductionsTable.predictedPercentage,
+          predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+          confidence: predictedReductionsTable.confidence,
+        })
+        .from(predictedReductionsTable)
+        .where(
+          and(
+            inArray(predictedReductionsTable.itemCode, itemCodes),
+            gte(predictedReductionsTable.predictedDate, today),
+          ),
+        )
+        .orderBy(asc(predictedReductionsTable.predictedDate), asc(predictedReductionsTable.id))
+    : [];
+
+  const predictionByItemCode = new Map<
+    string,
+    (typeof predictions)[number]
+  >();
+  for (const prediction of predictions) {
+    if (!predictionByItemCode.has(prediction.itemCode)) {
+      predictionByItemCode.set(prediction.itemCode, prediction);
+    }
+  }
+
+  const exposureRows = rows.map((row) => {
+    const prediction = predictionByItemCode.get(row.itemCode) ?? null;
+    const perPackExposure = prediction
+      ? Number(Math.max(0, row.purchasePrice - prediction.predictedNewPrice).toFixed(2))
+      : 0;
+    const totalExposure = Number((perPackExposure * row.quantity).toFixed(2));
+    return {
+      ...row,
+      prediction,
+      perPackExposure,
+      totalExposure,
+    };
+  });
+
+  exposureRows.sort((left, right) => {
+    if (right.totalExposure !== left.totalExposure) {
+      return right.totalExposure - left.totalExposure;
+    }
+    if (left.prediction && right.prediction) {
+      const dateOrder = left.prediction.predictedDate.localeCompare(right.prediction.predictedDate);
+      if (dateOrder !== 0) return dateOrder;
+    }
+    if (Boolean(right.prediction) !== Boolean(left.prediction)) {
+      return right.prediction ? 1 : -1;
+    }
+    return right.id - left.id;
+  });
+
+  const byDate = new Map<string, { totalExposure: number; lineCount: number }>();
+  for (const row of exposureRows) {
+    if (!row.prediction || row.totalExposure <= 0) continue;
+    const current = byDate.get(row.prediction.predictedDate) ?? { totalExposure: 0, lineCount: 0 };
+    current.totalExposure = Number((current.totalExposure + row.totalExposure).toFixed(2));
+    current.lineCount += 1;
+    byDate.set(row.prediction.predictedDate, current);
+  }
+  const summary = {
+    totalExposure: Number(
+      exposureRows.reduce((total, row) => total + row.totalExposure, 0).toFixed(2),
+    ),
+    totalAtRiskLines: exposureRows.filter((row) => row.totalExposure > 0).length,
+    exposureByDate: [...byDate.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([predictedDate, values]) => ({ predictedDate, ...values })),
+  };
+
+  return { rows: exposureRows, summary };
 }
 
 router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
@@ -63,8 +161,8 @@ router.get("/dashboard", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.get("/stock", requireAuth, async (req, res): Promise<void> => {
-  const rows = await getUserStock(req.userId!);
-  res.json(ListStockResponse.parse(rows));
+  const exposure = await getUserExposure(req.userId!);
+  res.json(ListStockResponse.parse(exposure));
 });
 
 router.post("/stock", requireAuth, async (req, res): Promise<void> => {
@@ -87,6 +185,7 @@ router.post("/stock", requireAuth, async (req, res): Promise<void> => {
       ...parsed.data,
       userId: req.userId!,
       purchaseDate: parsed.data.purchaseDate.toISOString().slice(0, 10),
+      invoiceReference: parsed.data.invoiceReference?.trim() || null,
     })
     .returning({ id: pharmacyStockTable.id });
   const [row] = await db
@@ -126,6 +225,9 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
       : {}),
     ...(parsed.data.purchaseDate !== undefined
       ? { purchaseDate: parsed.data.purchaseDate.toISOString().slice(0, 10) }
+      : {}),
+    ...(parsed.data.invoiceReference !== undefined
+      ? { invoiceReference: parsed.data.invoiceReference?.trim() || null }
       : {}),
   };
   const [updated] = await db
