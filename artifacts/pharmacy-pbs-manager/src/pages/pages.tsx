@@ -10,8 +10,11 @@ import {
   getHealthCheckQueryKey,
   type AdminIngestionRun,
   type ArtgEntry,
+  type PbsItem,
   type PbsWatchlistEntry,
   type PharmacyStock,
+  type StockExposureLine,
+  type StockExposureResponse,
   useCreatePbsWatchlistEntry,
   useCreateStock,
   useDeletePbsWatchlistEntry,
@@ -22,6 +25,7 @@ import {
   useHealthCheck,
   useListAdminIngestionRuns,
   useListArtgEntries,
+  useListPbsItems,
   useListPbsWatchlistEntries,
   useListStock,
   useTriggerAdminIngestion,
@@ -30,7 +34,7 @@ import {
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
-import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, X, XCircle } from 'lucide-react';
+import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
