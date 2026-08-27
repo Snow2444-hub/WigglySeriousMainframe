@@ -163,12 +163,12 @@ function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLin
                 {itemQuery.isLoading ? <p className="px-3 py-4 text-xs text-muted-foreground">Searching PBS items…</p> : itemQuery.isError ? <p className="px-3 py-4 text-xs text-destructive">PBS item search is unavailable.</p> : !itemQuery.data?.length ? <p className="px-3 py-4 text-xs text-muted-foreground">No matching PBS items.</p> : itemQuery.data.map((item) => (
                    <button type="button" key={item.itemCode} onClick={() => { set('itemCode', item.itemCode); setSelectedItem(item); setItemSearch(itemLabel(item)); setShowItemResults(false); setError(''); }} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted" data-testid={`option-stock-item-${item.itemCode}`} title={`Internal listing ID: ${item.liItemId ?? item.itemCode}`}>
                      <span className="block text-sm font-bold">{itemLabel(item)}</span>
-                     <span className="mt-1 block text-[11px] text-muted-foreground">PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)} · Max quantity {item.maximumQuantityUnits ?? 'not supplied'}</span>
+                     <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"><span>PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</span><span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono font-bold text-primary">Max {item.maximumQuantityUnits ?? '—'} units</span></span>
                   </button>
                 ))}
               </div>
             )}
-             {form.itemCode && selectedItem && <div className="mt-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5" title={`Internal listing ID: ${selectedItem.liItemId ?? selectedItem.itemCode}`}><p className="text-sm font-bold">{itemLabel(selectedItem)}</p><p className="mt-1 text-[11px] text-muted-foreground">PBS {selectedItem.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(selectedItem.benefitTypeCode)} · Max quantity {selectedItem.maximumQuantityUnits ?? 'not supplied'}</p></div>}
+              {form.itemCode && selectedItem && <div className="mt-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5" title={`Internal listing ID: ${selectedItem.liItemId ?? selectedItem.itemCode}`}><p className="text-sm font-bold">{itemLabel(selectedItem)}</p><div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground"><span>PBS {selectedItem.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(selectedItem.benefitTypeCode)}</span><span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono font-bold text-primary">Max {selectedItem.maximumQuantityUnits ?? '—'} units</span></div></div>}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block"><span className="mb-1.5 block text-xs font-bold">Quantity</span><input type="number" min="0" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-quantity" /></label>
@@ -186,8 +186,27 @@ function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLin
   );
 }
 
+function DeleteStockDialog({ row, pending, error, onClose, onConfirm }: { row: StockExposureLine; pending: boolean; error: string; onClose: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-stock-title" data-testid="dialog-delete-stock">
+    <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} disabled={pending} aria-label="Close delete confirmation" data-testid="button-close-delete-stock-backdrop" />
+    <div className="relative w-full max-w-md rounded-t-3xl border border-border bg-card p-6 shadow-2xl sm:rounded-3xl">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><Trash2 className="h-5 w-5" /></div>
+      <p className="mt-5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-destructive">Remove purchase batch</p>
+      <h2 id="delete-stock-title" className="mt-2 text-2xl font-bold tracking-[-0.05em]">Delete this stock record?</h2>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">This permanently removes the selected purchase batch from your private stock workspace. The grouped quantity and exposure will be recalculated.</p>
+      <div className="mt-5 rounded-xl border border-border bg-muted/45 px-3 py-2.5"><p className="text-sm font-bold">{itemLabel(row)}</p><p className="mt-1 text-xs text-muted-foreground">PBS {row.pbsCode ?? 'code not supplied'} · {row.quantity} units · {money(row.purchasePrice)} each</p></div>
+      {error && <p className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive" role="alert">{error}</p>}
+      <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" onClick={onClose} disabled={pending} className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted disabled:opacity-50" data-testid="button-cancel-delete-stock">Keep record</button>
+        <button type="button" onClick={onConfirm} disabled={pending} className="inline-flex items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2.5 text-sm font-bold text-destructive-foreground hover:-translate-y-0.5 disabled:opacity-50" data-testid="button-confirm-delete-stock">{pending && <LoaderCircle className="h-4 w-4 animate-spin" />}Delete record</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function StockQuantityControl({ row, onSaved, onFailed }: { row: StockExposureLine; onSaved: (message: string) => Promise<void>; onFailed: (message: string) => void }) {
   const [quantity, setQuantity] = useState(String(row.quantity));
+  const [soldQuantity, setSoldQuantity] = useState('');
   const update = useUpdateStock();
 
   useEffect(() => setQuantity(String(row.quantity)), [row.quantity]);
@@ -227,7 +246,29 @@ function StockQuantityControl({ row, onSaved, onFailed }: { row: StockExposureLi
     saveQuantity(nextQuantity, `${Math.min(amount, Math.trunc(currentQuantity))} sold. Exposure recalculated.`);
   };
 
-  return <div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor={`quantity-${row.id}`}>Quantity</label><div className="mt-1.5 flex flex-wrap items-center gap-1.5"><input id={`quantity-${row.id}`} type="number" min="0" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} onBlur={() => saveQuantity(Number(quantity))} onKeyDown={(event) => { if (event.key === 'Enter') { event.currentTarget.blur(); } }} disabled={update.isPending} className="h-9 w-20 rounded-lg border border-input bg-background px-2 font-mono text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50" aria-label={`Quantity for ${row.brandName}`} data-testid={`input-stock-quantity-${row.id}`} /><button type="button" onClick={() => sold(1)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-one-${row.id}`}>Sold 1</button><button type="button" onClick={() => sold(20)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-twenty-${row.id}`}>Sold 20</button>{update.isPending && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />}</div></div>;
+  const recordCustomSale = () => {
+    const amount = Number(soldQuantity);
+    if (!Number.isInteger(amount) || amount < 1) {
+      onFailed('Enter a whole number of at least 1 to record a sale.');
+      return;
+    }
+    sold(amount);
+    setSoldQuantity('');
+  };
+
+  return <div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0">
+    <label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor={`quantity-${row.id}`}>Quantity</label>
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <input id={`quantity-${row.id}`} type="number" min="0" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} onBlur={() => saveQuantity(Number(quantity))} onKeyDown={(event) => { if (event.key === 'Enter') { event.currentTarget.blur(); } }} disabled={update.isPending} className="h-9 w-20 rounded-lg border border-input bg-background px-2 font-mono text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50" aria-label={`Quantity for ${row.brandName}`} data-testid={`input-stock-quantity-${row.id}`} />
+      <button type="button" onClick={() => sold(1)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-one-${row.id}`}>Sold 1</button>
+      <button type="button" onClick={() => sold(20)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-twenty-${row.id}`}>Sold 20</button>
+      <div className="flex items-center gap-1">
+        <input type="number" min="1" step="1" value={soldQuantity} onChange={(event) => setSoldQuantity(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') recordCustomSale(); }} disabled={update.isPending || Number(quantity) <= 0} placeholder="Sold qty" className="h-9 w-20 rounded-lg border border-input bg-background px-2 text-xs font-bold outline-none placeholder:font-normal focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50" aria-label={`Custom sale quantity for ${row.brandName}`} data-testid={`input-stock-sold-quantity-${row.id}`} />
+        <button type="button" onClick={recordCustomSale} disabled={update.isPending || Number(quantity) <= 0 || !soldQuantity.trim()} className="h-9 rounded-lg bg-primary px-2.5 text-[11px] font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-40" data-testid={`button-record-sale-${row.id}`}>Record sale</button>
+      </div>
+      {update.isPending && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />}
+    </div>
+  </div>;
 }
 
 type StockItemGroup = {
@@ -293,6 +334,8 @@ function StockPage() {
   const stock = useListStock();
   const remove = useDeleteStock();
   const [dialog, setDialog] = useState<'new' | StockExposureLine | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<StockExposureLine | null>(null);
+  const [deleteError, setDeleteError] = useState('');
   const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const [expandedItemCodes, setExpandedItemCodes] = useState<Set<string>>(() => new Set());
   const response = stock.data as StockExposureResponse | undefined;
@@ -314,12 +357,24 @@ function StockPage() {
   };
   const failed = (message: string) => showNotice(message, 'error');
   const deleteRow = (row: StockExposureLine) => {
-    if (!window.confirm(`Delete this ${row.brandName} purchase batch (PBS ${row.pbsCode ?? 'code not supplied'})? This cannot be undone.`)) return;
+    setDeleteError('');
+    setDeleteCandidate(row);
+  };
+  const confirmDelete = () => {
+    if (!deleteCandidate) return;
+    setDeleteError('');
     remove.mutate(
-      { id: row.id },
+      { id: deleteCandidate.id },
       {
-        onSuccess: async () => saved('Stock record deleted. Exposure recalculated.'),
-        onError: (mutationFailure) => failed(mutationError(mutationFailure, 'The stock record could not be deleted.')),
+        onSuccess: async () => {
+          setDeleteCandidate(null);
+          await saved('Stock record deleted. Exposure recalculated.');
+        },
+        onError: (mutationFailure) => {
+          const message = mutationError(mutationFailure, 'The stock record could not be deleted.');
+          setDeleteError(message);
+          failed(message);
+        },
       },
     );
   };
@@ -329,7 +384,7 @@ function StockPage() {
     else next.add(itemCode);
     return next;
   });
-  const renderDateGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} predicted purchase {lineCount === 1 ? 'batch' : 'batches'}</p></div><p className={`font-mono text-sm font-bold ${totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{totalExposure > 0 ? money(totalExposure) : 'No loss'}</p></div>;
+  const renderDateGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex min-w-[220px] items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} predicted purchase {lineCount === 1 ? 'batch' : 'batches'}</p></div><p className={`font-mono text-sm font-bold ${totalExposure > 0 ? 'text-destructive' : 'text-primary'}`}>{totalExposure > 0 ? money(totalExposure) : 'No loss'}</p></div>;
   const renderBatch = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 border-t border-border/70 bg-muted/20 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto_.9fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Purchase batch</p><p className="mt-1 text-sm font-bold">{money(row.purchasePrice)} each · {date(row.purchaseDate)}</p><p className="mt-1 text-xs text-muted-foreground">{row.invoiceReference ? <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span> : 'No invoice reference'}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><PredictionStatus prediction={row.prediction} purchasePrice={money(row.purchasePrice)} totalExposure={row.totalExposure} /><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.brandName} purchase batch`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.brandName} purchase batch`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
   const renderItemGroup = (group: StockItemGroup) => {
     const item = group.exemplar;
@@ -338,12 +393,23 @@ function StockPage() {
     const minimumPurchasePrice = Math.min(...purchasePrices);
     const maximumPurchasePrice = Math.max(...purchasePrices);
     const purchasePriceLabel = minimumPurchasePrice === maximumPurchasePrice ? money(minimumPurchasePrice) : `${money(minimumPurchasePrice)}–${money(maximumPurchasePrice)}`;
-    return <article key={group.itemCode} data-testid={`group-stock-${group.itemCode}`}><button type="button" onClick={() => toggleItem(group.itemCode)} className="grid w-full gap-4 px-5 py-5 text-left hover:bg-secondary/20 lg:grid-cols-[minmax(0,1.35fr)_.55fr_.95fr_auto] lg:items-center" aria-expanded={isExpanded} title={`Internal listing ID: ${group.itemCode}`}><div className="min-w-0"><p className="truncate text-base font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-1 text-xs text-muted-foreground">{item.drugName} · PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</p><p className="mt-1 text-[11px] text-muted-foreground">Maximum quantity {item.maximumQuantityUnits ?? 'not supplied'} · {item.formulary}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">On hand</p><p className="mt-1 text-lg font-bold tabular-nums">{group.totalQuantity}</p><p className="text-[11px] text-muted-foreground">{group.batches.length} purchase {group.batches.length === 1 ? 'batch' : 'batches'}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Price outlook</p><PredictionStatus prediction={item.prediction} purchasePrice={purchasePriceLabel} totalExposure={group.totalExposure} /></div><ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>{isExpanded && <div>{group.batches.map(renderBatch)}</div>}</article>;
+    return <article key={group.itemCode} data-testid={`group-stock-${group.itemCode}`}><button type="button" onClick={() => toggleItem(group.itemCode)} className="grid w-full gap-4 px-5 py-5 text-left hover:bg-secondary/20 lg:grid-cols-[minmax(0,1.35fr)_.55fr_.95fr_auto] lg:items-center" aria-expanded={isExpanded} title={`Internal listing ID: ${group.itemCode}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="text-base font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><span className="rounded-md bg-primary/10 px-2 py-1 font-mono text-[10px] font-bold text-primary">Max qty {item.maximumQuantityUnits ?? '—'} units</span></div><p className="mt-1 text-xs text-muted-foreground">{item.drugName} · PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</p><p className="mt-1 text-[11px] text-muted-foreground">{item.formulary}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">On hand</p><p className="mt-1 text-lg font-bold tabular-nums">{group.totalQuantity}</p><p className="text-[11px] text-muted-foreground">{group.batches.length} purchase {group.batches.length === 1 ? 'batch' : 'batches'}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Price outlook</p><PredictionStatus prediction={item.prediction} purchasePrice={purchasePriceLabel} totalExposure={group.totalExposure} /></div><ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>{isExpanded && <div>{group.batches.map(renderBatch)}</div>}</article>;
   };
-  return <AppShell><PageHeading eyebrow="Private workspace / stock" title="Stock exposure" description="See which private stock lines are most exposed to upcoming PBS price reductions." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
-    {notice && <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${notice.tone === 'success' ? 'border-chart-3/25 bg-chart-3/10 text-chart-3' : 'border-destructive/25 bg-destructive/10 text-destructive'}`} role={notice.tone === 'success' ? 'status' : 'alert'} data-testid={`status-stock-${notice.tone}`}>{notice.tone === 'success' ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{notice.message}</div>}
-    {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add a private PBS stock record to see quantities, predictions, and potential exposure in one place.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total exposure" value={money(summary?.totalExposure ?? 0)} detail="potential loss" icon={TrendingDown} tone="amber" /><StatCard label="At-risk batches" value={summary?.totalAtRiskLines ?? atRiskBatchCount} detail="purchase records" icon={CircleAlert} /><StatCard label="Stock units" value={totalUnits} detail="on hand" icon={Boxes} tone="teal" /><StatCard label="Prediction dates" value={summary?.exposureByDate.length ?? 0} detail="upcoming dates" icon={CalendarDays} /></div><div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_.7fr]"><section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-stock-exposure"><div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Consolidated inventory</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Stock items</h2></div><p className="text-xs text-muted-foreground">{itemGroups.length} PBS {itemGroups.length === 1 ? 'item' : 'items'} · {rows.length} purchase {rows.length === 1 ? 'batch' : 'batches'}</p></div><div className="divide-y divide-border">{itemGroups.map(renderItemGroup)}</div></section><section className="rounded-2xl border border-border bg-sidebar p-5 text-sidebar-foreground shadow-sm" data-testid="section-exposure-by-date"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Forward view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Predictions by date</h2><p className="mt-2 text-sm leading-relaxed text-sidebar-foreground/65">Every joined future prediction is shown, including dates where current purchase costs produce no loss.</p><div className="mt-5 space-y-2">{summary?.exposureByDate.length ? summary.exposureByDate.map((group) => renderDateGroup(group.predictedDate, group.lineCount, group.totalExposure)) : <p className="rounded-xl border border-sidebar-border bg-sidebar-accent/35 p-4 text-xs text-sidebar-foreground/65">No future predictions are linked to current stock.</p>}</div></section></div></>}
+  return <AppShell>
+    <PageHeading eyebrow="Private workspace / stock" title="Stock exposure" description="See which private stock lines are most exposed to upcoming PBS price reductions." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
+    {notice && <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${notice.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400' : 'border-destructive/25 bg-destructive/10 text-destructive'}`} role={notice.tone === 'success' ? 'status' : 'alert'} data-testid={`status-stock-${notice.tone}`}>{notice.tone === 'success' ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{notice.message}</div>}
+    {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add a private PBS stock record to see quantities, predictions, and potential exposure in one place.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total exposure" value={money(summary?.totalExposure ?? 0)} detail="potential loss" icon={TrendingDown} tone="amber" /><StatCard label="At-risk batches" value={summary?.totalAtRiskLines ?? atRiskBatchCount} detail="purchase records" icon={CircleAlert} /><StatCard label="Stock units" value={totalUnits} detail="on hand" icon={Boxes} tone="teal" /><StatCard label="Prediction dates" value={summary?.exposureByDate.length ?? 0} detail="upcoming dates" icon={CalendarDays} /></div>
+      <section className="mt-6 rounded-2xl border border-border bg-card shadow-xs" data-testid="section-exposure-by-date">
+        <div className="flex flex-col gap-4 px-5 py-4 xl:flex-row xl:items-center">
+          <div className="shrink-0 xl:max-w-sm"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Forward view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Predictions by date</h2><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Every linked future prediction, including no-loss changes.</p></div>
+          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 xl:justify-end">{summary?.exposureByDate.length ? summary.exposureByDate.map((group) => renderDateGroup(group.predictedDate, group.lineCount, group.totalExposure)) : <p className="w-full rounded-xl border border-dashed border-border bg-muted/35 p-3 text-xs text-muted-foreground">No future predictions are linked to current stock.</p>}</div>
+        </div>
+      </section>
+      <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-stock-exposure"><div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Consolidated inventory</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Stock items</h2></div><p className="text-xs text-muted-foreground">{itemGroups.length} PBS {itemGroups.length === 1 ? 'item' : 'items'} · {rows.length} purchase {rows.length === 1 ? 'batch' : 'batches'}</p></div><div className="divide-y divide-border">{itemGroups.map(renderItemGroup)}</div></section>
+    </>}
     {dialog && <StockDialog initial={dialog === 'new' ? undefined : dialog} onClose={() => setDialog(null)} onSaved={saved} />}
+    {deleteCandidate && <DeleteStockDialog row={deleteCandidate} pending={remove.isPending} error={deleteError} onClose={() => { if (!remove.isPending) { setDeleteCandidate(null); setDeleteError(''); } }} onConfirm={confirmDelete} />}
   </AppShell>;
 }
 
