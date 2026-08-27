@@ -263,6 +263,31 @@ function groupStockRows(rows: StockExposureLine[]): StockItemGroup[] {
   );
 }
 
+type PredictionState = 'loss' | 'change' | 'none';
+
+function predictionState(prediction: StockExposureLine['prediction'], totalExposure: number): PredictionState {
+  if (!prediction) return 'none';
+  return totalExposure > 0 ? 'loss' : 'change';
+}
+
+function PredictionStatus({ prediction, purchasePrice, totalExposure }: { prediction: StockExposureLine['prediction']; purchasePrice: string; totalExposure: number }) {
+  const state = predictionState(prediction, totalExposure);
+  const styles = {
+    loss: 'border-destructive/25 bg-destructive/8 text-destructive',
+    change: 'border-primary/20 bg-primary/6 text-primary',
+    none: 'border-border bg-muted/45 text-muted-foreground',
+  } as const;
+  const labels = {
+    loss: 'Predicted loss',
+    change: 'Predicted change · no loss',
+    none: 'No prediction',
+  } as const;
+  return <div className={`rounded-lg border px-2.5 py-2 ${styles[state]}`} data-testid={`status-prediction-${state}`}>
+    <p className="text-[10px] font-bold uppercase tracking-[0.08em]">{labels[state]}</p>
+    {prediction ? <><p className="mt-1 text-xs font-bold tabular-nums">{date(prediction.predictedDate)}: {purchasePrice} → {money(prediction.predictedNewPrice)}</p>{state === 'loss' && <p className="mt-1 text-[11px] font-semibold">Exposure: {money(totalExposure)}</p>}</> : <p className="mt-1 text-xs">No future price comparison available</p>}
+  </div>;
+}
+
 function StockPage() {
   const queryClient = useQueryClient();
   const stock = useListStock();
@@ -305,7 +330,7 @@ function StockPage() {
     return next;
   });
   const renderDateGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} predicted purchase {lineCount === 1 ? 'batch' : 'batches'}</p></div><p className={`font-mono text-sm font-bold ${totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{totalExposure > 0 ? money(totalExposure) : 'No loss'}</p></div>;
-  const renderBatch = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 border-t border-border/70 bg-muted/20 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto_.55fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Purchase batch</p><p className="mt-1 text-sm font-bold">{money(row.purchasePrice)} each · {date(row.purchaseDate)}</p><p className="mt-1 text-xs text-muted-foreground">{row.invoiceReference ? <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span> : 'No invoice reference'}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Batch exposure</p><p className={`mt-1 text-sm font-bold ${row.totalExposure > 0 ? 'text-destructive' : row.prediction ? 'text-chart-3' : 'text-muted-foreground'}`}>{row.totalExposure > 0 ? money(row.totalExposure) : row.prediction ? 'No loss' : 'No prediction'}</p></div><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.brandName} purchase batch`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.brandName} purchase batch`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
+  const renderBatch = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 border-t border-border/70 bg-muted/20 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto_.9fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Purchase batch</p><p className="mt-1 text-sm font-bold">{money(row.purchasePrice)} each · {date(row.purchaseDate)}</p><p className="mt-1 text-xs text-muted-foreground">{row.invoiceReference ? <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span> : 'No invoice reference'}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><PredictionStatus prediction={row.prediction} purchasePrice={money(row.purchasePrice)} totalExposure={row.totalExposure} /><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.brandName} purchase batch`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.brandName} purchase batch`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
   const renderItemGroup = (group: StockItemGroup) => {
     const item = group.exemplar;
     const isExpanded = expandedItemCodes.has(group.itemCode);
@@ -313,7 +338,7 @@ function StockPage() {
     const minimumPurchasePrice = Math.min(...purchasePrices);
     const maximumPurchasePrice = Math.max(...purchasePrices);
     const purchasePriceLabel = minimumPurchasePrice === maximumPurchasePrice ? money(minimumPurchasePrice) : `${money(minimumPurchasePrice)}–${money(maximumPurchasePrice)}`;
-    return <article key={group.itemCode} data-testid={`group-stock-${group.itemCode}`}><button type="button" onClick={() => toggleItem(group.itemCode)} className="grid w-full gap-4 px-5 py-5 text-left hover:bg-secondary/20 lg:grid-cols-[minmax(0,1.45fr)_.55fr_.72fr_.6fr_auto] lg:items-center" aria-expanded={isExpanded} title={`Internal listing ID: ${group.itemCode}`}><div className="min-w-0"><p className="truncate text-base font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-1 text-xs text-muted-foreground">{item.drugName} · PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</p><p className="mt-1 text-[11px] text-muted-foreground">Maximum quantity {item.maximumQuantityUnits ?? 'not supplied'} · {item.formulary}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">On hand</p><p className="mt-1 text-lg font-bold tabular-nums">{group.totalQuantity}</p><p className="text-[11px] text-muted-foreground">{group.batches.length} purchase {group.batches.length === 1 ? 'batch' : 'batches'}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Prediction</p>{item.prediction ? <><p className="mt-1 text-sm font-bold">{date(item.prediction.predictedDate)}</p><p className="text-[11px] text-muted-foreground">{money(item.prediction.predictedNewPrice)} · {item.prediction.confidence === 'confirmed' ? 'Confirmed' : 'Indicative'}</p></> : <p className="mt-1 text-sm font-semibold text-muted-foreground">No future prediction</p>}</div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Exposure</p><p className={`mt-1 text-lg font-bold ${group.totalExposure > 0 ? 'text-destructive' : item.prediction ? 'text-chart-3' : 'text-muted-foreground'}`}>{group.totalExposure > 0 ? money(group.totalExposure) : item.prediction ? 'No loss' : 'Neutral'}</p><p className="text-[11px] text-muted-foreground">Bought at {purchasePriceLabel}</p></div><ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>{isExpanded && <div>{group.batches.map(renderBatch)}</div>}</article>;
+    return <article key={group.itemCode} data-testid={`group-stock-${group.itemCode}`}><button type="button" onClick={() => toggleItem(group.itemCode)} className="grid w-full gap-4 px-5 py-5 text-left hover:bg-secondary/20 lg:grid-cols-[minmax(0,1.35fr)_.55fr_.95fr_auto] lg:items-center" aria-expanded={isExpanded} title={`Internal listing ID: ${group.itemCode}`}><div className="min-w-0"><p className="truncate text-base font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-1 text-xs text-muted-foreground">{item.drugName} · PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</p><p className="mt-1 text-[11px] text-muted-foreground">Maximum quantity {item.maximumQuantityUnits ?? 'not supplied'} · {item.formulary}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">On hand</p><p className="mt-1 text-lg font-bold tabular-nums">{group.totalQuantity}</p><p className="text-[11px] text-muted-foreground">{group.batches.length} purchase {group.batches.length === 1 ? 'batch' : 'batches'}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Price outlook</p><PredictionStatus prediction={item.prediction} purchasePrice={purchasePriceLabel} totalExposure={group.totalExposure} /></div><ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>{isExpanded && <div>{group.batches.map(renderBatch)}</div>}</article>;
   };
   return <AppShell><PageHeading eyebrow="Private workspace / stock" title="Stock exposure" description="See which private stock lines are most exposed to upcoming PBS price reductions." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
     {notice && <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${notice.tone === 'success' ? 'border-chart-3/25 bg-chart-3/10 text-chart-3' : 'border-destructive/25 bg-destructive/10 text-destructive'}`} role={notice.tone === 'success' ? 'status' : 'alert'} data-testid={`status-stock-${notice.tone}`}>{notice.tone === 'success' ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{notice.message}</div>}
@@ -338,9 +363,9 @@ function formatDateTime(value: string | null): string {
 
 function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
   const styles = {
-    queued: 'bg-accent/25 text-accent-foreground',
+    queued: 'bg-muted text-muted-foreground',
     running: 'bg-primary/10 text-primary',
-    completed: 'bg-chart-3/15 text-chart-3',
+    completed: 'bg-chart-1/15 text-chart-1',
     failed: 'bg-destructive/10 text-destructive',
   } as const;
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.1em] ${styles[status]}`}>{status}</span>;
@@ -515,7 +540,7 @@ function AdminPage() {
         </label>
         <label className="min-w-[150px]">
           <span className="mb-1.5 block font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Test page cap</span>
-          <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="Full schedule" aria-describedby="max-pages-help" className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55 sm:w-[150px]" data-testid="input-max-pages" />
+           <input type="number" min="1" max="10000" step="1" value={maxPages} onChange={(event) => setMaxPages(event.target.value)} disabled={trigger.isPending || Boolean(activeRun)} placeholder="No cap / fetch all pages" aria-describedby="max-pages-help" className="h-12 w-full rounded-xl border border-input bg-card px-3 text-sm font-semibold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-55 sm:w-[150px]" data-testid="input-max-pages" />
           <span id="max-pages-help" className="mt-1 block text-[10px] text-muted-foreground">Blank fetches every matching page.</span>
         </label>
         <div className="flex flex-wrap gap-2">
