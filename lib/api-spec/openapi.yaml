@@ -155,7 +155,39 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/PbsItem"
+                  $ref: "#/components/schemas/MedicineBrandItemSummary"
+  /upcoming-predicted-reductions:
+    get:
+      operationId: listUpcomingPredictedReductions
+      tags: [pbs]
+      summary: List upcoming predicted PBS price reductions
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Inclusive effective date. Defaults to today.
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+          description: Inclusive effective date.
+        - name: confidence
+          in: query
+          schema:
+            type: string
+            enum: [high, conditional, indicative, confirmed]
+      responses:
+        "200":
+          description: Upcoming predictions ordered by date then reduction size
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UpcomingPredictedReduction"
   /pbs-items:
     get:
       operationId: listPbsItems
@@ -912,7 +944,33 @@ components:
         latestChangeDate:
           type: ["string", "null"]
           pattern: '^\d{4}-\d{2}-\d{2}$'
-      required: [drugId, brandName, itemCount, formulary, minimumPrice, maximumPrice, isInnovator, firstListedDate, changeCount, highChangeCount, latestChangeDate]
+        nextPredictedReductionDate:
+          type: ["string", "null"]
+          format: date
+        nextPredictedReductionPercentage:
+          type: ["number", "null"]
+        nextPredictedNewPrice:
+          type: ["number", "null"]
+        nextPredictedCurrentPrice:
+          type: ["number", "null"]
+        nextPredictedReductionConfidence:
+          type: ["string", "null"]
+      required: [drugId, brandName, itemCount, formulary, minimumPrice, maximumPrice, isInnovator, firstListedDate, changeCount, highChangeCount, latestChangeDate, nextPredictedReductionDate, nextPredictedReductionPercentage, nextPredictedNewPrice, nextPredictedCurrentPrice, nextPredictedReductionConfidence]
+    UpcomingPrediction:
+      type: object
+      properties:
+        predictedDate:
+          type: string
+          format: date
+        predictedPercentage:
+          type: number
+        predictedNewPrice:
+          type: number
+        confidence:
+          type: string
+        reductionType:
+          type: string
+      required: [predictedDate, predictedPercentage, predictedNewPrice, confidence, reductionType]
     PbsItem:
       type: object
       properties:
@@ -987,6 +1045,47 @@ components:
         innovatorIndicator:
           type: ["string", "null"]
       required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+    MedicineBrandItemSummary:
+      allOf:
+        - $ref: "#/components/schemas/PbsItem"
+        - type: object
+          properties:
+            upcomingPrediction:
+              oneOf:
+                - $ref: "#/components/schemas/UpcomingPrediction"
+                - type: "null"
+          required: [upcomingPrediction]
+    UpcomingPredictedReduction:
+      type: object
+      properties:
+        itemCode:
+          type: string
+        drugId:
+          type: integer
+        drugName:
+          type: string
+        brandName:
+          type: string
+        strength:
+          type: ["string", "null"]
+        currentPrice:
+          type: number
+        predictedNewPrice:
+          type: number
+        predictedPercentage:
+          type: number
+        predictedDate:
+          type: string
+          format: date
+        confidence:
+          type: string
+        reductionType:
+          type: string
+        subjectToMinisterialDiscretion:
+          type: boolean
+        sourceNote:
+          type: string
+      required: [itemCode, drugId, drugName, brandName, strength, currentPrice, predictedNewPrice, predictedPercentage, predictedDate, confidence, reductionType, subjectToMinisterialDiscretion, sourceNote]
     PriceHistory:
       type: object
       properties:
