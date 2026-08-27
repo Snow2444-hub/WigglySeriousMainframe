@@ -621,6 +621,18 @@ export const ListArtgEntriesResponse = zod.array(ListArtgEntriesResponseItem)
 
 
 /**
+ * @summary Get the ARTG import status
+ */
+export const GetArtgImportStatusResponse = zod.object({
+  "hasSuccessfulImport": zod.boolean(),
+  "lastSuccessfulImportAt": zod.coerce.date().nullable(),
+  "lastAttemptAt": zod.coerce.date().nullable(),
+  "lastAttemptStatus": zod.union([zod.literal('running'),zod.literal('completed'),zod.literal('failed'),zod.literal(null)]).nullable(),
+  "lastErrorMessage": zod.string().nullable()
+})
+
+
+/**
  * @summary List the signed-in user's stock
  */
 export const ListStockResponse = zod.object({

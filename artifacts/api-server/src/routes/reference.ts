@@ -3,6 +3,7 @@ import { Router, type IRouter } from "express";
 import {
   db,
   artgEntriesTable,
+  artgIngestionRunsTable,
   drugsTable,
   pbsItemPremiumHistoryTable,
   pbsDisclosureCyclesTable,
@@ -18,6 +19,7 @@ import {
   GetDrugScheduleTimelineResponse,
   GetDrugParams,
   GetDrugResponse,
+  GetArtgImportStatusResponse,
   GetPbsItemParams,
   GetPbsItemResponse,
   ListArtgEntriesQueryParams,
@@ -939,6 +941,31 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
     };
   });
   res.json(ListArtgEntriesResponse.parse(entries));
+});
+
+router.get("/artg-import-status", async (_req, res): Promise<void> => {
+  const [successful] = await db
+    .select({ finishedAt: artgIngestionRunsTable.finishedAt })
+    .from(artgIngestionRunsTable)
+    .where(eq(artgIngestionRunsTable.status, "completed"))
+    .orderBy(desc(artgIngestionRunsTable.finishedAt))
+    .limit(1);
+  const [attempt] = await db
+    .select({
+      startedAt: artgIngestionRunsTable.startedAt,
+      status: artgIngestionRunsTable.status,
+      errorMessage: artgIngestionRunsTable.errorMessage,
+    })
+    .from(artgIngestionRunsTable)
+    .orderBy(desc(artgIngestionRunsTable.startedAt))
+    .limit(1);
+  res.json(GetArtgImportStatusResponse.parse({
+    hasSuccessfulImport: Boolean(successful),
+    lastSuccessfulImportAt: successful?.finishedAt ?? null,
+    lastAttemptAt: attempt?.startedAt ?? null,
+    lastAttemptStatus: attempt?.status ?? null,
+    lastErrorMessage: attempt?.errorMessage ?? null,
+  }));
 });
 
 export default router;

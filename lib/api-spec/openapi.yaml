@@ -441,6 +441,24 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ArtgEntry"
+  /artg-import-status:
+    get:
+      operationId: getArtgImportStatus
+      tags: [artg]
+      summary: Get the ARTG import status
+      responses:
+        "200":
+          description: ARTG import status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtgImportStatus"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /stock:
     get:
       operationId: listStock
@@ -1510,6 +1528,23 @@ components:
         daysSinceRegistration:
           type: integer
       required: [artgId, activeIngredient, sponsor, registrationDate, productName, status, matchedDrugId, pbsListed, pbsBrandNames, daysSinceRegistration]
+    ArtgImportStatus:
+      type: object
+      properties:
+        hasSuccessfulImport:
+          type: boolean
+        lastSuccessfulImportAt:
+          type: ["string", "null"]
+          format: date-time
+        lastAttemptAt:
+          type: ["string", "null"]
+          format: date-time
+        lastAttemptStatus:
+          type: ["string", "null"]
+          enum: [running, completed, failed, null]
+        lastErrorMessage:
+          type: ["string", "null"]
+      required: [hasSuccessfulImport, lastSuccessfulImportAt, lastAttemptAt, lastAttemptStatus, lastErrorMessage]
     ArtgImportRun:
       type: object
       properties:

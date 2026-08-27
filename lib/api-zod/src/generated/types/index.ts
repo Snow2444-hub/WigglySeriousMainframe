@@ -14,6 +14,8 @@ export * from './adminPublishedFile';
 export * from './artgEntry';
 export * from './artgImportRun';
 export * from './artgImportRunStatus';
+export * from './artgImportStatus';
+export * from './artgImportStatusLastAttemptStatus';
 export * from './currentAdminIngestionRun';
 export * from './dashboardSummary';
 export * from './dashboardSummaryFormularyBreakdown';

@@ -25,6 +25,7 @@ import type {
   AdminPublishedFile,
   ArtgEntry,
   ArtgImportRun,
+  ArtgImportStatus,
   CurrentAdminIngestionRun,
   DashboardSummary,
   Drug,
@@ -1649,6 +1650,83 @@ export function useListArtgEntries<TData = Awaited<ReturnType<typeof listArtgEnt
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListArtgEntriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetArtgImportStatusUrl = () => {
+
+
+
+
+  return `/api/artg-import-status`
+}
+
+/**
+ * @summary Get the ARTG import status
+ */
+export const getArtgImportStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<ArtgImportStatus> => {
+
+  return customFetch<ArtgImportStatus>(getGetArtgImportStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetArtgImportStatusQueryKey = () => {
+    return [
+    `/api/artg-import-status`
+    ] as const;
+    }
+
+
+export const getGetArtgImportStatusQueryOptions = <TData = Awaited<ReturnType<typeof getArtgImportStatus>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getArtgImportStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetArtgImportStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getArtgImportStatus>>> = ({ signal }) => getArtgImportStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getArtgImportStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetArtgImportStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getArtgImportStatus>>>
+export type GetArtgImportStatusQueryError = ErrorType<Error>
+
+
+/**
+ * @summary Get the ARTG import status
+ */
+
+export function useGetArtgImportStatus<TData = Awaited<ReturnType<typeof getArtgImportStatus>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getArtgImportStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetArtgImportStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

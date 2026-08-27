@@ -501,6 +501,30 @@ export interface ArtgEntry {
   daysSinceRegistration: number;
 }
 
+/**
+ * @nullable
+ */
+export type ArtgImportStatusLastAttemptStatus = typeof ArtgImportStatusLastAttemptStatus[keyof typeof ArtgImportStatusLastAttemptStatus] | null;
+
+
+export const ArtgImportStatusLastAttemptStatus = {
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface ArtgImportStatus {
+  hasSuccessfulImport: boolean;
+  /** @nullable */
+  lastSuccessfulImportAt: string | null;
+  /** @nullable */
+  lastAttemptAt: string | null;
+  /** @nullable */
+  lastAttemptStatus: ArtgImportStatusLastAttemptStatus;
+  /** @nullable */
+  lastErrorMessage: string | null;
+}
+
 export type ArtgImportRunStatus = typeof ArtgImportRunStatus[keyof typeof ArtgImportRunStatus];
 
 
