@@ -41,12 +41,21 @@ import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
 
-function StatCard({ label, value, detail, icon: Icon, tone = 'primary' }: { label: string; value: string | number; detail: string; icon: typeof BarChart3; tone?: 'primary' | 'amber' | 'teal' }) {
-  return <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-xs transition-transform hover:-translate-y-1 hover:shadow-md" data-testid={`card-stat-${label.toLowerCase().replaceAll(' ', '-')}`}>
+function benefitTypeLabel(code: string | null) {
+  return ({ U: 'Unrestricted', R: 'Restricted', A: 'Authority required', S: 'Authority required (streamlined)' } as Record<string, string>)[code ?? ''] ?? 'Benefit type not supplied';
+}
+
+function StatCard({ label, value, detail, icon: Icon, tone = 'primary', href }: { label: string; value: string | number; detail: string; icon: typeof BarChart3; tone?: 'primary' | 'amber' | 'teal'; href?: string }) {
+  const content = <>
     <div className={`mb-7 flex h-9 w-9 items-center justify-center rounded-xl ${tone === 'amber' ? 'bg-accent/20 text-accent-foreground' : tone === 'teal' ? 'bg-chart-3/15 text-chart-3' : 'bg-primary/10 text-primary'}`}><Icon className="h-4 w-4" /></div>
     <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-    <div className="mt-1 flex items-baseline gap-2"><span className="text-3xl font-bold tracking-[-0.06em]" data-testid={`text-stat-${label.toLowerCase().replaceAll(' ', '-')}`}>{value}</span><span className="text-xs text-muted-foreground">{detail}</span></div>
-  </div>;
+    <div className="mt-1 flex items-baseline gap-2"><span className="text-3xl font-bold tabular-nums tracking-[-0.06em]" data-testid={`text-stat-${label.toLowerCase().replaceAll(' ', '-')}`}>{value}</span><span className="text-xs text-muted-foreground">{detail}</span></div>
+  </>;
+  const className = "group relative block overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-xs hover:border-primary/35 hover:shadow-md";
+  const testId = `card-stat-${label.toLowerCase().replaceAll(' ', '-')}`;
+  return href
+    ? <Link href={href} className={className} data-testid={testId} aria-label={`${label}: ${value}. Open relevant page`}>{content}</Link>
+    : <div className={className} data-testid={testId}>{content}</div>;
 }
 
 function Dashboard() {
@@ -58,15 +67,15 @@ function Dashboard() {
   return <AppShell>
     <PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." action={<Link href="/stock" className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-add-stock"><Plus className="h-4 w-4" /> Add stock record</Link>} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard label="Stock units" value={summary.totalStockUnits} detail="on hand" icon={Boxes} />
-      <StatCard label="Stock lines" value={summary.stockLineCount} detail="records" icon={PackagePlus} tone="amber" />
-      <StatCard label="Tracked items" value={summary.trackedItems} detail="PBS items" icon={BookOpen} tone="teal" />
-      <StatCard label="PBS mix" value={`${summary.formularyBreakdown.F1}/${summary.formularyBreakdown.F2}`} detail="F1 / F2" icon={BarChart3} />
+      <StatCard label="Stock units" value={summary.totalStockUnits} detail="on hand" icon={Boxes} href="/stock" />
+      <StatCard label="Stock lines" value={summary.stockLineCount} detail="records" icon={PackagePlus} tone="amber" href="/stock" />
+      <StatCard label="Tracked items" value={summary.trackedItems} detail="PBS items" icon={BookOpen} tone="teal" href="/pbs" />
+      <StatCard label="PBS mix" value={`${summary.formularyBreakdown.F1}/${summary.formularyBreakdown.F2}`} detail="F1 / F2" icon={BarChart3} href="/pbs" />
     </div>
     <div className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-recent-stock">
         <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Private workspace</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Recent stock records</h2></div><Link href="/stock" className="flex items-center gap-1 text-xs font-bold text-primary hover:gap-2" data-testid="link-view-all-stock">View all <ArrowRight className="h-3.5 w-3.5" /></Link></div>
-        {summary.recentStock?.length ? <div className="divide-y divide-border">{summary.recentStock.slice(0, 5).map((item, index) => <div key={item.id} className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/45" data-testid={`row-recent-stock-${item.id}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary font-mono text-xs font-bold text-secondary-foreground">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.brandName || 'PBS item'}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{item.itemCode} · added {date(item.purchaseDate)}</p></div><div className="text-right"><p className="font-mono text-sm font-bold">{item.quantity} units</p><p className="mt-0.5 text-xs text-muted-foreground">{money(item.purchasePrice)} each</p></div></div>)}</div> : <div className="p-12"><QueryState kind="empty" /></div>}
+        {summary.recentStock?.length ? <div className="divide-y divide-border">{summary.recentStock.slice(0, 5).map((item, index) => <div key={item.id} className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/45" data-testid={`row-recent-stock-${item.id}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary font-mono text-xs font-bold text-secondary-foreground">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-0.5 text-[11px] text-muted-foreground" title={`Internal listing ID: ${item.itemCode}`}>PBS {item.pbsCode ?? 'code not supplied'} · added {date(item.purchaseDate)}</p></div><div className="text-right"><p className="font-mono text-sm font-bold">{item.quantity} units</p><p className="mt-0.5 text-xs text-muted-foreground">{money(item.purchasePrice)} each</p></div></div>)}</div> : <div className="p-12"><QueryState kind="empty" /></div>}
       </section>
       <section className="rounded-2xl border border-border bg-sidebar p-6 text-sidebar-foreground shadow-sm" data-testid="card-reference-note">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground"><ShieldCheck className="h-5 w-5" /></div>
@@ -95,8 +104,8 @@ function ArtgDirectory() {
 type StockForm = { itemCode: string; quantity: string; purchasePrice: string; purchaseDate: string; invoiceReference: string };
 const blankStock: StockForm = { itemCode: '', quantity: '0', purchasePrice: '0', purchaseDate: new Date().toISOString().slice(0, 10), invoiceReference: '' };
 
-function itemLabel(item: Pick<PbsItem, 'brandName' | 'drugName' | 'strength' | 'form' | 'packSize'>) {
-  return [item.brandName, item.drugName, item.strength, item.form, item.packSize].filter(Boolean).join(' · ');
+function itemLabel(item: Pick<PbsItem, 'brandName' | 'strength' | 'packSize'>) {
+  return [item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ');
 }
 
 function mutationError(error: unknown, fallback: string) {
@@ -105,7 +114,8 @@ function mutationError(error: unknown, fallback: string) {
 
 function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLine; onClose: () => void; onSaved: (message: string) => Promise<void> }) {
   const [form, setForm] = useState<StockForm>(initial ? { itemCode: initial.itemCode, quantity: String(initial.quantity), purchasePrice: String(initial.purchasePrice), purchaseDate: initial.purchaseDate.slice(0, 10), invoiceReference: initial.invoiceReference ?? '' } : blankStock);
-  const [itemSearch, setItemSearch] = useState(initial ? `${initial.itemCode} · ${initial.brandName}` : '');
+  const [itemSearch, setItemSearch] = useState(initial ? itemLabel(initial) : '');
+  const [selectedItem, setSelectedItem] = useState<Pick<PbsItem, 'itemCode' | 'liItemId' | 'pbsCode' | 'brandName' | 'strength' | 'packSize' | 'benefitTypeCode' | 'maximumQuantityUnits'> | null>(initial ? { itemCode: initial.itemCode, liItemId: initial.itemCode, pbsCode: initial.pbsCode, brandName: initial.brandName, strength: initial.strength, packSize: initial.packSize, benefitTypeCode: initial.benefitTypeCode, maximumQuantityUnits: initial.maximumQuantityUnits } : null);
   const [showItemResults, setShowItemResults] = useState(false);
   const [error, setError] = useState('');
   const create = useCreateStock();
@@ -145,20 +155,20 @@ function StockDialog({ initial, onClose, onSaved }: { initial?: StockExposureLin
               <span className="mb-1.5 block text-xs font-bold">PBS item</span>
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <input value={itemSearch} onFocus={() => setShowItemResults(true)} onChange={(e) => { setItemSearch(e.target.value); set('itemCode', ''); setShowItemResults(true); }} placeholder="Search brand, drug, ingredient or item code" className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-item-search" />
+                 <input value={itemSearch} onFocus={() => setShowItemResults(true)} onChange={(e) => { setItemSearch(e.target.value); set('itemCode', ''); setSelectedItem(null); setShowItemResults(true); }} placeholder="Search brand, drug, strength or PBS code" className="h-11 w-full rounded-xl border border-input bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-item-search" />
               </div>
             </label>
             {showItemResults && itemSearch.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-[4.75rem] z-10 max-h-60 overflow-y-auto rounded-xl border border-border bg-card p-1 shadow-xl">
                 {itemQuery.isLoading ? <p className="px-3 py-4 text-xs text-muted-foreground">Searching PBS items…</p> : itemQuery.isError ? <p className="px-3 py-4 text-xs text-destructive">PBS item search is unavailable.</p> : !itemQuery.data?.length ? <p className="px-3 py-4 text-xs text-muted-foreground">No matching PBS items.</p> : itemQuery.data.map((item) => (
-                  <button type="button" key={item.itemCode} onClick={() => { set('itemCode', item.itemCode); setItemSearch(`${item.itemCode} · ${itemLabel(item)}`); setShowItemResults(false); setError(''); }} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted" data-testid={`option-stock-item-${item.itemCode}`}>
-                    <span className="block font-mono text-xs font-bold text-primary">{item.itemCode} · {item.formulary}</span>
-                    <span className="mt-1 block text-xs font-semibold">{itemLabel(item)}</span>
+                   <button type="button" key={item.itemCode} onClick={() => { set('itemCode', item.itemCode); setSelectedItem(item); setItemSearch(itemLabel(item)); setShowItemResults(false); setError(''); }} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted" data-testid={`option-stock-item-${item.itemCode}`} title={`Internal listing ID: ${item.liItemId ?? item.itemCode}`}>
+                     <span className="block text-sm font-bold">{itemLabel(item)}</span>
+                     <span className="mt-1 block text-[11px] text-muted-foreground">PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)} · Max quantity {item.maximumQuantityUnits ?? 'not supplied'}</span>
                   </button>
                 ))}
               </div>
             )}
-            {form.itemCode && <p className="mt-1.5 font-mono text-[10px] text-muted-foreground">Selected PBS item: {form.itemCode}</p>}
+             {form.itemCode && selectedItem && <div className="mt-2 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2.5" title={`Internal listing ID: ${selectedItem.liItemId ?? selectedItem.itemCode}`}><p className="text-sm font-bold">{itemLabel(selectedItem)}</p><p className="mt-1 text-[11px] text-muted-foreground">PBS {selectedItem.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(selectedItem.benefitTypeCode)} · Max quantity {selectedItem.maximumQuantityUnits ?? 'not supplied'}</p></div>}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block"><span className="mb-1.5 block text-xs font-bold">Quantity</span><input type="number" min="0" value={form.quantity} onChange={(e) => set('quantity', e.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-stock-quantity" /></label>
@@ -220,17 +230,51 @@ function StockQuantityControl({ row, onSaved, onFailed }: { row: StockExposureLi
   return <div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><label className="block text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor={`quantity-${row.id}`}>Quantity</label><div className="mt-1.5 flex flex-wrap items-center gap-1.5"><input id={`quantity-${row.id}`} type="number" min="0" step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} onBlur={() => saveQuantity(Number(quantity))} onKeyDown={(event) => { if (event.key === 'Enter') { event.currentTarget.blur(); } }} disabled={update.isPending} className="h-9 w-20 rounded-lg border border-input bg-background px-2 font-mono text-sm font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-50" aria-label={`Quantity for ${row.brandName}`} data-testid={`input-stock-quantity-${row.id}`} /><button type="button" onClick={() => sold(1)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-one-${row.id}`}>Sold 1</button><button type="button" onClick={() => sold(20)} disabled={update.isPending || Number(quantity) <= 0} className="h-9 rounded-lg border border-border bg-background px-2.5 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:opacity-40" data-testid={`button-sold-twenty-${row.id}`}>Sold 20</button>{update.isPending && <LoaderCircle className="h-3.5 w-3.5 animate-spin text-primary" />}</div></div>;
 }
 
+type StockItemGroup = {
+  itemCode: string;
+  exemplar: StockExposureLine;
+  batches: StockExposureLine[];
+  totalQuantity: number;
+  totalExposure: number;
+};
+
+function groupStockRows(rows: StockExposureLine[]): StockItemGroup[] {
+  const grouped = new Map<string, StockItemGroup>();
+  for (const row of rows) {
+    const existing = grouped.get(row.itemCode);
+    if (existing) {
+      existing.batches.push(row);
+      existing.totalQuantity += row.quantity;
+      existing.totalExposure = Number((existing.totalExposure + row.totalExposure).toFixed(2));
+    } else {
+      grouped.set(row.itemCode, {
+        itemCode: row.itemCode,
+        exemplar: row,
+        batches: [row],
+        totalQuantity: row.quantity,
+        totalExposure: row.totalExposure,
+      });
+    }
+  }
+  return [...grouped.values()].sort((left, right) =>
+    right.totalExposure - left.totalExposure
+    || left.exemplar.brandName.localeCompare(right.exemplar.brandName)
+    || (left.exemplar.pbsCode ?? '').localeCompare(right.exemplar.pbsCode ?? ''),
+  );
+}
+
 function StockPage() {
   const queryClient = useQueryClient();
   const stock = useListStock();
   const remove = useDeleteStock();
   const [dialog, setDialog] = useState<'new' | StockExposureLine | null>(null);
   const [notice, setNotice] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  const [expandedItemCodes, setExpandedItemCodes] = useState<Set<string>>(() => new Set());
   const response = stock.data as StockExposureResponse | undefined;
   const rows = response?.rows ?? [];
   const summary = response?.summary;
-  const atRiskRows = rows.filter((row) => row.totalExposure > 0);
-  const neutralRows = rows.filter((row) => !row.prediction);
+  const itemGroups = useMemo(() => groupStockRows(rows), [rows]);
+  const atRiskBatchCount = rows.filter((row) => row.totalExposure > 0).length;
   const totalUnits = rows.reduce((total, row) => total + row.quantity, 0);
   const showNotice = (message: string, tone: 'success' | 'error') => {
     setNotice({ message, tone });
@@ -245,7 +289,7 @@ function StockPage() {
   };
   const failed = (message: string) => showNotice(message, 'error');
   const deleteRow = (row: StockExposureLine) => {
-    if (!window.confirm(`Delete ${row.brandName} (${row.itemCode}) from your stock list? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete this ${row.brandName} purchase batch (PBS ${row.pbsCode ?? 'code not supplied'})? This cannot be undone.`)) return;
     remove.mutate(
       { id: row.id },
       {
@@ -254,11 +298,26 @@ function StockPage() {
       },
     );
   };
-  const renderGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} at-risk {lineCount === 1 ? 'line' : 'lines'}</p></div><p className="font-mono text-sm font-bold text-destructive">{money(totalExposure)}</p></div>;
-  const renderRow = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 px-5 py-5 transition-colors hover:bg-secondary/25 lg:grid-cols-[minmax(0,1.35fr)_auto_0.72fr_0.72fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-[10px] font-bold text-primary">{row.itemCode}</p><span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{row.formulary}</span></div><p className="mt-1 truncate text-sm font-bold">{row.brandName}</p><p className="mt-1 truncate text-xs text-muted-foreground">{row.drugName} · {[row.strength, row.form, row.packSize].filter(Boolean).join(' · ')}</p><p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground"><span>{money(row.purchasePrice)} each</span><span className="inline-flex items-center gap-1"><CalendarDays className="h-3 w-3" />{date(row.purchaseDate)}</span>{row.invoiceReference && <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span>}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Prediction</p>{row.prediction ? <><p className="mt-1 text-sm font-bold">{date(row.prediction.predictedDate)}</p><p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground"><span className={`h-1.5 w-1.5 rounded-full ${row.prediction.confidence === 'confirmed' ? 'bg-chart-3' : 'bg-accent-foreground'}`} />{row.prediction.confidence === 'confirmed' ? 'Confirmed' : 'Indicative'} · {row.prediction.reductionType.replaceAll('_', ' ')}</p></> : <p className="mt-1 text-sm font-semibold text-muted-foreground">No future prediction</p>}</div><div className="rounded-xl bg-muted/55 p-3 lg:bg-transparent lg:p-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Exposure</p>{row.prediction ? <><p className={`mt-1 text-lg font-bold tracking-[-0.04em] ${row.totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{row.totalExposure > 0 ? money(row.totalExposure) : 'No loss'}</p><p className="mt-1 text-xs text-muted-foreground">{money(row.perPackExposure)} per pack</p></> : <p className="mt-1 text-lg font-bold text-muted-foreground">Neutral</p>}</div><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.itemCode}`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.itemCode}`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
+  const toggleItem = (itemCode: string) => setExpandedItemCodes((current) => {
+    const next = new Set(current);
+    if (next.has(itemCode)) next.delete(itemCode);
+    else next.add(itemCode);
+    return next;
+  });
+  const renderDateGroup = (predictedDate: string, lineCount: number, totalExposure: number) => <div key={predictedDate} className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><p className="text-sm font-bold">{date(predictedDate)}</p><p className="text-xs text-muted-foreground">{lineCount} predicted purchase {lineCount === 1 ? 'batch' : 'batches'}</p></div><p className={`font-mono text-sm font-bold ${totalExposure > 0 ? 'text-destructive' : 'text-chart-3'}`}>{totalExposure > 0 ? money(totalExposure) : 'No loss'}</p></div>;
+  const renderBatch = (row: StockExposureLine) => <div key={row.id} className="grid gap-4 border-t border-border/70 bg-muted/20 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_auto_.55fr_auto] lg:items-center" data-testid={`row-stock-${row.id}`}><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Purchase batch</p><p className="mt-1 text-sm font-bold">{money(row.purchasePrice)} each · {date(row.purchaseDate)}</p><p className="mt-1 text-xs text-muted-foreground">{row.invoiceReference ? <span className="inline-flex items-center gap-1"><ReceiptText className="h-3 w-3" />{row.invoiceReference}</span> : 'No invoice reference'}</p></div><StockQuantityControl row={row} onSaved={saved} onFailed={failed} /><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Batch exposure</p><p className={`mt-1 text-sm font-bold ${row.totalExposure > 0 ? 'text-destructive' : row.prediction ? 'text-chart-3' : 'text-muted-foreground'}`}>{row.totalExposure > 0 ? money(row.totalExposure) : row.prediction ? 'No loss' : 'No prediction'}</p></div><div className="flex gap-1 lg:justify-end"><button type="button" onClick={() => setDialog(row)} className="rounded-lg p-2 text-muted-foreground hover:bg-primary/10 hover:text-primary" aria-label={`Edit ${row.brandName} purchase batch`} data-testid={`button-edit-stock-${row.id}`}><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteRow(row)} disabled={remove.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Delete ${row.brandName} purchase batch`} data-testid={`button-delete-stock-${row.id}`}><Trash2 className="h-4 w-4" /></button></div></div>;
+  const renderItemGroup = (group: StockItemGroup) => {
+    const item = group.exemplar;
+    const isExpanded = expandedItemCodes.has(group.itemCode);
+    const purchasePrices = group.batches.map((batch) => batch.purchasePrice);
+    const minimumPurchasePrice = Math.min(...purchasePrices);
+    const maximumPurchasePrice = Math.max(...purchasePrices);
+    const purchasePriceLabel = minimumPurchasePrice === maximumPurchasePrice ? money(minimumPurchasePrice) : `${money(minimumPurchasePrice)}–${money(maximumPurchasePrice)}`;
+    return <article key={group.itemCode} data-testid={`group-stock-${group.itemCode}`}><button type="button" onClick={() => toggleItem(group.itemCode)} className="grid w-full gap-4 px-5 py-5 text-left hover:bg-secondary/20 lg:grid-cols-[minmax(0,1.45fr)_.55fr_.72fr_.6fr_auto] lg:items-center" aria-expanded={isExpanded} title={`Internal listing ID: ${group.itemCode}`}><div className="min-w-0"><p className="truncate text-base font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-1 text-xs text-muted-foreground">{item.drugName} · PBS {item.pbsCode ?? 'code not supplied'} · {benefitTypeLabel(item.benefitTypeCode)}</p><p className="mt-1 text-[11px] text-muted-foreground">Maximum quantity {item.maximumQuantityUnits ?? 'not supplied'} · {item.formulary}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">On hand</p><p className="mt-1 text-lg font-bold tabular-nums">{group.totalQuantity}</p><p className="text-[11px] text-muted-foreground">{group.batches.length} purchase {group.batches.length === 1 ? 'batch' : 'batches'}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Prediction</p>{item.prediction ? <><p className="mt-1 text-sm font-bold">{date(item.prediction.predictedDate)}</p><p className="text-[11px] text-muted-foreground">{money(item.prediction.predictedNewPrice)} · {item.prediction.confidence === 'confirmed' ? 'Confirmed' : 'Indicative'}</p></> : <p className="mt-1 text-sm font-semibold text-muted-foreground">No future prediction</p>}</div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Exposure</p><p className={`mt-1 text-lg font-bold ${group.totalExposure > 0 ? 'text-destructive' : item.prediction ? 'text-chart-3' : 'text-muted-foreground'}`}>{group.totalExposure > 0 ? money(group.totalExposure) : item.prediction ? 'No loss' : 'Neutral'}</p><p className="text-[11px] text-muted-foreground">Bought at {purchasePriceLabel}</p></div><ChevronDown className={`h-5 w-5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>{isExpanded && <div>{group.batches.map(renderBatch)}</div>}</article>;
+  };
   return <AppShell><PageHeading eyebrow="Private workspace / stock" title="Stock exposure" description="See which private stock lines are most exposed to upcoming PBS price reductions." action={<button type="button" onClick={() => setDialog('new')} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="button-add-stock"><Plus className="h-4 w-4" /> Add stock</button>} />
     {notice && <div className={`mb-5 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold ${notice.tone === 'success' ? 'border-chart-3/25 bg-chart-3/10 text-chart-3' : 'border-destructive/25 bg-destructive/10 text-destructive'}`} role={notice.tone === 'success' ? 'status' : 'alert'} data-testid={`status-stock-${notice.tone}`}>{notice.tone === 'success' ? <Check className="h-4 w-4" /> : <CircleAlert className="h-4 w-4" />}{notice.message}</div>}
-    {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add a private PBS stock record to see quantities, predictions, and potential exposure in one place.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total exposure" value={money(summary?.totalExposure ?? 0)} detail="potential loss" icon={TrendingDown} tone="amber" /><StatCard label="At-risk lines" value={summary?.totalAtRiskLines ?? atRiskRows.length} detail="stock records" icon={CircleAlert} /><StatCard label="Stock units" value={totalUnits} detail="on hand" icon={Boxes} tone="teal" /><StatCard label="Prediction dates" value={summary?.exposureByDate.length ?? 0} detail="upcoming dates" icon={CalendarDays} /></div><div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_.7fr]"><section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-stock-exposure"><div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Risk-first view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Stock lines</h2></div><p className="text-xs text-muted-foreground">{atRiskRows.length ? `${atRiskRows.length} lines with positive exposure` : 'No positive exposure detected'}</p></div><div className="divide-y divide-border">{atRiskRows.length ? atRiskRows.map(renderRow) : <div className="p-8 text-center"><CheckCircle2 className="mx-auto h-8 w-8 text-chart-3" /><p className="mt-3 text-sm font-bold">No stock is currently at risk.</p><p className="mt-1 text-xs text-muted-foreground">Future predictions are still shown below when a line has no positive loss.</p></div>}</div></section><section className="rounded-2xl border border-border bg-sidebar p-5 text-sidebar-foreground shadow-sm" data-testid="section-exposure-by-date"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Forward view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Exposure by date</h2><p className="mt-2 text-sm leading-relaxed text-sidebar-foreground/65">Potential loss grouped by the earliest future prediction for each PBS item.</p><div className="mt-5 space-y-2">{summary?.exposureByDate.length ? summary.exposureByDate.map((group) => renderGroup(group.predictedDate, group.lineCount, group.totalExposure)) : <p className="rounded-xl border border-sidebar-border bg-sidebar-accent/35 p-4 text-xs text-sidebar-foreground/65">No positive exposure has been calculated yet.</p>}</div></section></div>{neutralRows.length > 0 && <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-neutral-stock"><div className="border-b border-border px-5 py-4"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Neutral lines</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">No future prediction yet</h2><p className="mt-1 text-sm text-muted-foreground">These records remain visible without inventing an exposure amount.</p></div><div className="divide-y divide-border">{neutralRows.map(renderRow)}</div></section>}</>}
+    {stock.isLoading ? <QueryState kind="loading" /> : stock.isError ? <QueryState kind="error" onRetry={() => stock.refetch()} /> : !rows.length ? <div className="grid-paper rounded-2xl border border-dashed border-border p-10 sm:p-16"><div className="mx-auto max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-sm"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/20 text-accent-foreground"><Boxes className="h-6 w-6" /></div><h2 className="mt-5 text-xl font-bold tracking-[-0.04em]">Your stock workspace is clear.</h2><p className="mt-2 text-sm leading-relaxed text-muted-foreground">Add a private PBS stock record to see quantities, predictions, and potential exposure in one place.</p><button type="button" onClick={() => setDialog('new')} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-primary-foreground hover:-translate-y-0.5" data-testid="button-add-first-stock"><Plus className="h-4 w-4" /> Add first record</button></div></div> : <><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total exposure" value={money(summary?.totalExposure ?? 0)} detail="potential loss" icon={TrendingDown} tone="amber" /><StatCard label="At-risk batches" value={summary?.totalAtRiskLines ?? atRiskBatchCount} detail="purchase records" icon={CircleAlert} /><StatCard label="Stock units" value={totalUnits} detail="on hand" icon={Boxes} tone="teal" /><StatCard label="Prediction dates" value={summary?.exposureByDate.length ?? 0} detail="upcoming dates" icon={CalendarDays} /></div><div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_.7fr]"><section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-stock-exposure"><div className="flex flex-col gap-2 border-b border-border px-5 py-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Consolidated inventory</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Stock items</h2></div><p className="text-xs text-muted-foreground">{itemGroups.length} PBS {itemGroups.length === 1 ? 'item' : 'items'} · {rows.length} purchase {rows.length === 1 ? 'batch' : 'batches'}</p></div><div className="divide-y divide-border">{itemGroups.map(renderItemGroup)}</div></section><section className="rounded-2xl border border-border bg-sidebar p-5 text-sidebar-foreground shadow-sm" data-testid="section-exposure-by-date"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Forward view</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Predictions by date</h2><p className="mt-2 text-sm leading-relaxed text-sidebar-foreground/65">Every joined future prediction is shown, including dates where current purchase costs produce no loss.</p><div className="mt-5 space-y-2">{summary?.exposureByDate.length ? summary.exposureByDate.map((group) => renderDateGroup(group.predictedDate, group.lineCount, group.totalExposure)) : <p className="rounded-xl border border-sidebar-border bg-sidebar-accent/35 p-4 text-xs text-sidebar-foreground/65">No future predictions are linked to current stock.</p>}</div></section></div></>}
     {dialog && <StockDialog initial={dialog === 'new' ? undefined : dialog} onClose={() => setDialog(null)} onSaved={saved} />}
   </AppShell>;
 }

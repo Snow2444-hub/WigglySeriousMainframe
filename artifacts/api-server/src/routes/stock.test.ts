@@ -275,6 +275,8 @@ test("exposure reports only positive losses and selects the earliest confirmed p
         lineCount: entry.lineCount,
       })),
       [
+        { predictedDate: zeroDate, totalExposure: 0, lineCount: 1 },
+        { predictedDate: negativeDate, totalExposure: 0, lineCount: 1 },
         { predictedDate: multipleEarlyDate, totalExposure: 30, lineCount: 1 },
         { predictedDate: precedenceDate, totalExposure: 40, lineCount: 1 },
       ],

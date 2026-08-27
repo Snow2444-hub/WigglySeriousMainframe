@@ -125,6 +125,13 @@ export interface PbsItem {
   packSize: string | null;
   /** @nullable */
   pricingQuantity: number | null;
+  /**
+     * PBS benefit type code (U unrestricted, R restricted, A authority required, S authority required streamlined)
+     * @nullable
+     */
+  benefitTypeCode: string | null;
+  /** @nullable */
+  maximumQuantityUnits: number | null;
   /** @nullable */
   liForm: string | null;
   /** @nullable */
@@ -309,7 +316,19 @@ export interface PharmacyStock {
   id: number;
   userId: string;
   itemCode: string;
+  /** @nullable */
+  pbsCode: string | null;
   brandName: string;
+  /** @nullable */
+  strength: string | null;
+  /** @nullable */
+  form: string | null;
+  /** @nullable */
+  packSize: string | null;
+  /** @nullable */
+  benefitTypeCode: string | null;
+  /** @nullable */
+  maximumQuantityUnits: number | null;
   quantity: number;
   purchasePrice: number;
   purchaseDate: string;
@@ -334,16 +353,8 @@ export const StockExposureLineFormulary = {
 } as const;
 
 export type StockExposureLine = PharmacyStock & ({
-  /** @nullable */
-  pbsCode: string | null;
   drugName: string;
   activeIngredient: string;
-  /** @nullable */
-  strength: string | null;
-  /** @nullable */
-  form: string | null;
-  /** @nullable */
-  packSize: string | null;
   formulary: StockExposureLineFormulary;
   prediction: StockPrediction | null;
   perPackExposure: number;

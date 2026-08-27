@@ -237,6 +237,8 @@ export async function upsertPbsItemsFromPayload(
         form: formField(record),
         packSize: stringField(record, "pack_size", "pack_quantity", "number_of_containers"),
         pricingQuantity: numberField(record, "pricing_quantity"),
+        benefitTypeCode: stringField(record, "benefit_type_code"),
+        maximumQuantityUnits: numberField(record, "maximum_quantity_units"),
         liForm: stringField(record, "li_form"),
         programCode: stringField(record, "program_code"),
         formulary,

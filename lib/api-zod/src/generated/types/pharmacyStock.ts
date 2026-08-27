@@ -10,7 +10,19 @@ export interface PharmacyStock {
   id: number;
   userId: string;
   itemCode: string;
+  /** @nullable */
+  pbsCode: string | null;
   brandName: string;
+  /** @nullable */
+  strength: string | null;
+  /** @nullable */
+  form: string | null;
+  /** @nullable */
+  packSize: string | null;
+  /** @nullable */
+  benefitTypeCode: string | null;
+  /** @nullable */
+  maximumQuantityUnits: number | null;
   quantity: number;
   purchasePrice: number;
   purchaseDate: Date;

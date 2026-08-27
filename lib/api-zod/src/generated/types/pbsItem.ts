@@ -25,6 +25,13 @@ export interface PbsItem {
   packSize: string | null;
   /** @nullable */
   pricingQuantity: number | null;
+  /**
+     * PBS benefit type code (U unrestricted, R restricted, A authority required, S authority required streamlined)
+     * @nullable
+     */
+  benefitTypeCode: string | null;
+  /** @nullable */
+  maximumQuantityUnits: number | null;
   /** @nullable */
   liForm: string | null;
   /** @nullable */

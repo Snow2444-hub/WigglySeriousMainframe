@@ -37,6 +37,8 @@ const stockSelect = {
   strength: pbsItemsTable.strength,
   form: pbsItemsTable.form,
   packSize: pbsItemsTable.packSize,
+  benefitTypeCode: pbsItemsTable.benefitTypeCode,
+  maximumQuantityUnits: pbsItemsTable.maximumQuantityUnits,
   formulary: pbsItemsTable.formulary,
   quantity: pharmacyStockTable.quantity,
   purchasePrice: pharmacyStockTable.purchasePrice,
@@ -127,7 +129,7 @@ async function getUserExposure(userId: string) {
 
   const byDate = new Map<string, { totalExposure: number; lineCount: number }>();
   for (const row of exposureRows) {
-    if (!row.prediction || row.totalExposure <= 0) continue;
+    if (!row.prediction) continue;
     const current = byDate.get(row.prediction.predictedDate) ?? { totalExposure: 0, lineCount: 0 };
     current.totalExposure = Number((current.totalExposure + row.totalExposure).toFixed(2));
     current.lineCount += 1;

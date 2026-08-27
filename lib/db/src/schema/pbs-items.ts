@@ -16,6 +16,8 @@ export const pbsItemsTable = pgTable("pbs_items", {
   form: text("form"),
   packSize: text("pack_size"),
   pricingQuantity: integer("pricing_quantity"),
+  benefitTypeCode: text("benefit_type_code"),
+  maximumQuantityUnits: integer("maximum_quantity_units"),
   liForm: text("li_form"),
   programCode: text("program_code"),
   formulary: formularyEnum("formulary").notNull(),

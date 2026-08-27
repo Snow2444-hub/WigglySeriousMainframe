@@ -91,6 +91,8 @@ const pbsSelect = {
   form: pbsItemsTable.form,
   packSize: pbsItemsTable.packSize,
   pricingQuantity: pbsItemsTable.pricingQuantity,
+  benefitTypeCode: pbsItemsTable.benefitTypeCode,
+  maximumQuantityUnits: pbsItemsTable.maximumQuantityUnits,
   liForm: pbsItemsTable.liForm,
   programCode: pbsItemsTable.programCode,
   formulary: pbsItemsTable.formulary,

@@ -10,16 +10,8 @@ import type { StockExposureLineFormulary } from './stockExposureLineFormulary';
 import type { StockPrediction } from './stockPrediction';
 
 export type StockExposureLine = PharmacyStock & ({
-  /** @nullable */
-  pbsCode: string | null;
   drugName: string;
   activeIngredient: string;
-  /** @nullable */
-  strength: string | null;
-  /** @nullable */
-  form: string | null;
-  /** @nullable */
-  packSize: string | null;
   formulary: StockExposureLineFormulary;
   prediction: StockPrediction | null;
   perPackExposure: number;

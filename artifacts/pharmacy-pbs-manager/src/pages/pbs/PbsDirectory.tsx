@@ -21,6 +21,9 @@ const reductionTypeLabel = (value: string) => {
   return label.charAt(0).toLocaleUpperCase() + label.slice(1);
 };
 const reductionPercentageLabel = (value: number) => `-${Math.abs(value).toFixed(1).replace(/\.0$/, '')}%`;
+const benefitTypeLabel = (code: string | null) =>
+  ({ U: 'Unrestricted', R: 'Restricted', A: 'Authority required', S: 'Authority streamlined' } as Record<string, string>)[code ?? '']
+  ?? 'Not supplied';
 
 type Tier = 
   | { level: 'drugs' }
@@ -335,10 +338,12 @@ export function PbsDirectory() {
                         {primaryFormulary && <> · {allShareFormulary ? 'Formulary' : 'Default'} {primaryFormulary}</>}
                       </span>
                     </div>
-                    <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-muted/20 px-4 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/70 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:px-6">
+                    <div className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-muted/20 px-4 py-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/70 md:grid-cols-[1fr_1fr_1fr_1.2fr_1fr_1fr_auto] md:px-6">
                       <span>Strength</span>
                       <span>Pack size</span>
                       <span>PBS code</span>
+                      <span className="hidden md:block">Benefit</span>
+                      <span className="hidden md:block">Max quantity</span>
                       <span className="text-right">Ex-manufacturer / wholesale price</span>
                       <span className="hidden w-4 md:block" />
                     </div>
@@ -347,8 +352,8 @@ export function PbsDirectory() {
                         <Link
                           key={item.itemCode}
                           href={`/pbs/${item.itemCode}`}
-                          className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_1fr_1fr_1fr_auto] md:px-6 md:py-1.5"
-                          title={`Open listing details${item.liItemId ? ` · LI item ${item.liItemId}` : ''}`}
+                          className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_1fr_1fr_1.2fr_1fr_1fr_auto] md:px-6 md:py-1.5"
+                          title={`Open listing details · Internal listing ID: ${item.liItemId ?? item.itemCode}`}
                         >
                           <span className="whitespace-nowrap text-sm font-bold tracking-tight text-foreground">
                             {item.strength || 'Unknown strength'}
@@ -358,6 +363,12 @@ export function PbsDirectory() {
                           </span>
                           <span className="min-w-0 truncate font-mono text-xs font-medium text-muted-foreground">
                             PBS {item.pbsCode || 'not supplied'}
+                          </span>
+                          <span className="hidden text-xs font-medium text-muted-foreground md:block">
+                            {benefitTypeLabel(item.benefitTypeCode)}
+                          </span>
+                          <span className="hidden text-xs font-medium text-muted-foreground md:block">
+                            {item.maximumQuantityUnits ?? 'Not supplied'}
                           </span>
                           <span className="flex items-center justify-end gap-2 whitespace-nowrap text-right font-mono text-xs font-bold text-foreground">
                             {money(item.currentAemp)}

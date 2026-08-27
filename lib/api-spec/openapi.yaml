@@ -920,6 +920,11 @@ components:
           type: ["string", "null"]
         pricingQuantity:
           type: ["integer", "null"]
+        benefitTypeCode:
+          type: ["string", "null"]
+          description: PBS benefit type code (U unrestricted, R restricted, A authority required, S authority required streamlined)
+        maximumQuantityUnits:
+          type: ["integer", "null"]
         liForm:
           type: ["string", "null"]
         programCode:
@@ -965,7 +970,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, liForm, programCode, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     PriceHistory:
       type: object
       properties:
@@ -1131,8 +1136,20 @@ components:
           type: string
         itemCode:
           type: string
+        pbsCode:
+          type: ["string", "null"]
         brandName:
           type: string
+        strength:
+          type: ["string", "null"]
+        form:
+          type: ["string", "null"]
+        packSize:
+          type: ["string", "null"]
+        benefitTypeCode:
+          type: ["string", "null"]
+        maximumQuantityUnits:
+          type: ["integer", "null"]
         quantity:
           type: integer
         purchasePrice:
@@ -1142,7 +1159,7 @@ components:
           format: date
         invoiceReference:
           type: ["string", "null"]
-      required: [id, userId, itemCode, brandName, quantity, purchasePrice, purchaseDate, invoiceReference]
+      required: [id, userId, itemCode, pbsCode, brandName, strength, form, packSize, benefitTypeCode, maximumQuantityUnits, quantity, purchasePrice, purchaseDate, invoiceReference]
     StockPrediction:
       type: object
       properties:
@@ -1163,18 +1180,10 @@ components:
         - $ref: "#/components/schemas/PharmacyStock"
         - type: object
           properties:
-            pbsCode:
-              type: ["string", "null"]
             drugName:
               type: string
             activeIngredient:
               type: string
-            strength:
-              type: ["string", "null"]
-            form:
-              type: ["string", "null"]
-            packSize:
-              type: ["string", "null"]
             formulary:
               type: string
               enum: [F1, F2]
@@ -1186,7 +1195,7 @@ components:
               type: number
             totalExposure:
               type: number
-          required: [pbsCode, drugName, activeIngredient, strength, form, packSize, formulary, prediction, perPackExposure, totalExposure]
+          required: [drugName, activeIngredient, formulary, prediction, perPackExposure, totalExposure]
     StockExposureByDate:
       type: object
       properties:
