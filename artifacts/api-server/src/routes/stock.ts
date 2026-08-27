@@ -79,7 +79,16 @@ async function getUserExposure(userId: string) {
     (typeof predictions)[number]
   >();
   for (const prediction of predictions) {
-    if (!predictionByItemCode.has(prediction.itemCode)) {
+    const existing = predictionByItemCode.get(prediction.itemCode);
+    if (
+      !existing
+      || prediction.predictedDate < existing.predictedDate
+      || (
+        prediction.predictedDate === existing.predictedDate
+        && prediction.confidence === "confirmed"
+        && existing.confidence !== "confirmed"
+      )
+    ) {
       predictionByItemCode.set(prediction.itemCode, prediction);
     }
   }
