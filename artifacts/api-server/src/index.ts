@@ -4,6 +4,7 @@ import { seedReferenceData } from "./lib/seed";
 import { ensureDefaultReductionSettings } from "./lib/predicted-reductions";
 import {
   ensureDefaultScheduleChangeSettings,
+  recalculateNewBrandSignificance,
   recalculatePriceChangeSignificance,
 } from "./lib/schedule-changes";
 import { recoverInterruptedIngestionRuns } from "./routes/admin";
@@ -27,6 +28,7 @@ async function start(): Promise<void> {
   await ensureDefaultReductionSettings();
   await ensureDefaultScheduleChangeSettings();
   await recalculatePriceChangeSignificance();
+  await recalculateNewBrandSignificance();
   if (process.env.SEED_REFERENCE_DATA === "true") {
     await seedReferenceData();
   }

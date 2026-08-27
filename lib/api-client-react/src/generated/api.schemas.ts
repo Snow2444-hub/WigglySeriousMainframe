@@ -168,8 +168,33 @@ export interface PredictedReduction {
   predictedPercentage: number;
   predictedNewPrice: number;
   confidence: string;
+  subjectToMinisterialDiscretion: boolean;
   sourceNote: string;
   createdAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type ScheduleChangeAffectedItemFormulary = typeof ScheduleChangeAffectedItemFormulary[keyof typeof ScheduleChangeAffectedItemFormulary] | null;
+
+
+export const ScheduleChangeAffectedItemFormulary = {
+  F1: 'F1',
+  F2: 'F2',
+} as const;
+
+export interface ScheduleChangeAffectedItem {
+  liItemId: string;
+  /** @nullable */
+  pbsCode: string | null;
+  brandName: string;
+  /** @nullable */
+  strength: string | null;
+  /** @nullable */
+  determinedPrice: number | null;
+  /** @nullable */
+  formulary: ScheduleChangeAffectedItemFormulary;
 }
 
 export type ScheduleChangeChangeType = typeof ScheduleChangeChangeType[keyof typeof ScheduleChangeChangeType];
@@ -208,7 +233,8 @@ export interface ScheduleChange {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   effectiveDate: string;
   changeType: ScheduleChangeChangeType;
-  liItemId: string;
+  /** @nullable */
+  liItemId: string | null;
   /** @nullable */
   pbsCode: string | null;
   drugId: number;
@@ -219,6 +245,8 @@ export interface ScheduleChange {
   oldValue: ScheduleChangeOldValue;
   /** @nullable */
   newValue: ScheduleChangeNewValue;
+  /** @nullable */
+  affectedItems: ScheduleChangeAffectedItem[] | null;
   significance: ScheduleChangeSignificance;
   /** @nullable */
   notes: string | null;
@@ -228,6 +256,8 @@ export interface ScheduleChange {
 export interface ScheduleChangeSettings {
   mediumReductionPercentage: number;
   highReductionPercentage: number;
+  firstNewBrandHighSignificance: boolean;
+  firstNewBrandReductionPercentage: number;
 }
 
 export interface UpdateScheduleChangeSettings {
@@ -241,6 +271,12 @@ export interface UpdateScheduleChangeSettings {
      * @exclusiveMinimum 0
      */
   highReductionPercentage: number;
+  firstNewBrandHighSignificance?: boolean;
+  /**
+     * @maximum 100
+     * @exclusiveMinimum 0
+     */
+  firstNewBrandReductionPercentage?: number;
 }
 
 export interface ArtgEntry {

@@ -42,6 +42,8 @@ export * from './pharmacyStockUpdate';
 export * from './predictedReduction';
 export * from './priceHistory';
 export * from './scheduleChange';
+export * from './scheduleChangeAffectedItem';
+export * from './scheduleChangeAffectedItemFormulary';
 export * from './scheduleChangeChangeType';
 export * from './scheduleChangeNewValue';
 export * from './scheduleChangeOldValue';

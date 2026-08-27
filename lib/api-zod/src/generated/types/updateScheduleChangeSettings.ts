@@ -17,4 +17,10 @@ export interface UpdateScheduleChangeSettings {
      * @exclusiveMinimum 0
      */
   highReductionPercentage: number;
+  firstNewBrandHighSignificance?: boolean;
+  /**
+     * @maximum 100
+     * @exclusiveMinimum 0
+     */
+  firstNewBrandReductionPercentage?: number;
 }

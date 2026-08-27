@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, numeric, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const scheduleChangeSettingsTable = pgTable("schedule_change_settings", {
@@ -14,6 +14,7 @@ export const scheduleChangeSettingsTable = pgTable("schedule_change_settings", {
     scale: 3,
     mode: "number",
   }).notNull(),
+  firstNewBrandHighSignificance: boolean("first_new_brand_high_significance").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 });
 

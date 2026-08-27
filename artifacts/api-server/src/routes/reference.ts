@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -161,6 +161,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         predictedDate: predictedReductionsTable.predictedDate,
         reductionType: predictedReductionsTable.reductionType,
         predictedPercentage: predictedReductionsTable.predictedPercentage,
+        subjectToMinisterialDiscretion: predictedReductionsTable.subjectToMinisterialDiscretion,
       })
       .from(predictedReductionsTable)
       .where(gte(predictedReductionsTable.predictedDate, today)),
@@ -410,6 +411,7 @@ const scheduleChangeSelect = {
   brandName: scheduleChangesTable.brandName,
   oldValue: scheduleChangesTable.oldValue,
   newValue: scheduleChangesTable.newValue,
+  affectedItems: scheduleChangesTable.affectedItems,
   significance: scheduleChangesTable.significance,
   notes: scheduleChangesTable.notes,
   createdAt: scheduleChangesTable.createdAt,
@@ -426,10 +428,12 @@ router.get("/pbs-items/:itemCode/schedule-changes", async (req, res): Promise<vo
     .from(scheduleChangesTable)
     .innerJoin(drugsTable, eq(scheduleChangesTable.drugId, drugsTable.id))
     .where(
-      or(
-        eq(scheduleChangesTable.liItemId, parsed.data.itemCode),
-        eq(scheduleChangesTable.pbsCode, parsed.data.itemCode),
-      ),
+        or(
+          eq(scheduleChangesTable.liItemId, parsed.data.itemCode),
+          eq(scheduleChangesTable.pbsCode, parsed.data.itemCode),
+          sql`${scheduleChangesTable.affectedItems} @> ${JSON.stringify([{ liItemId: parsed.data.itemCode }])}::jsonb`,
+          sql`${scheduleChangesTable.affectedItems} @> ${JSON.stringify([{ pbsCode: parsed.data.itemCode }])}::jsonb`,
+        ),
     )
     .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id));
   res.json(ListItemScheduleChangesResponse.parse(rows));

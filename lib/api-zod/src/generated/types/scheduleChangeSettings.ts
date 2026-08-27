@@ -9,4 +9,6 @@
 export interface ScheduleChangeSettings {
   mediumReductionPercentage: number;
   highReductionPercentage: number;
+  firstNewBrandHighSignificance: boolean;
+  firstNewBrandReductionPercentage: number;
 }

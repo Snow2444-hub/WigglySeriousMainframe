@@ -2,10 +2,13 @@ import {
   db,
   drugsTable,
   rawScheduleStagingTable,
+  reductionSettingsTable,
+  type ScheduleChangeAffectedItem,
   scheduleChangesTable,
   scheduleChangeSettingsTable,
 } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -14,6 +17,7 @@ type SnapshotItem = {
   pbsCode: string | null;
   drugKey: string;
   brandName: string;
+  strength: string | null;
   determinedPrice: number | null;
   formulary: "F1" | "F2" | null;
 };
@@ -27,12 +31,16 @@ type ScheduleSnapshot = {
 export type PriceChangeThresholds = {
   mediumReductionPercentage: number;
   highReductionPercentage: number;
+  firstNewBrandHighSignificance: boolean;
+  firstNewBrandReductionPercentage: number;
 };
 
 const PRICE_CHANGE_SETTING_KEY = "price-change-significance";
 const DEFAULT_PRICE_CHANGE_THRESHOLDS: PriceChangeThresholds = {
   mediumReductionPercentage: 10,
   highReductionPercentage: 20,
+  firstNewBrandHighSignificance: true,
+  firstNewBrandReductionPercentage: 25,
 };
 
 export async function ensureDefaultScheduleChangeSettings(): Promise<void> {
@@ -48,11 +56,21 @@ export async function getPriceChangeThresholds(): Promise<PriceChangeThresholds>
     .select({
       mediumReductionPercentage: scheduleChangeSettingsTable.mediumReductionPercentage,
       highReductionPercentage: scheduleChangeSettingsTable.highReductionPercentage,
+      firstNewBrandHighSignificance: scheduleChangeSettingsTable.firstNewBrandHighSignificance,
     })
     .from(scheduleChangeSettingsTable)
     .where(eq(scheduleChangeSettingsTable.settingKey, PRICE_CHANGE_SETTING_KEY))
     .limit(1);
-  return settings ?? DEFAULT_PRICE_CHANGE_THRESHOLDS;
+  const [firstNewBrandSetting] = await db
+    .select({ percentage: reductionSettingsTable.percentage })
+    .from(reductionSettingsTable)
+    .where(eq(reductionSettingsTable.anniversaryYears, 0))
+    .limit(1);
+  return {
+    ...(settings ?? DEFAULT_PRICE_CHANGE_THRESHOLDS),
+    firstNewBrandReductionPercentage:
+      firstNewBrandSetting?.percentage ?? DEFAULT_PRICE_CHANGE_THRESHOLDS.firstNewBrandReductionPercentage,
+  };
 }
 
 export function priceChangeSignificance(
@@ -98,21 +116,79 @@ export async function recalculatePriceChangeSignificance(): Promise<number> {
 }
 
 export async function updatePriceChangeThresholds(
-  thresholds: PriceChangeThresholds,
+  thresholds: Pick<PriceChangeThresholds, "mediumReductionPercentage" | "highReductionPercentage"> & {
+    firstNewBrandHighSignificance?: boolean;
+    firstNewBrandReductionPercentage?: number;
+  },
 ): Promise<PriceChangeThresholds> {
+  const current = await getPriceChangeThresholds();
+  const next = { ...current, ...thresholds };
+  const { firstNewBrandReductionPercentage, ...scheduleChangeValues } = next;
   await db
     .insert(scheduleChangeSettingsTable)
     .values({
       settingKey: PRICE_CHANGE_SETTING_KEY,
-      ...thresholds,
+      ...scheduleChangeValues,
       updatedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: scheduleChangeSettingsTable.settingKey,
-      set: { ...thresholds, updatedAt: new Date() },
+      set: { ...scheduleChangeValues, updatedAt: new Date() },
+    });
+  await db
+    .insert(reductionSettingsTable)
+    .values({
+      anniversaryYears: 0,
+      reductionType: "First New Brand statutory reduction",
+      percentage: firstNewBrandReductionPercentage,
+      triggerType: "first_new_brand",
+      subjectToMinisterialDiscretion: true,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: reductionSettingsTable.anniversaryYears,
+      set: {
+        percentage: firstNewBrandReductionPercentage,
+        triggerType: "first_new_brand",
+        subjectToMinisterialDiscretion: true,
+        updatedAt: new Date(),
+      },
     });
   await recalculatePriceChangeSignificance();
+  await recalculateNewBrandSignificance();
   return getPriceChangeThresholds();
+}
+
+export async function recalculateNewBrandSignificance(): Promise<number> {
+  const settings = await getPriceChangeThresholds();
+  const changes = await db
+    .select({
+      id: scheduleChangesTable.id,
+      drugId: scheduleChangesTable.drugId,
+      oldValue: scheduleChangesTable.oldValue,
+      significance: scheduleChangesTable.significance,
+    })
+    .from(scheduleChangesTable)
+    .where(eq(scheduleChangesTable.changeType, "new_brand"));
+
+  const affectedDrugIds = new Set<number>();
+  let updated = 0;
+  for (const change of changes) {
+    const oldValue = isRecord(change.oldValue) ? change.oldValue : {};
+    const brands = Array.isArray(oldValue.brands)
+      ? oldValue.brands.filter((brand): brand is string => typeof brand === "string")
+      : [];
+    const significance =
+      settings.firstNewBrandHighSignificance && new Set(brands.map(normalized)).size === 1
+        ? "high"
+        : "normal";
+    if (significance === change.significance) continue;
+    await db.update(scheduleChangesTable).set({ significance }).where(eq(scheduleChangesTable.id, change.id));
+    affectedDrugIds.add(change.drugId);
+    updated += 1;
+  }
+  await Promise.all([...affectedDrugIds].map((drugId) => recalculatePredictedReductionsForDrug(drugId)));
+  return updated;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -238,6 +314,7 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
         pbsCode: stringField(record, "pbs_code") ?? null,
         drugKey,
         brandName: stringField(record, "brand_name") ?? drugName,
+         strength: stringField(record, "strength", "li_strength") ?? null,
         determinedPrice: numberField(record, "determined_price", "aemp", "current_aemp") ?? null,
         formulary:
           stringField(record, "formulary") === "F1" || stringField(record, "formulary") === "F2"
@@ -256,24 +333,27 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
 
 function changeRow(input: {
   schedule: ScheduleSnapshot;
-  item: SnapshotItem;
+  item?: SnapshotItem;
   changeType: string;
   oldValue: unknown;
   newValue: unknown;
+  affectedItems?: ScheduleChangeAffectedItem[] | null;
   significance?: string;
   notes: string;
   drugId: number;
+  brandName?: string | null;
 }) {
   return {
     scheduleCode: input.schedule.scheduleCode,
     effectiveDate: input.schedule.effectiveDate,
     changeType: input.changeType,
-    liItemId: input.item.liItemId,
-    pbsCode: input.item.pbsCode,
+    liItemId: input.item?.liItemId ?? null,
+    pbsCode: input.item?.pbsCode ?? null,
     drugId: input.drugId,
-    brandName: input.item.brandName,
+    brandName: input.brandName ?? input.item?.brandName ?? null,
     oldValue: input.oldValue,
     newValue: input.newValue,
+    affectedItems: input.affectedItems ?? null,
     significance: input.significance ?? "normal",
     notes: input.notes,
   };
@@ -294,10 +374,11 @@ function compareSnapshots(
     const previousItems = previous.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
     const currentItems = current.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
     const previousBrands = new Set([...previousItems.values()].map((item) => normalized(item.brandName)));
-    const currentBrands = new Map<string, SnapshotItem>();
+    const currentBrands = new Map<string, SnapshotItem[]>();
 
     for (const item of currentItems.values()) {
-      currentBrands.set(normalized(item.brandName), item);
+      const brandKey = normalized(item.brandName);
+      currentBrands.set(brandKey, [...(currentBrands.get(brandKey) ?? []), item]);
       if (!previousItems.has(item.liItemId)) {
         changes.push(
           changeRow({
@@ -319,21 +400,44 @@ function compareSnapshots(
       }
     }
 
-    for (const [brandKey, item] of currentBrands) {
+    for (const [brandKey, brandItems] of currentBrands) {
       if (!previousBrands.has(brandKey)) {
-        const highSignificance = previousBrands.size === 1;
+        const highSignificance = thresholds.firstNewBrandHighSignificance && previousBrands.size === 1;
+        const affectedItems: ScheduleChangeAffectedItem[] = brandItems
+          .sort((left, right) => left.liItemId.localeCompare(right.liItemId))
+          .map((item) => ({
+            liItemId: item.liItemId,
+            pbsCode: item.pbsCode,
+            brandName: item.brandName,
+            strength: item.strength,
+            determinedPrice: item.determinedPrice,
+            formulary: item.formulary,
+          }));
         changes.push(
           changeRow({
             schedule: current,
-            item,
             drugId,
             changeType: "new_brand",
-            oldValue: { brands: [...previousBrands] },
-            newValue: { brand_name: item.brandName, li_item_id: item.liItemId },
+            oldValue: {
+              brands: [...previousBrands],
+              baseline_items: [...previousItems.values()].map((item) => ({
+                li_item_id: item.liItemId,
+                pbs_code: item.pbsCode,
+                brand_name: item.brandName,
+                strength: item.strength,
+                determined_price: item.determinedPrice,
+                formulary: item.formulary,
+              })),
+            },
+            newValue: { brand_name: brandItems[0]?.brandName ?? brandKey, affected_items: affectedItems },
+            affectedItems,
+            brandName: brandItems[0]?.brandName ?? brandKey,
             significance: highSignificance ? "high" : "normal",
             notes: highSignificance
               ? "New brand appeared for a previously single-brand drug; generic entry signal and possible price reduction."
-              : "New brand appeared for this drug.",
+              : previousBrands.size === 1
+                ? "New brand appeared for a previously single-brand drug; first-new-brand high-significance policy is disabled."
+                : "New brand appeared for this drug.",
           }),
         );
       }
@@ -424,10 +528,59 @@ export async function syncScheduleChangesFromStagedData(): Promise<number> {
   );
   if (changes.length === 0) return 0;
 
-  const inserted = await db
-    .insert(scheduleChangesTable)
-    .values(changes)
-    .onConflictDoNothing()
-    .returning({ id: scheduleChangesTable.id });
-  return inserted.length;
+  const legacyNewBrandRows = await db
+    .select()
+    .from(scheduleChangesTable)
+    .where(eq(scheduleChangesTable.changeType, "new_brand"));
+  const regularChanges = changes.filter((change) => change.changeType !== "new_brand");
+  let insertedCount = 0;
+
+  if (regularChanges.length > 0) {
+    const inserted = await db
+      .insert(scheduleChangesTable)
+      .values(regularChanges)
+      .onConflictDoNothing()
+      .returning({ id: scheduleChangesTable.id });
+    insertedCount += inserted.length;
+  }
+
+  const affectedDrugIds = new Set<number>();
+  for (const change of changes.filter((candidate) => candidate.changeType === "new_brand")) {
+    const existing = legacyNewBrandRows
+      .filter(
+        (row) =>
+          row.scheduleCode === change.scheduleCode &&
+          row.effectiveDate === change.effectiveDate &&
+          row.drugId === change.drugId &&
+          normalized(legacyBrandName(row)) === normalized(change.brandName ?? ""),
+      )
+      .sort((left, right) => left.id - right.id);
+    if (existing[0]) {
+      await db
+        .update(scheduleChangesTable)
+        .set(change)
+        .where(eq(scheduleChangesTable.id, existing[0].id));
+      if (existing.length > 1) {
+        await db
+          .delete(scheduleChangesTable)
+          .where(inArray(scheduleChangesTable.id, existing.slice(1).map((row) => row.id)));
+      }
+    } else {
+      const [inserted] = await db.insert(scheduleChangesTable).values(change).returning({ id: scheduleChangesTable.id });
+      if (inserted) insertedCount += 1;
+    }
+    affectedDrugIds.add(change.drugId);
+  }
+
+  await Promise.all([...affectedDrugIds].map((drugId) => recalculatePredictedReductionsForDrug(drugId)));
+  return insertedCount;
+}
+
+function legacyBrandName(row: {
+  brandName: string | null;
+  newValue: unknown;
+}): string {
+  if (row.brandName) return row.brandName;
+  const newValue = isRecord(row.newValue) ? row.newValue : {};
+  return typeof newValue.brand_name === "string" ? newValue.brand_name : "";
 }

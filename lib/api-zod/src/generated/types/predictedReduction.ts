@@ -16,6 +16,7 @@ export interface PredictedReduction {
   predictedPercentage: number;
   predictedNewPrice: number;
   confidence: string;
+  subjectToMinisterialDiscretion: boolean;
   sourceNote: string;
   createdAt: Date;
 }

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ScheduleChangeAffectedItem } from './scheduleChangeAffectedItem';
 import type { ScheduleChangeChangeType } from './scheduleChangeChangeType';
 import type { ScheduleChangeNewValue } from './scheduleChangeNewValue';
 import type { ScheduleChangeOldValue } from './scheduleChangeOldValue';
@@ -16,7 +17,8 @@ export interface ScheduleChange {
   /** @pattern ^\d{4}-\d{2}-\d{2}$ */
   effectiveDate: string;
   changeType: ScheduleChangeChangeType;
-  liItemId: string;
+  /** @nullable */
+  liItemId: string | null;
   /** @nullable */
   pbsCode: string | null;
   drugId: number;
@@ -27,6 +29,8 @@ export interface ScheduleChange {
   oldValue: ScheduleChangeOldValue;
   /** @nullable */
   newValue: ScheduleChangeNewValue;
+  /** @nullable */
+  affectedItems: ScheduleChangeAffectedItem[] | null;
   significance: ScheduleChangeSignificance;
   /** @nullable */
   notes: string | null;

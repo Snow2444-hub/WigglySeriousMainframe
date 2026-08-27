@@ -82,11 +82,13 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
   }
   if (change.changeType === 'new_brand') {
     const added = objectValue(change.newValue);
+    const affectedItems = change.affectedItems ?? [];
     return (
       <span className="flex flex-wrap items-center gap-1.5 text-xs font-semibold">
         <span className="text-chart-3">Brand added</span>
         {textValue(added.brand_name) && <span>{textValue(added.brand_name)}</span>}
-        {textValue(added.li_item_id) && <span className="font-mono text-[10px] text-muted-foreground">{textValue(added.li_item_id)}</span>}
+        <span className="rounded bg-chart-3/10 px-1.5 py-0.5 font-mono text-[10px] text-chart-3">{affectedItems.length} item{affectedItems.length === 1 ? '' : 's'}</span>
+        {affectedItems.map((item) => <span key={item.liItemId} className="font-mono text-[10px] text-muted-foreground">{item.strength || item.pbsCode || item.liItemId}</span>)}
       </span>
     );
   }
@@ -220,7 +222,7 @@ export function ChangesPage() {
                 <div>
                   <p className="text-sm font-bold leading-tight">{change.brandName || change.drugName}</p>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary">{change.pbsCode || change.liItemId}</span>
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary">{change.pbsCode || change.liItemId || (change.affectedItems?.length ? `${change.affectedItems.length} items` : 'Drug-level')}</span>
                     {change.brandName && <span className="truncate text-[11px] font-semibold text-muted-foreground">{change.drugName}</span>}
                   </div>
                 </div>

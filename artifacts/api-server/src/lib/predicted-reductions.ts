@@ -5,13 +5,21 @@ import {
   priceDisclosureSettingsTable,
   predictedReductionsTable,
   reductionSettingsTable,
+  scheduleChangesTable,
 } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 const DEFAULT_SETTINGS = [
   { anniversaryYears: 5, reductionType: "5-year statutory reduction", percentage: 5 },
   { anniversaryYears: 10, reductionType: "10-year statutory reduction", percentage: 5 },
   { anniversaryYears: 15, reductionType: "15-year statutory reduction", percentage: 26.1 },
+  {
+    anniversaryYears: 0,
+    reductionType: "First New Brand statutory reduction",
+    percentage: 25,
+    triggerType: "first_new_brand",
+    subjectToMinisterialDiscretion: true,
+  },
 ] as const;
 
 const DEFAULT_PRICE_DISCLOSURE_SETTINGS = [
@@ -96,6 +104,7 @@ export async function recalculatePredictedReductionsForDrug(
 
   const f1Items = items.filter((item) => item.formulary === "F1");
   const statutoryRows = settings.flatMap((setting) => {
+    if (setting.triggerType !== "anniversary") return [];
     const predictedDate = roundedForwardToApril(drug.firstPbsListingDate, setting.anniversaryYears);
     if (predictedDate <= today) return [];
     return f1Items.map((item) => ({
@@ -106,9 +115,62 @@ export async function recalculatePredictedReductionsForDrug(
       predictedPercentage: setting.percentage,
       predictedNewPrice: calculateNewPrice(item.currentPrice, setting.percentage),
       confidence: "high",
+       subjectToMinisterialDiscretion: setting.subjectToMinisterialDiscretion,
       sourceNote: `Configured F1 statutory reduction at ${setting.anniversaryYears} years from first PBS listing; anniversary rounded forward to 1 April`,
     }));
   });
+
+  const firstNewBrandSetting = settings.find((setting) => setting.triggerType === "first_new_brand");
+  const firstNewBrandChanges = firstNewBrandSetting
+    ? await db
+        .select({
+          effectiveDate: scheduleChangesTable.effectiveDate,
+          oldValue: scheduleChangesTable.oldValue,
+        })
+        .from(scheduleChangesTable)
+        .where(
+          and(
+            eq(scheduleChangesTable.drugId, drugId),
+            eq(scheduleChangesTable.changeType, "new_brand"),
+            eq(scheduleChangesTable.significance, "high"),
+          ),
+        )
+        .orderBy(asc(scheduleChangesTable.effectiveDate))
+        .then((changes) =>
+          changes
+            .filter((change) => isRecord(change.oldValue))
+            .filter((change) => {
+              const baselineItems = (change.oldValue as JsonRecord).baseline_items;
+              return Array.isArray(baselineItems) && baselineItems.length > 0;
+            }),
+        )
+    : [];
+  const firstNewBrandChange = firstNewBrandChanges[0];
+  const firstNewBrandRows = firstNewBrandChange && firstNewBrandSetting
+    ? (() => {
+        const oldValue = isRecord(firstNewBrandChange.oldValue) ? firstNewBrandChange.oldValue : {};
+        const baselineItems = Array.isArray(oldValue.baseline_items)
+          ? oldValue.baseline_items.filter(isRecord)
+          : [];
+        const currentItems = new Map(items.map((item) => [item.itemCode, item]));
+        return baselineItems.flatMap((baseline) => {
+          const itemCode = stringField(baseline, "li_item_id");
+          const currentPrice = numberField(baseline, "determined_price");
+          if (!itemCode || currentPrice === undefined || !currentItems.has(itemCode)) return [];
+          return [{
+            itemCode,
+            drugId,
+            predictedDate: firstNewBrandChange.effectiveDate,
+            reductionType: firstNewBrandSetting.reductionType,
+            predictedPercentage: firstNewBrandSetting.percentage,
+            predictedNewPrice: calculateNewPrice(currentPrice, firstNewBrandSetting.percentage),
+            confidence: "conditional",
+            subjectToMinisterialDiscretion: firstNewBrandSetting.subjectToMinisterialDiscretion,
+            sourceNote: `Predicted at ${firstNewBrandChange.effectiveDate} from the pre-event current AEMP; first-new-brand statutory reduction is subject to Ministerial discretion.`,
+          }];
+        });
+      })()
+    : [];
 
   const nextDisclosureSetting = disclosureSettings
     .map((setting) => ({
@@ -145,14 +207,39 @@ export async function recalculatePredictedReductionsForDrug(
           predictedPercentage: gap,
           predictedNewPrice: item.weightedAvgDisclosedPrice,
           confidence,
+           subjectToMinisterialDiscretion: false,
           sourceNote: `WADP is ${gap.toFixed(3)}% below determined price; configured minimum is ${setting.minimumGapPercentage.toFixed(3)}%, while PBS documentation states a 10% or 30% threshold applies depending on the item`,
         }];
       })
     : [];
-  const rows = [...statutoryRows, ...disclosureRows];
+  const rows = [...statutoryRows, ...firstNewBrandRows, ...disclosureRows];
 
   if (rows.length > 0) {
     await db.insert(predictedReductionsTable).values(rows);
   }
   return rows.length;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(record: JsonRecord, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return undefined;
+}
+
+function numberField(record: JsonRecord, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return undefined;
 }

@@ -962,12 +962,31 @@ components:
           type: number
         confidence:
           type: string
+        subjectToMinisterialDiscretion:
+          type: boolean
         sourceNote:
           type: string
         createdAt:
           type: string
           format: date-time
-      required: [id, itemCode, drugId, predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence, sourceNote, createdAt]
+      required: [id, itemCode, drugId, predictedDate, reductionType, predictedPercentage, predictedNewPrice, confidence, subjectToMinisterialDiscretion, sourceNote, createdAt]
+    ScheduleChangeAffectedItem:
+      type: object
+      properties:
+        liItemId:
+          type: string
+        pbsCode:
+          type: ["string", "null"]
+        brandName:
+          type: string
+        strength:
+          type: ["string", "null"]
+        determinedPrice:
+          type: ["number", "null"]
+        formulary:
+          type: ["string", "null"]
+          enum: [F1, F2, null]
+      required: [liItemId, pbsCode, brandName, strength, determinedPrice, formulary]
     ScheduleChange:
       type: object
       properties:
@@ -982,7 +1001,7 @@ components:
           type: string
           enum: [new_item, new_brand, delisted, price_change, formulary_change]
         liItemId:
-          type: string
+          type: ["string", "null"]
         pbsCode:
           type: ["string", "null"]
         drugId:
@@ -997,6 +1016,10 @@ components:
         newValue:
           type: ["object", "null"]
           additionalProperties: true
+        affectedItems:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ScheduleChangeAffectedItem"
         significance:
           type: string
           enum: [normal, medium, high]
@@ -1005,7 +1028,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, brandName, oldValue, newValue, significance, notes, createdAt]
+      required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, brandName, oldValue, newValue, affectedItems, significance, notes, createdAt]
     ScheduleChangeSettings:
       type: object
       properties:
@@ -1013,7 +1036,11 @@ components:
           type: number
         highReductionPercentage:
           type: number
-      required: [mediumReductionPercentage, highReductionPercentage]
+        firstNewBrandHighSignificance:
+          type: boolean
+        firstNewBrandReductionPercentage:
+          type: number
+      required: [mediumReductionPercentage, highReductionPercentage, firstNewBrandHighSignificance, firstNewBrandReductionPercentage]
     UpdateScheduleChangeSettings:
       type: object
       properties:
@@ -1022,6 +1049,12 @@ components:
           exclusiveMinimum: 0
           maximum: 100
         highReductionPercentage:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 100
+        firstNewBrandHighSignificance:
+          type: boolean
+        firstNewBrandReductionPercentage:
           type: number
           exclusiveMinimum: 0
           maximum: 100

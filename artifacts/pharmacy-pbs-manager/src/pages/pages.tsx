@@ -156,6 +156,8 @@ function AdminPage() {
   const [watchlistValue, setWatchlistValue] = useState('');
   const [mediumThreshold, setMediumThreshold] = useState('');
   const [highThreshold, setHighThreshold] = useState('');
+  const [firstNewBrandHighSignificance, setFirstNewBrandHighSignificance] = useState(true);
+  const [firstNewBrandReductionPercentage, setFirstNewBrandReductionPercentage] = useState('25');
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -187,6 +189,8 @@ function AdminPage() {
     if (!significanceSettings.data) return;
     setMediumThreshold(String(significanceSettings.data.mediumReductionPercentage));
     setHighThreshold(String(significanceSettings.data.highReductionPercentage));
+    setFirstNewBrandHighSignificance(significanceSettings.data.firstNewBrandHighSignificance);
+    setFirstNewBrandReductionPercentage(String(significanceSettings.data.firstNewBrandReductionPercentage));
   }, [significanceSettings.data]);
 
   const refresh = () => {
@@ -265,24 +269,30 @@ function AdminPage() {
   const saveSignificanceSettings = () => {
     const mediumReductionPercentage = Number(mediumThreshold);
     const highReductionPercentage = Number(highThreshold);
+    const firstNewBrandReduction = Number(firstNewBrandReductionPercentage);
     if (
       !Number.isFinite(mediumReductionPercentage) ||
       !Number.isFinite(highReductionPercentage) ||
       mediumReductionPercentage <= 0 ||
       highReductionPercentage <= mediumReductionPercentage ||
       highReductionPercentage > 100
+      || !Number.isFinite(firstNewBrandReduction)
+      || firstNewBrandReduction <= 0
+      || firstNewBrandReduction > 100
     ) {
       setInputError('Use positive percentages with the medium threshold lower than the high threshold.');
       return;
     }
     setInputError('');
     updateSignificanceSettings.mutate(
-      { data: { mediumReductionPercentage, highReductionPercentage } },
+      { data: { mediumReductionPercentage, highReductionPercentage, firstNewBrandHighSignificance, firstNewBrandReductionPercentage: firstNewBrandReduction } },
       {
         onSuccess: (settings) => {
           setMediumThreshold(String(settings.mediumReductionPercentage));
           setHighThreshold(String(settings.highReductionPercentage));
-          setNotice('Price-change significance thresholds updated and historical changes recalculated.');
+           setFirstNewBrandHighSignificance(settings.firstNewBrandHighSignificance);
+           setFirstNewBrandReductionPercentage(String(settings.firstNewBrandReductionPercentage));
+           setNotice('Schedule-change significance settings updated and historical changes recalculated.');
           void queryClient.invalidateQueries({ queryKey: getGetScheduleChangeSettingsQueryKey() });
         },
         onError: () => setInputError('The significance thresholds could not be updated.'),
@@ -324,9 +334,11 @@ function AdminPage() {
         <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Price reduction significance</h2>
         <p className="mt-1 text-sm text-muted-foreground">A reduction above the medium threshold is flagged medium; above the high threshold is flagged high.</p>
       </div>
-      {significanceSettings.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : significanceSettings.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => significanceSettings.refetch()} /></div> : <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end">
+       {significanceSettings.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : significanceSettings.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => significanceSettings.refetch()} /></div> : <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-end">
         <label className="block flex-1"><span className="mb-1.5 block text-xs font-bold">Medium reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={mediumThreshold} onChange={(event) => setMediumThreshold(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-medium-reduction-threshold" /></label>
         <label className="block flex-1"><span className="mb-1.5 block text-xs font-bold">High reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={highThreshold} onChange={(event) => setHighThreshold(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-high-reduction-threshold" /></label>
+         <label className="flex flex-1 cursor-pointer items-center gap-3 rounded-xl border border-border bg-background px-3 py-2.5"><input type="checkbox" checked={firstNewBrandHighSignificance} onChange={(event) => setFirstNewBrandHighSignificance(event.target.checked)} className="h-4 w-4 accent-primary" data-testid="checkbox-first-new-brand-high-significance" /><span><span className="block text-xs font-bold">First new brand is high</span><span className="block text-[10px] leading-relaxed text-muted-foreground">Only when the previous schedule had one brand.</span></span></label>
+         <label className="block flex-1"><span className="mb-1.5 block text-xs font-bold">First new-brand reduction (%)</span><input type="number" min="0.001" max="100" step="0.1" value={firstNewBrandReductionPercentage} onChange={(event) => setFirstNewBrandReductionPercentage(event.target.value)} className="h-11 w-full rounded-xl border border-input bg-background px-3 font-mono text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" data-testid="input-first-new-brand-reduction" /></label>
         <button type="button" onClick={saveSignificanceSettings} disabled={updateSignificanceSettings.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-save-significance-settings">{updateSignificanceSettings.isPending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Save thresholds</button>
       </div>}
     </section>
