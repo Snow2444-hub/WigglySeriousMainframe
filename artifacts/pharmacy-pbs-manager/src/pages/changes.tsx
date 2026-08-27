@@ -70,6 +70,17 @@ type TimelineDateGroup = {
   groups: TimelineGroup[];
 };
 
+type ScheduleEventGroup = {
+  key: string;
+  drugId: number;
+  drugName: string;
+  effectiveDate: string;
+  scheduleCode: number;
+  changes: ScheduleChange[];
+  brands: string[];
+  itemLabels: string[];
+};
+
 function timelineGroupKey(change: ScheduleChange): string {
   const oldValue = objectValue(change.oldValue);
   const newValue = objectValue(change.newValue);
@@ -119,6 +130,112 @@ function addUnique(values: string[], additions: string[]): string[] {
     if (value && !next.includes(value)) next.push(value);
   }
   return next;
+}
+
+function scheduleEventKey(change: ScheduleChange): string {
+  const brand = changeBrandName(change)?.trim().toLowerCase();
+  const affectedBrands = (change.affectedItems ?? [])
+    .map((item) => item.brandName.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(':');
+  return [
+    change.drugId,
+    change.effectiveDate,
+    brand || affectedBrands || `drug:${change.changeType}`,
+  ].join(':');
+}
+
+function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
+  const groups = new Map<string, ScheduleEventGroup>();
+
+  for (const change of changes) {
+    const key = scheduleEventKey(change);
+    const group = groups.get(key) ?? {
+      key,
+      drugId: change.drugId,
+      drugName: change.drugName,
+      effectiveDate: change.effectiveDate,
+      scheduleCode: change.scheduleCode,
+      changes: [],
+      brands: [],
+      itemLabels: [],
+    };
+    group.changes.push(change);
+    const brand = changeBrandName(change);
+    group.brands = addUnique(group.brands, [
+      ...(brand ? [brand] : []),
+      ...(change.affectedItems ?? []).map((item) => item.brandName),
+    ]);
+    group.itemLabels = addUnique(group.itemLabels, changeItemLabels(change));
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].sort((left, right) => {
+    const dateOrder = right.effectiveDate.localeCompare(left.effectiveDate);
+    if (dateOrder !== 0) return dateOrder;
+    return left.drugName.localeCompare(right.drugName);
+  });
+}
+
+function eventSummary(group: ScheduleEventGroup): string {
+  const types = new Set(group.changes.map((change) => change.changeType));
+  const parts: string[] = [];
+  if (types.has('new_brand')) parts.push('new brand');
+  if (types.has('new_item')) parts.push('new listing');
+  if (types.has('price_change')) parts.push('price update');
+  if (types.has('formulary_change')) parts.push('formulary update');
+  if (types.has('delisted')) parts.push('delisting');
+  if (types.has('published_fnb_new')) parts.push('FNB register entry');
+  if (parts.length === 0) return 'Schedule update';
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+}
+
+function eventSignificance(group: ScheduleEventGroup): 'normal' | 'medium' | 'high' {
+  if (group.changes.some((change) => change.significance === 'high')) return 'high';
+  if (group.changes.some((change) => change.significance === 'medium')) return 'medium';
+  return 'normal';
+}
+
+function EventDetails({ group }: { group: ScheduleEventGroup }) {
+  const priceChange = group.changes.find((change) => change.changeType === 'price_change');
+  const formularyChange = group.changes.find((change) => change.changeType === 'formulary_change');
+
+  if (priceChange && group.changes.length === 1) return <ChangeDetails change={priceChange} />;
+  if (formularyChange && group.changes.length === 1) return <ChangeDetails change={formularyChange} />;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+      {group.brands.slice(0, 2).map((brand) => <span key={brand}>{brand}</span>)}
+      {group.brands.length > 2 && <span>+{group.brands.length - 2} brands</span>}
+      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold">
+        {group.itemLabels.length || group.changes.length} item{(group.itemLabels.length || group.changes.length) === 1 ? '' : 's'}
+      </span>
+    </div>
+  );
+}
+
+function EventExpandedDetails({ group }: { group: ScheduleEventGroup }) {
+  return (
+    <div className="border-t border-border/70 bg-muted/20 px-5 py-3">
+      <div className="space-y-2">
+        {group.changes.map((change) => (
+          <div key={change.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-xs">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-semibold">{changeBrandName(change) || change.drugName}</span>
+              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">
+                {changePbsCode(change) || 'PBS listing'}
+              </span>
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {typeLabels[change.changeType] || change.changeType}
+              </span>
+            </div>
+            <ChangeDetails change={change} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function groupTimelineChanges(changes: ScheduleChange[]): TimelineDateGroup[] {
@@ -309,6 +426,7 @@ export function ChangesPage() {
   const [timelineDrugId, setTimelineDrugId] = useState<number | null>(null);
   const [timelineDrugName, setTimelineDrugName] = useState<string>('');
   const [expandedTimelineGroups, setExpandedTimelineGroups] = useState<string[]>([]);
+  const [expandedEvents, setExpandedEvents] = useState<string[]>([]);
 
   const params = useMemo(() => ({
     drugId: drugId || undefined,
@@ -331,10 +449,17 @@ export function ChangesPage() {
   });
 
   const changes = query.data ?? [];
+  const events = useMemo(() => groupScheduleChanges(changes), [changes]);
   const timelineGroups = useMemo(
     () => (timeline.data ? groupTimelineChanges(timeline.data) : []),
     [timeline.data],
   );
+
+  const toggleEvent = (key: string) => {
+    setExpandedEvents((current) => (
+      current.includes(key) ? current.filter((value) => value !== key) : [...current, key]
+    ));
+  };
 
   const toggleTimelineGroup = (key: string) => {
     setExpandedTimelineGroups((current) => (
@@ -415,51 +540,68 @@ export function ChangesPage() {
             <span />
           </div>
           <div className="divide-y divide-border">
-            {changes.map((change) => (
-              <div 
-                key={change.id} 
-                className={`grid gap-3 px-5 py-4 transition-colors hover:bg-secondary/30 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4 ${change.significance === 'high' ? 'bg-destructive/5' : change.significance === 'medium' ? 'bg-warning/5' : ''}`}
-                data-testid={`row-change-${change.id}`}
-              >
-                <div>
-                  <p className="font-mono text-sm font-bold">{date(change.effectiveDate)}</p>
-                  {change.scheduleCode && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {change.scheduleCode}</p>}
-                </div>
-                <div>
-                  <p className="text-sm font-bold leading-tight">{change.brandName || change.drugName}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-bold text-muted-foreground">{change.pbsCode || change.liItemId || (change.affectedItems?.length ? `${change.affectedItems.length} items` : 'Drug-level')}</span>
-                    {change.brandName && <span className="truncate text-[11px] font-semibold text-muted-foreground">{change.drugName}</span>}
+            {events.map((event) => {
+              const impact = eventSignificance(event);
+              const isExpanded = expandedEvents.includes(event.key);
+              const canExpand = event.changes.length > 1 || event.itemLabels.length > 1;
+              return (
+                <article
+                  key={event.key}
+                  className={`border-l-4 transition-colors hover:bg-secondary/30 ${
+                    impact === 'high' ? 'border-l-destructive' : impact === 'medium' ? 'border-l-warning' : 'border-l-transparent'
+                  }`}
+                  data-testid={`schedule-event-${event.key}`}
+                >
+                  <div className="grid gap-3 px-5 py-4 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4">
+                    <div>
+                      <p className="font-mono text-sm font-bold">{date(event.effectiveDate)}</p>
+                      {event.scheduleCode && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {event.scheduleCode}</p>}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold leading-tight">{event.brands[0] || event.drugName}</p>
+                      {event.brands[0] && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.drugName}</p>}
+                    </div>
+                    <div>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        impact === 'high' ? 'bg-destructive/10 text-destructive' :
+                        impact === 'medium' ? 'bg-warning/15 text-warning' :
+                        event.changes.some((change) => change.changeType.startsWith('new_')) ? 'bg-success/12 text-success' :
+                        event.changes.some((change) => change.changeType === 'delisted') ? 'border border-destructive/30 text-destructive' :
+                        'bg-muted text-muted-foreground'
+                      }`}>
+                        {impact !== 'normal' && <AlertCircle className="h-3 w-3" />}
+                        {eventSummary(event)}
+                      </span>
+                    </div>
+                    <EventDetails group={event} />
+                    <div className="flex justify-between gap-1 md:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => { setTimelineDrugId(event.drugId); setTimelineDrugName(event.drugName); }}
+                        className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-info hover:bg-info/10"
+                        data-testid={`button-timeline-event-${event.key}`}
+                      >
+                        <History className="h-3.5 w-3.5" />
+                        <span className="hidden lg:inline">Timeline</span>
+                      </button>
+                      {canExpand && (
+                        <button
+                          type="button"
+                          onClick={() => toggleEvent(event.key)}
+                          className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-expanded={isExpanded}
+                          data-testid={`button-toggle-event-${event.key}`}
+                        >
+                          <span>{isExpanded ? 'Hide' : 'Listings'}</span>
+                          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                    change.significance === 'high' ? 'bg-destructive text-destructive-foreground' : 
-                    change.significance === 'medium' ? 'bg-warning/15 text-warning' :
-                    change.changeType.startsWith('new_') ? 'bg-success/12 text-success' :
-                    change.changeType === 'delisted' ? 'border border-destructive/30 text-destructive' :
-                    'bg-muted text-muted-foreground'
-                  }`}>
-                    {(change.significance === 'high' || change.significance === 'medium') && <AlertCircle className="h-3 w-3" />}
-                    {typeLabels[change.changeType] || change.changeType}
-                  </span>
-                </div>
-                <div>
-                  <ChangeDetails change={change} />
-                </div>
-                <div className="flex md:justify-end">
-                  <button 
-                    type="button" 
-                    onClick={() => { setTimelineDrugId(change.drugId); setTimelineDrugName(change.drugName); }} 
-                    className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-info hover:bg-info/10"
-                    data-testid={`button-timeline-${change.id}`}
-                  >
-                    <History className="h-3.5 w-3.5" />
-                    <span className="hidden lg:inline">Timeline</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+                  {isExpanded && <EventExpandedDetails group={event} />}
+                </article>
+              );
+            })}
           </div>
         </div>
       )}
