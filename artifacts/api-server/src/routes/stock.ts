@@ -192,6 +192,7 @@ router.post("/stock", requireAuth, async (req, res): Promise<void> => {
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
+    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
     .where(and(eq(pharmacyStockTable.id, created.id), eq(pharmacyStockTable.userId, req.userId!)));
   res.status(201).json(CreateStockResponse.parse(row));
 });
@@ -243,6 +244,7 @@ router.patch("/stock/:id", requireAuth, async (req, res): Promise<void> => {
     .select(stockSelect)
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
+    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
     .where(and(eq(pharmacyStockTable.id, updated.id), eq(pharmacyStockTable.userId, req.userId!)));
   res.json(UpdateStockResponse.parse(row));
 });

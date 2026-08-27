@@ -14,4 +14,6 @@ export interface PharmacyStockInput {
   /** @minimum 0 */
   purchasePrice: number;
   purchaseDate: Date;
+  /** @maxLength 120 */
+  invoiceReference?: string;
 }

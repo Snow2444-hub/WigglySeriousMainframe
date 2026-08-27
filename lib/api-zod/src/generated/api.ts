@@ -35,7 +35,8 @@ export const GetDashboardResponse = zod.object({
   "brandName": zod.string(),
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
-  "purchaseDate": zod.coerce.date()
+  "purchaseDate": zod.coerce.date(),
+  "invoiceReference": zod.string().nullable()
 }))
 })
 
@@ -471,16 +472,44 @@ export const ListArtgEntriesResponse = zod.array(ListArtgEntriesResponseItem)
 /**
  * @summary List the signed-in user's stock
  */
-export const ListStockResponseItem = zod.object({
+export const ListStockResponse = zod.object({
+  "rows": zod.array(zod.object({
   "id": zod.int(),
   "userId": zod.string(),
   "itemCode": zod.string(),
   "brandName": zod.string(),
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
-  "purchaseDate": zod.coerce.date()
+  "purchaseDate": zod.coerce.date(),
+  "invoiceReference": zod.string().nullable()
+}).and(zod.object({
+  "pbsCode": zod.string().nullable(),
+  "drugName": zod.string(),
+  "activeIngredient": zod.string(),
+  "strength": zod.string().nullable(),
+  "form": zod.string().nullable(),
+  "packSize": zod.string().nullable(),
+  "formulary": zod.enum(['F1', 'F2']),
+  "prediction": zod.union([zod.object({
+  "predictedDate": zod.coerce.date(),
+  "reductionType": zod.string(),
+  "predictedPercentage": zod.number(),
+  "predictedNewPrice": zod.number(),
+  "confidence": zod.string()
+}),zod.null()]),
+  "perPackExposure": zod.number(),
+  "totalExposure": zod.number()
+}))),
+  "summary": zod.object({
+  "totalExposure": zod.number(),
+  "totalAtRiskLines": zod.int(),
+  "exposureByDate": zod.array(zod.object({
+  "predictedDate": zod.coerce.date(),
+  "totalExposure": zod.number(),
+  "lineCount": zod.int()
+}))
 })
-export const ListStockResponse = zod.array(ListStockResponseItem)
+})
 
 
 /**
@@ -491,13 +520,16 @@ export const createStockBodyQuantityMin = 0;
 
 export const createStockBodyPurchasePriceMin = 0;
 
+export const createStockBodyInvoiceReferenceMax = 120;
+
 
 
 export const CreateStockBody = zod.object({
   "itemCode": zod.string().min(1),
   "quantity": zod.int().min(createStockBodyQuantityMin),
   "purchasePrice": zod.number().min(createStockBodyPurchasePriceMin),
-  "purchaseDate": zod.coerce.date()
+  "purchaseDate": zod.coerce.date(),
+  "invoiceReference": zod.string().max(createStockBodyInvoiceReferenceMax).optional()
 })
 
 export const CreateStockResponse = zod.object({
@@ -507,7 +539,8 @@ export const CreateStockResponse = zod.object({
   "brandName": zod.string(),
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
-  "purchaseDate": zod.coerce.date()
+  "purchaseDate": zod.coerce.date(),
+  "invoiceReference": zod.string().nullable()
 })
 
 
@@ -523,13 +556,16 @@ export const updateStockBodyQuantityMin = 0;
 
 export const updateStockBodyPurchasePriceMin = 0;
 
+export const updateStockBodyInvoiceReferenceMax = 120;
+
 
 
 export const UpdateStockBody = zod.object({
   "itemCode": zod.string().min(1).optional(),
   "quantity": zod.int().min(updateStockBodyQuantityMin).optional(),
   "purchasePrice": zod.number().min(updateStockBodyPurchasePriceMin).optional(),
-  "purchaseDate": zod.coerce.date().optional()
+  "purchaseDate": zod.coerce.date().optional(),
+  "invoiceReference": zod.string().max(updateStockBodyInvoiceReferenceMax).nullish()
 })
 
 export const UpdateStockResponse = zod.object({
@@ -539,7 +575,8 @@ export const UpdateStockResponse = zod.object({
   "brandName": zod.string(),
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
-  "purchaseDate": zod.coerce.date()
+  "purchaseDate": zod.coerce.date(),
+  "invoiceReference": zod.string().nullable()
 })
 
 

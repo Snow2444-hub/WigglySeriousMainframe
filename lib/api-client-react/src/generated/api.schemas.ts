@@ -313,6 +313,58 @@ export interface PharmacyStock {
   quantity: number;
   purchasePrice: number;
   purchaseDate: string;
+  /** @nullable */
+  invoiceReference: string | null;
+}
+
+export interface StockPrediction {
+  predictedDate: string;
+  reductionType: string;
+  predictedPercentage: number;
+  predictedNewPrice: number;
+  confidence: string;
+}
+
+export type StockExposureLineFormulary = typeof StockExposureLineFormulary[keyof typeof StockExposureLineFormulary];
+
+
+export const StockExposureLineFormulary = {
+  F1: 'F1',
+  F2: 'F2',
+} as const;
+
+export type StockExposureLine = PharmacyStock & ({
+  /** @nullable */
+  pbsCode: string | null;
+  drugName: string;
+  activeIngredient: string;
+  /** @nullable */
+  strength: string | null;
+  /** @nullable */
+  form: string | null;
+  /** @nullable */
+  packSize: string | null;
+  formulary: StockExposureLineFormulary;
+  prediction: StockPrediction | null;
+  perPackExposure: number;
+  totalExposure: number;
+});
+
+export interface StockExposureByDate {
+  predictedDate: string;
+  totalExposure: number;
+  lineCount: number;
+}
+
+export interface StockExposureSummary {
+  totalExposure: number;
+  totalAtRiskLines: number;
+  exposureByDate: StockExposureByDate[];
+}
+
+export interface StockExposureResponse {
+  rows: StockExposureLine[];
+  summary: StockExposureSummary;
 }
 
 export interface PharmacyStockInput {
@@ -323,6 +375,8 @@ export interface PharmacyStockInput {
   /** @minimum 0 */
   purchasePrice: number;
   purchaseDate: string;
+  /** @maxLength 120 */
+  invoiceReference?: string;
 }
 
 export interface PharmacyStockUpdate {
@@ -333,6 +387,11 @@ export interface PharmacyStockUpdate {
   /** @minimum 0 */
   purchasePrice?: number;
   purchaseDate?: string;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  invoiceReference?: string | null;
 }
 
 export type DashboardSummaryFormularyBreakdown = {

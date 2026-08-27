@@ -14,4 +14,9 @@ export interface PharmacyStockUpdate {
   /** @minimum 0 */
   purchasePrice?: number;
   purchaseDate?: Date;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  invoiceReference?: string | null;
 }

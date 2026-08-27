@@ -14,4 +14,6 @@ export interface PharmacyStock {
   quantity: number;
   purchasePrice: number;
   purchaseDate: Date;
+  /** @nullable */
+  invoiceReference: string | null;
 }

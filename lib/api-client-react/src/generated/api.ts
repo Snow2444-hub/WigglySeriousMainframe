@@ -47,6 +47,7 @@ import type {
   PriceHistory,
   ScheduleChange,
   ScheduleChangeSettings,
+  StockExposureResponse,
   UpdateScheduleChangeSettings
 } from './api.schemas';
 
@@ -1284,9 +1285,9 @@ export const getListStockUrl = () => {
 /**
  * @summary List the signed-in user's stock
  */
-export const listStock = async ( options?: Parameters<typeof customFetch>[1]): Promise<PharmacyStock[]> => {
+export const listStock = async ( options?: Parameters<typeof customFetch>[1]): Promise<StockExposureResponse> => {
 
-  return customFetch<PharmacyStock[]>(getListStockUrl(),
+  return customFetch<StockExposureResponse>(getListStockUrl(),
   {
     ...options,
     method: 'GET'
