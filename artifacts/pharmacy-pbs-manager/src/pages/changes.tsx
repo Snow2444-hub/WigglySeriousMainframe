@@ -10,7 +10,7 @@ import {
   getGetDrugScheduleTimelineQueryKey
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
-import { reductionTextClass } from '@/lib/percentage-significance';
+import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
 import { Link } from 'wouter';
 
@@ -148,17 +148,7 @@ function addUnique(values: string[], additions: string[]): string[] {
 }
 
 function scheduleEventKey(change: ScheduleChange): string {
-  const brand = changeBrandName(change)?.trim().toLowerCase();
-  const affectedBrands = (change.affectedItems ?? [])
-    .map((item) => item.brandName.trim().toLowerCase())
-    .filter(Boolean)
-    .sort()
-    .join(':');
-  return [
-    change.drugId,
-    change.effectiveDate,
-    brand || affectedBrands || `drug:${change.changeType}`,
-  ].join(':');
+  return `${change.drugId}:${change.effectiveDate}:${change.scheduleCode}`;
 }
 
 function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
@@ -196,9 +186,9 @@ function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
 function eventSummary(group: ScheduleEventGroup): string {
   const types = new Set(group.changes.map((change) => change.changeType));
   const parts: string[] = [];
-  if (types.has('new_brand')) parts.push('new brand');
+  if (types.has('new_brand')) parts.push(group.brands.length > 1 ? `${group.brands.length} new brands` : 'new brand');
   if (types.has('new_item')) parts.push('new listing');
-  if (types.has('price_change')) parts.push('price update');
+  if (types.has('price_change')) parts.push(group.brands.length > 1 ? `price update across ${group.brands.length} brands` : 'price update');
   if (types.has('formulary_change')) parts.push('formulary update');
   if (types.has('delisted')) parts.push('delisting');
   if (types.has('published_fnb_new')) parts.push('FNB register entry');
@@ -206,18 +196,42 @@ function eventSummary(group: ScheduleEventGroup): string {
   return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
 }
 
-function eventSignificance(group: ScheduleEventGroup): 'normal' | 'medium' | 'high' {
-  if (group.changes.some((change) => change.significance === 'high')) return 'high';
-  if (group.changes.some((change) => change.significance === 'medium')) return 'medium';
+function significanceForChanges(changes: ScheduleChange[]): 'normal' | 'medium' | 'high' {
+  if (changes.some((change) => change.significance === 'high')) return 'high';
+  if (changes.some((change) => change.significance === 'medium')) return 'medium';
   return 'normal';
+}
+
+function eventSignificance(group: ScheduleEventGroup): 'normal' | 'medium' | 'high' {
+  return significanceForChanges(group.changes);
 }
 
 function EventDetails({ group }: { group: ScheduleEventGroup }) {
   const priceChange = group.changes.find((change) => change.changeType === 'price_change');
   const formularyChange = group.changes.find((change) => change.changeType === 'formulary_change');
+  const newBrandChange = group.changes.find((change) => change.changeType === 'new_brand');
 
-  if (priceChange && group.changes.length === 1) return <ChangeDetails change={priceChange} />;
+  if (priceChange) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <ChangeDetails change={priceChange} />
+        {group.brands.length > 1 && <span className="text-xs font-semibold text-muted-foreground">across {group.brands.length} brands</span>}
+      </div>
+    );
+  }
   if (formularyChange && group.changes.length === 1) return <ChangeDetails change={formularyChange} />;
+  if (newBrandChange) {
+    const impact = eventSignificance(group);
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+        <span className={reductionTextClass(impact)}>Brand added</span>
+        <span className="text-muted-foreground">across {group.brands.length} brand{group.brands.length === 1 ? '' : 's'}</span>
+        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(impact)}`}>
+          {group.itemLabels.length || group.changes.length} listing{(group.itemLabels.length || group.changes.length) === 1 ? '' : 's'}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-muted-foreground">
@@ -306,6 +320,7 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
   const change = group.representative;
   const brandLabel = group.brands.length ? group.brands.join(', ') : 'Affected listings';
   const itemCount = group.itemLabels.length || group.changes.length;
+  const significance = significanceForChanges(group.changes);
 
   if (change.changeType === 'price_change' || change.changeType === 'formulary_change') {
     return (
@@ -319,9 +334,9 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
   if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
     return (
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
-        <span className="text-success">{change.changeType === 'new_brand' ? 'Brand added' : 'Added'}</span>
+        <span className={reductionTextClass(significance)}>{change.changeType === 'new_brand' ? 'Brand added' : 'Added'}</span>
         <span className="truncate">{brandLabel}</span>
-        <span className="rounded bg-success/10 px-1.5 py-0.5 font-mono text-[10px] text-success">
+        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(significance)}`}>
           {itemCount} listing{itemCount === 1 ? '' : 's'}
         </span>
       </div>
@@ -331,9 +346,9 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
   if (change.changeType === 'delisted') {
     return (
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
-        <span className="text-destructive">Removed</span>
+        <span className={reductionTextClass(significance)}>Removed</span>
         <span className="truncate">{brandLabel}</span>
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(significance)}`}>
           {itemCount} listing{itemCount === 1 ? '' : 's'}
         </span>
       </div>
@@ -596,9 +611,7 @@ export function ChangesPage() {
               return (
                 <article
                   key={event.key}
-                  className={`border-l-4 transition-colors hover:bg-secondary/30 ${
-                    impact === 'high' ? 'border-l-destructive' : impact === 'medium' ? 'border-l-warning' : 'border-l-transparent'
-                  }`}
+                  className={`border-l-4 transition-colors hover:bg-secondary/30 ${reductionBorderClass(impact)}`}
                   data-testid={`schedule-event-${event.key}`}
                 >
                   <div className="grid gap-3 px-5 py-4 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4">
@@ -607,26 +620,20 @@ export function ChangesPage() {
                       {event.scheduleCode && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {event.scheduleCode}</p>}
                     </div>
                     <div>
-                      {changeItemCode(event.changes[0]) ? (
+                      {event.brands.length === 1 && changeItemCode(event.changes[0]) ? (
                         <Link
                           href={`/pbs/${encodeURIComponent(changeItemCode(event.changes[0]) as string)}`}
                           className="text-sm font-bold leading-tight text-foreground hover:text-primary hover:underline"
                         >
-                          {event.brands[0] || event.drugName}
+                          {event.drugName}
                         </Link>
                       ) : (
-                        <p className="text-sm font-bold leading-tight">{event.brands[0] || event.drugName}</p>
+                        <p className="text-sm font-bold leading-tight">{event.drugName}</p>
                       )}
-                      {event.brands[0] && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.drugName}</p>}
+                      {event.brands.length > 0 && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.brands.length} brand{event.brands.length === 1 ? '' : 's'}</p>}
                     </div>
                     <div>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                        impact === 'high' ? 'bg-destructive/10 text-destructive' :
-                        impact === 'medium' ? 'bg-warning/15 text-warning' :
-                        event.changes.some((change) => change.changeType.startsWith('new_')) ? 'bg-success/12 text-success' :
-                        event.changes.some((change) => change.changeType === 'delisted') ? 'border border-destructive/30 text-destructive' :
-                        'bg-muted text-muted-foreground'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${reductionBadgeClass(impact)}`}>
                         {impact !== 'normal' && <AlertCircle className="h-3 w-3" />}
                         {eventSummary(event)}
                       </span>
