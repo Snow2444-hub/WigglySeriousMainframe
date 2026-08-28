@@ -862,6 +862,18 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
 
 
 /**
+ * @summary Run the current PBS ingestion using an external cron token
+ */
+export const RunScheduledAdminIngestionResponse = zod.object({
+  "status": zod.enum(['completed', 'skipped', 'failed']),
+  "runId": zod.int().optional(),
+  "activeRunId": zod.int().optional(),
+  "errorMessage": zod.string().optional(),
+  "recoveredRunIds": zod.array(zod.int()).optional()
+})
+
+
+/**
  * @summary List recent manual ARTG imports
  */
 export const ListAdminArtgImportRunsResponseItem = zod.object({

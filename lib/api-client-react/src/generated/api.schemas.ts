@@ -754,6 +754,23 @@ export interface CurrentAdminIngestionRun {
   currentRun: AdminIngestionRun | null;
 }
 
+export type ScheduledIngestionResultStatus = typeof ScheduledIngestionResultStatus[keyof typeof ScheduledIngestionResultStatus];
+
+
+export const ScheduledIngestionResultStatus = {
+  completed: 'completed',
+  skipped: 'skipped',
+  failed: 'failed',
+} as const;
+
+export interface ScheduledIngestionResult {
+  status: ScheduledIngestionResultStatus;
+  runId?: number;
+  activeRunId?: number;
+  errorMessage?: string;
+  recoveredRunIds?: number[];
+}
+
 export type PbsWatchlistEntryFilterType = typeof PbsWatchlistEntryFilterType[keyof typeof PbsWatchlistEntryFilterType];
 
 

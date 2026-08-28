@@ -686,6 +686,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/run-scheduled-ingestion:
+    post:
+      operationId: runScheduledAdminIngestion
+      tags: [admin]
+      summary: Run the current PBS ingestion using an external cron token
+      security:
+        - ScheduledIngestionToken: []
+      responses:
+        "200":
+          description: Ingestion completed or was skipped because another run is active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledIngestionResult"
+        "401":
+          description: Invalid or missing scheduled-ingestion token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Ingestion failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledIngestionResult"
+        "503":
+          description: Scheduled-ingestion token is not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/artg-imports:
     get:
       operationId: listAdminArtgImportRuns
@@ -1005,6 +1037,11 @@ components:
       required: true
       schema:
         type: integer
+  securitySchemes:
+    ScheduledIngestionToken:
+      type: http
+      scheme: bearer
+      bearerFormat: secret-token
   schemas:
     HealthStatus:
       type: object
@@ -1895,6 +1932,23 @@ components:
             - $ref: "#/components/schemas/AdminIngestionRun"
             - type: "null"
       required: [currentRun]
+    ScheduledIngestionResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [completed, skipped, failed]
+        runId:
+          type: integer
+        activeRunId:
+          type: integer
+        errorMessage:
+          type: string
+        recoveredRunIds:
+          type: array
+          items:
+            type: integer
+      required: [status]
     PbsWatchlistEntry:
       type: object
       properties:

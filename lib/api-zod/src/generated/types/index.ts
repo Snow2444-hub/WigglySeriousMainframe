@@ -67,6 +67,8 @@ export * from './scheduleChangeNewValue';
 export * from './scheduleChangeOldValue';
 export * from './scheduleChangeSettings';
 export * from './scheduleChangeSignificance';
+export * from './scheduledIngestionResult';
+export * from './scheduledIngestionResultStatus';
 export * from './stockExposureByDate';
 export * from './stockExposureLine';
 export * from './stockExposureLineFormulary';
