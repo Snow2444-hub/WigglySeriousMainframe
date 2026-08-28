@@ -376,7 +376,7 @@ function normalized(value: string): string {
 }
 
 function scheduleCodeFromRequestKey(requestKey: string): number | undefined {
-  const match = requestKey.match(/schedule-(\d+)$/);
+  const match = requestKey.match(/schedule-(\d+)(?::run-\d+)?$/);
   if (!match) return undefined;
   const value = Number(match[1]);
   return Number.isInteger(value) ? value : undefined;

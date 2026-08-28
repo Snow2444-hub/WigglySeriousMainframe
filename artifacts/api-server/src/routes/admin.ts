@@ -242,6 +242,7 @@ export async function executeIngestionRun(
             maxPages: pagesAvailableForSnapshot,
             filters: [{ requestKey: `items-snapshot:schedule-${scheduleCode}`, params: {} }],
             coverageScope: "schedule",
+            stagingRunId: runId,
             onPage: async (page) => {
               requestUrls.add(page.url);
               pagesFetched += 1;
@@ -464,6 +465,7 @@ async function executeBackfillIngestionRun(
               maxPages: pagesAfterItems,
               filters: [{ requestKey: `items-snapshot:schedule-${schedule.scheduleCode}`, params: {} }],
               coverageScope: "schedule",
+              stagingRunId: runId,
               onPage: async (page) => {
                 pagesFetched += 1;
                 requestUrls.add(page.url);

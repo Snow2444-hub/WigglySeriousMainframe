@@ -26,6 +26,7 @@ export interface FetchScheduleOptions {
   maxPages?: number;
   filters?: PbsRequestFilter[];
   coverageScope?: "filtered" | "schedule";
+  stagingRunId?: number;
   latestScheduleOnly?: boolean;
   request?: RequestLike;
   sleep?: Sleep;
@@ -288,6 +289,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     maxPages,
     filters = [{ requestKey: "unfiltered", params: {} }],
     coverageScope = "filtered",
+    stagingRunId,
     latestScheduleOnly = true,
     request = fetch,
     sleep = defaultSleep,
@@ -306,6 +308,9 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   if (maxPages !== undefined && (!Number.isInteger(maxPages) || maxPages <= 0)) {
     throw new Error("maxPages must be a positive integer");
   }
+  if (stagingRunId !== undefined && (!Number.isInteger(stagingRunId) || stagingRunId <= 0)) {
+    throw new Error("stagingRunId must be a positive integer");
+  }
   if (filters.length === 0) throw new Error("At least one PBS request filter is required");
   for (const filter of filters) {
     if (!/^[a-z0-9][a-z0-9:_-]{0,120}$/i.test(filter.requestKey)) {
@@ -323,6 +328,10 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
   for (const filter of filters) {
     for (const configuredEndpoint of filter.endpoint ? [filter.endpoint] : endpoints) {
       const endpoint = normaliseEndpoint(configuredEndpoint);
+      const stagingRequestKey =
+        stagingRunId === undefined
+          ? filter.requestKey
+          : `${filter.requestKey}:run-${stagingRunId}`;
       let pageNumber = 1;
       let nextUrl: URL | undefined;
 
@@ -333,7 +342,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
 
         const url = nextUrl ?? buildPageUrl(endpoint, pageNumber, limit, filter.params, latestScheduleOnly);
         logger.info(
-          { endpoint, requestKey: filter.requestKey, pageNumber, url: url.toString() },
+          { endpoint, requestKey: stagingRequestKey, pageNumber, url: url.toString() },
           "Requesting PBS schedule page",
         );
         const payload = await fetchPage(url, apiKey, sharedRequestPolicy, maxRetries, request, sleep);
@@ -344,7 +353,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
           .values({
             scheduleDate,
             endpoint,
-            requestKey: filter.requestKey,
+            requestKey: stagingRequestKey,
             pageNumber,
             coverageScope,
             payload,
@@ -353,7 +362,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
 
         const page = {
           endpoint,
-          requestKey: filter.requestKey,
+          requestKey: stagingRequestKey,
           pageNumber,
           records: getCollectionLength(payload),
           url: url.toString(),
@@ -380,7 +389,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
             and(
               eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
               eq(rawScheduleStagingTable.endpoint, endpoint),
-              eq(rawScheduleStagingTable.requestKey, filter.requestKey),
+              eq(rawScheduleStagingTable.requestKey, stagingRequestKey),
             ),
           );
       }

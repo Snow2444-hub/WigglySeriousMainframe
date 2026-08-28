@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   drugsTable,
+  pbsItemsTable,
   rawScheduleStagingTable,
   scheduleChangesTable,
 } from "@workspace/db";
@@ -151,6 +152,8 @@ async function stageFixtureSchedule(input: {
   scheduleDate: string;
   items: typeof fixtureItems;
   coverage: SnapshotCoverage;
+  stagingRunId?: number;
+  interrupted?: boolean;
 }): Promise<void> {
   const request = async (requestUrl: string | URL): Promise<Response> => {
     const url = new URL(requestUrl);
@@ -191,6 +194,12 @@ async function stageFixtureSchedule(input: {
     ...(input.coverage === "capped" ? { maxPages: 1 } : {}),
     filters: [{ requestKey: `items-snapshot:schedule-${input.scheduleCode}`, params: {} }],
     coverageScope: input.coverage === "filtered" ? "filtered" : "schedule",
+    stagingRunId: input.stagingRunId,
+    onPayload: async (page) => {
+      if (input.interrupted && page.endpoint === "items") {
+        throw new Error("fixture interruption after staging");
+      }
+    },
     request,
     sleep: async () => {},
   });
@@ -202,7 +211,7 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
     { coverage: "filtered", expectedChanges: 0 },
     { coverage: "capped", expectedChanges: 0 },
   ];
-  const fixtureBase = 2_100_000_000 + (process.pid % 10_000) * 10;
+  const fixtureBase = 1_600_000_000 + ((Date.now() + process.pid) % 100_000) * 10;
 
   for (const [scenarioIndex, scenario] of scenarios.entries()) {
     const previousScheduleCode = fixtureBase + scenarioIndex * 2;
@@ -261,7 +270,95 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
       await db
         .delete(rawScheduleStagingTable)
         .where(inArray(rawScheduleStagingTable.scheduleDate, [scheduleDate]));
+      await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
       await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
     }
+  }
+});
+
+test("interrupted schedule-wide staging stays incomplete when a later run uses the same schedule", async () => {
+  const previousScheduleCode = 1_950_000_001 + ((Date.now() + process.pid) % 100_000) * 2;
+  const currentScheduleCode = previousScheduleCode + 1;
+  const drugId = previousScheduleCode;
+  const scheduleDate = "2092-01-01";
+  const effectiveDates = ["2092-01-01", "2092-02-01"];
+  const interruptedRunId = previousScheduleCode + 10;
+  const laterRunId = interruptedRunId + 1;
+
+  try {
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: "Task 33 fixture drug",
+      activeIngredient: "Task 32 fixture ingredient",
+      sponsor: "Task 33 fixture",
+      firstPbsListingDate: "2090-01-01",
+    });
+    await stageFixtureSchedule({
+      scheduleCode: previousScheduleCode,
+      effectiveDate: effectiveDates[0],
+      scheduleDate,
+      items: fixtureItems,
+      coverage: "complete",
+      stagingRunId: interruptedRunId,
+    });
+    await assert.rejects(
+      stageFixtureSchedule({
+        scheduleCode: currentScheduleCode,
+        effectiveDate: effectiveDates[1],
+        scheduleDate,
+        items: [fixtureItems[1]],
+        coverage: "capped",
+        stagingRunId: interruptedRunId,
+        interrupted: true,
+      }),
+      /fixture interruption after staging/,
+    );
+    await stageFixtureSchedule({
+      scheduleCode: currentScheduleCode,
+      effectiveDate: effectiveDates[1],
+      scheduleDate,
+      items: [fixtureItems[1]],
+      coverage: "capped",
+      stagingRunId: laterRunId,
+    });
+
+    const stagedRows = await db
+      .select({
+        requestKey: rawScheduleStagingTable.requestKey,
+        coverageComplete: rawScheduleStagingTable.coverageComplete,
+      })
+      .from(rawScheduleStagingTable)
+      .where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate))
+      .orderBy(asc(rawScheduleStagingTable.id));
+    const currentRows = stagedRows.filter((row) =>
+      row.requestKey.includes(`schedule-${currentScheduleCode}`),
+    );
+
+    assert.deepEqual(
+      currentRows,
+      [
+        {
+          requestKey: `items-snapshot:schedule-${currentScheduleCode}:run-${interruptedRunId}`,
+          coverageComplete: false,
+        },
+        {
+          requestKey: `items-snapshot:schedule-${currentScheduleCode}:run-${laterRunId}`,
+          coverageComplete: false,
+        },
+      ],
+    );
+    assert.equal(await syncScheduleChangesFromStagedData(), 0);
+    const changes = await db
+      .select({ changeType: scheduleChangesTable.changeType })
+      .from(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    assert.equal(changes.filter((change) => change.changeType === "delisted").length, 0);
+  } finally {
+    await db
+      .delete(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
+    await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
+    await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
   }
 });
