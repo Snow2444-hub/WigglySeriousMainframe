@@ -12,6 +12,7 @@ _Replace the heading above with the project's name, and this line with one sente
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
 - PBS ingestion also requires the `PBS_SUBSCRIPTION_KEY` secret and at least one enabled PBS watchlist entry.
+- External cron services can call `POST /api/admin/run-scheduled-ingestion` with `Authorization: Bearer <PBS_SCHEDULED_INGESTION_TOKEN>`. The token is stored as the `PBS_SCHEDULED_INGESTION_TOKEN` secret.
 
 ### Scheduled PBS ingestion
 
