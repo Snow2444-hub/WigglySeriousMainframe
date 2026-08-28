@@ -711,7 +711,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ScheduledIngestionResult"
+                oneOf:
+                  - $ref: "#/components/schemas/ScheduledIngestionResult"
+                  - $ref: "#/components/schemas/Error"
         "503":
           description: Scheduled-ingestion token is not configured
           content:

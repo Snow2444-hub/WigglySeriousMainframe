@@ -13,3 +13,4 @@
 - [PBS premium data](pbs-premium-data.md) — Premium amounts are published per item-dispensing-rule relationship, not derived from item prices.
 - [Brand visibility preferences](brand-visibility-preferences.md) — Per-account display filters never constrain shared PBS ingestion, storage, or calculations.
 - [Development schema alignment](development-schema-alignment.md) — Database-backed tests need the development schema pushed after shared schema changes.
+- [External PBS automation](external-pbs-automation.md) — External schedulers must call the published API; development URLs are not stable third-party targets.
