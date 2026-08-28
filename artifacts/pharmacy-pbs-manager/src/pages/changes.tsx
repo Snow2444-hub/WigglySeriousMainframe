@@ -30,11 +30,36 @@ const typeLabels: Record<string, string> = {
   delisted: 'Delisted',
   price_change: 'Price update',
   formulary_change: 'Formulary change',
+  listing_amendment: 'Listing amended',
   premium_added: 'Premium added',
   premium_changed: 'Premium updated',
   premium_removed: 'Premium removed',
   published_fnb_new: 'New FNB register entry'
 };
+
+type ChangeCategory = 'all' | 'new' | 'amended' | 'deleted' | 'price';
+
+const changeCategoryLabels: Record<ChangeCategory, string> = {
+  all: 'All updates',
+  new: 'New listings',
+  amended: 'Amended listings',
+  deleted: 'Deleted listings',
+  price: 'Price changes',
+};
+
+const categoryChangeTypes: Record<Exclude<ChangeCategory, 'all'>, string[]> = {
+  new: ['new_item', 'new_brand'],
+  amended: ['listing_amendment', 'formulary_change', 'premium_added', 'premium_changed', 'premium_removed'],
+  deleted: ['delisted'],
+  price: ['price_change'],
+};
+
+function changeCategory(change: ScheduleChange): ChangeCategory {
+  for (const [category, types] of Object.entries(categoryChangeTypes) as Array<[Exclude<ChangeCategory, 'all'>, string[]]>) {
+    if (types.includes(change.changeType)) return category;
+  }
+  return 'all';
+}
 
 function objectValue(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -111,6 +136,9 @@ function timelineGroupKey(change: ScheduleChange): string {
   }
   if (change.changeType === 'formulary_change') {
     return `${change.changeType}:${oldValue.formulary ?? ''}:${newValue.formulary ?? ''}`;
+  }
+  if (change.changeType === 'listing_amendment') {
+    return `${change.changeType}:${change.liItemId ?? change.id}`;
   }
   if (change.changeType === 'new_item' || change.changeType === 'new_brand') {
     return 'new_brands';
@@ -193,12 +221,10 @@ function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
 
 function eventBadgeLabel(group: ScheduleEventGroup): string {
   const types = new Set(group.changes.map((change) => change.changeType));
+  const category = changeCategory(group.changes[0]);
+  const categories = new Set(group.changes.map(changeCategory));
+  if (categories.size === 1 && category !== 'all') return changeCategoryLabels[category];
   if (types.size > 1) return 'Multiple changes';
-  if (types.has('new_brand')) return 'New brand';
-  if (types.has('new_item')) return 'New listing';
-  if (types.has('price_change')) return 'Price update';
-  if (types.has('formulary_change')) return 'Formulary update';
-  if (types.has('delisted')) return 'Delisting';
   if (types.has('published_fnb_new')) return 'FNB entry';
   if (types.has('premium_added')) return 'Premium added';
   if (types.has('premium_changed')) return 'Premium update';
@@ -219,6 +245,7 @@ function eventSignificance(group: ScheduleEventGroup): 'normal' | 'medium' | 'hi
 function EventDetails({ group }: { group: ScheduleEventGroup }) {
   const priceChange = group.changes.find((change) => change.changeType === 'price_change');
   const formularyChange = group.changes.find((change) => change.changeType === 'formulary_change');
+  const amendmentChange = group.changes.find((change) => change.changeType === 'listing_amendment');
   const newBrandChange = group.changes.find((change) => change.changeType === 'new_brand');
 
   if (priceChange) {
@@ -230,6 +257,7 @@ function EventDetails({ group }: { group: ScheduleEventGroup }) {
     );
   }
   if (formularyChange && group.changes.length === 1) return <ChangeDetails change={formularyChange} />;
+  if (amendmentChange && group.changes.length === 1) return <ChangeDetails change={amendmentChange} />;
   if (newBrandChange) {
     const impact = eventSignificance(group);
     return (
@@ -405,6 +433,8 @@ function groupOtherChanges(changes: ScheduleChange[]): OtherChangeGroup[] {
       ? 'new_brands'
       : change.changeType === 'formulary_change'
         ? `formulary:${oldValue.formulary ?? ''}:${newValue.formulary ?? ''}`
+        : change.changeType === 'listing_amendment'
+          ? `listing_amendment:${change.liItemId ?? change.id}`
         : change.changeType;
     const group = groups.get(key) ?? { key, representative: change, brands: [] };
     const brand = changeBrandName(change);
@@ -778,6 +808,48 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
       </span>
     );
   }
+  if (change.changeType === 'listing_amendment') {
+    const previous = objectValue(change.oldValue);
+    const next = objectValue(change.newValue);
+    const fields = Array.isArray(next.changed_fields)
+      ? next.changed_fields.filter((field): field is string => typeof field === 'string')
+      : Object.keys(next).filter((field) => !['li_item_id', 'pbs_code', 'changed_fields'].includes(field));
+    const labelByField: Record<string, string> = {
+      benefit_type: 'Benefit type',
+      maximum_quantity: 'Maximum quantity',
+      maximum_prescribable_packs: 'Max prescribable packs',
+      number_of_repeats: 'Repeats',
+      pack_size: 'Pack size',
+      restriction_indicators: 'Restrictions',
+      caution_indicators: 'Cautions',
+    };
+    const formatValue = (field: string, value: unknown): string => {
+      if (value === null || value === undefined || value === '') return 'not specified';
+      if (field === 'benefit_type') {
+        const normalized = String(value).trim().toLowerCase();
+        if (normalized === 'u' || normalized === 'unrestricted') return 'unrestricted';
+        if (normalized === 'r' || normalized === 'restricted') return 'restricted';
+        if (['a', 's', 'authority', 'authority required'].includes(normalized)) return 'authority';
+      }
+      if (Array.isArray(value)) return value.map((entry) => String(entry)).join(', ') || 'none';
+      if (typeof value === 'object') {
+        return Object.entries(value as Record<string, unknown>)
+          .map(([key, entry]) => `${key.replaceAll('_', ' ')}: ${String(entry)}`)
+          .join(', ') || 'none';
+      }
+      return String(value);
+    };
+    return (
+      <span className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+        <span className="text-info">Amended</span>
+        {fields.map((field) => (
+          <span key={field} className="rounded bg-info/10 px-1.5 py-0.5 text-info">
+            {labelByField[field] || field}: {formatValue(field, previous[field])} <ArrowRight className="inline h-3 w-3" /> {formatValue(field, next[field])}
+          </span>
+        ))}
+      </span>
+    );
+  }
   if (
     change.changeType === 'premium_added' ||
     change.changeType === 'premium_changed' ||
@@ -815,6 +887,7 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
 
 export function ChangesPage() {
   const [drugId, setDrugId] = useState<number | ''>('');
+  const [category, setCategory] = useState<ChangeCategory>('all');
   const [changeType, setChangeType] = useState<ListScheduleChangesChangeType | ''>('');
   const [significance, setSignificance] = useState<ListScheduleChangesSignificance | ''>('');
   
@@ -844,7 +917,11 @@ export function ChangesPage() {
   });
 
   const changes = query.data ?? [];
-  const events = useMemo(() => groupScheduleChanges(changes), [changes]);
+  const filteredChanges = useMemo(
+    () => category === 'all' ? changes : changes.filter((change) => changeCategory(change) === category),
+    [changes, category],
+  );
+  const events = useMemo(() => groupScheduleChanges(filteredChanges), [filteredChanges]);
   const timelineGroups = useMemo(
     () => (timeline.data ? groupTimelineChanges(timeline.data) : []),
     [timeline.data],
@@ -887,6 +964,20 @@ export function ChangesPage() {
         </label>
         
         <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+          <Filter className="h-4 w-4 text-primary" />
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as ChangeCategory)}
+            className="w-full bg-transparent text-sm font-semibold outline-none"
+            data-testid="select-changes-category"
+          >
+            {(Object.keys(changeCategoryLabels) as ChangeCategory[]).map((value) => (
+              <option key={value} value={value}>{changeCategoryLabels[value]}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
           <Filter className="h-4 w-4 text-info" />
           <select 
             value={changeType} 
@@ -900,6 +991,7 @@ export function ChangesPage() {
             <option value="delisted">Delisted</option>
             <option value="price_change">Price changes</option>
             <option value="formulary_change">Formulary changes</option>
+            <option value="listing_amendment">Listing amendments</option>
             <option value="premium_added">Premiums added</option>
             <option value="premium_changed">Premiums updated</option>
             <option value="premium_removed">Premiums removed</option>
@@ -926,7 +1018,7 @@ export function ChangesPage() {
         <QueryState kind="loading" />
       ) : query.isError ? (
         <QueryState kind="error" onRetry={() => query.refetch()} />
-      ) : changes.length === 0 ? (
+      ) : filteredChanges.length === 0 ? (
         <QueryState kind="empty" />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">

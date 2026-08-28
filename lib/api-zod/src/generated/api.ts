@@ -526,7 +526,7 @@ export const ListItemScheduleChangesResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(listItemScheduleChangesResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'listing_amendment', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),
@@ -560,7 +560,7 @@ export const listScheduleChangesQueryLimitMax = 500;
 
 export const ListScheduleChangesQueryParams = zod.object({
   "drugId": zod.coerce.number().int().min(1).optional(),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'premium_added', 'premium_changed', 'premium_removed']).optional(),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'listing_amendment', 'premium_added', 'premium_changed', 'premium_removed']).optional(),
   "significance": zod.enum(['normal', 'medium', 'high']).optional(),
   "limit": zod.coerce.number().int().min(1).max(listScheduleChangesQueryLimitMax).default(listScheduleChangesQueryLimitDefault)
 })
@@ -572,7 +572,7 @@ export const ListScheduleChangesResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(listScheduleChangesResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'listing_amendment', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),
@@ -609,7 +609,7 @@ export const GetDrugScheduleTimelineResponseItem = zod.object({
   "id": zod.int(),
   "scheduleCode": zod.int(),
   "effectiveDate": zod.string().regex(getDrugScheduleTimelineResponseEffectiveDateRegExp),
-  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
+  "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'listing_amendment', 'premium_added', 'premium_changed', 'premium_removed', 'published_fnb_new']),
   "liItemId": zod.string().nullable(),
   "pbsCode": zod.string().nullable(),
   "drugId": zod.int(),

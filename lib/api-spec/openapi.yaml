@@ -409,7 +409,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [new_item, new_brand, delisted, price_change, formulary_change, premium_added, premium_changed, premium_removed]
+            enum: [new_item, new_brand, delisted, price_change, formulary_change, listing_amendment, premium_added, premium_changed, premium_removed]
         - name: significance
           in: query
           schema:
@@ -1486,7 +1486,7 @@ components:
           pattern: '^\d{4}-\d{2}-\d{2}$'
         changeType:
           type: string
-          enum: [new_item, new_brand, delisted, price_change, formulary_change, premium_added, premium_changed, premium_removed, published_fnb_new]
+          enum: [new_item, new_brand, delisted, price_change, formulary_change, listing_amendment, premium_added, premium_changed, premium_removed, published_fnb_new]
         liItemId:
           type: ["string", "null"]
         pbsCode:

@@ -21,7 +21,82 @@ type PremiumRuleSnapshot = {
   therapeuticExemptionIndicator: string | null;
 };
 
-type SnapshotItem = {
+export type ListingAmendmentFieldKey =
+  | "benefit_type"
+  | "maximum_quantity"
+  | "maximum_prescribable_packs"
+  | "number_of_repeats"
+  | "pack_size"
+  | "restriction_indicators"
+  | "caution_indicators";
+
+type ListingAmendmentField = {
+  key: ListingAmendmentFieldKey;
+  label: string;
+  keys: string[];
+  numeric?: boolean;
+  composite?: boolean;
+};
+
+const LISTING_AMENDMENT_FIELDS: ListingAmendmentField[] = [
+  {
+    key: "benefit_type",
+    label: "benefit type",
+    keys: ["benefit_type_code", "benefit_type", "benefit_type_description"],
+  },
+  {
+    key: "maximum_quantity",
+    label: "maximum quantity",
+    keys: ["maximum_quantity_units", "maximum_quantity", "maximum_quantity_per_pack"],
+    numeric: true,
+  },
+  {
+    key: "maximum_prescribable_packs",
+    label: "maximum prescribable packs",
+    keys: [
+      "maximum_prescribable_packs",
+      "max_prescribable_packs",
+      "maximum_prescribable_pack",
+      "maximum_number_of_packs",
+      "maximum_packs",
+      "max_number_of_packs",
+    ],
+    numeric: true,
+  },
+  {
+    key: "number_of_repeats",
+    label: "number of repeats",
+    keys: ["number_of_repeats", "number_repeats", "repeats", "repeat_count", "maximum_repeats"],
+    numeric: true,
+  },
+  {
+    key: "pack_size",
+    label: "pack size",
+    keys: ["pack_size", "pack_quantity", "number_of_containers"],
+  },
+  {
+    key: "restriction_indicators",
+    label: "restriction indicators",
+    keys: [
+      "restriction_indicators",
+      "restriction_indicator",
+      "restriction_codes",
+      "restriction_code",
+      "note_indicator",
+      "legal_car_ind",
+      "legal_unar_ind",
+    ],
+    composite: true,
+  },
+  {
+    key: "caution_indicators",
+    label: "caution indicators",
+    keys: ["caution_indicators", "caution_indicator", "caution_codes", "caution_code", "cautions"],
+    composite: true,
+  },
+];
+
+export type SnapshotItem = {
   liItemId: string;
   pbsCode: string | null;
   drugKey: string;
@@ -29,10 +104,11 @@ type SnapshotItem = {
   strength: string | null;
   determinedPrice: number | null;
   formulary: "F1" | "F2" | null;
+  listingFields: Record<ListingAmendmentFieldKey, unknown>;
   premiumRules: PremiumRuleSnapshot[];
 };
 
-type ScheduleSnapshot = {
+export type ScheduleSnapshot = {
   scheduleCode: number;
   effectiveDate: string;
   drugs: Map<string, Map<string, SnapshotItem>>;
@@ -232,6 +308,56 @@ function numberField(record: JsonRecord, ...keys: string[]): number | undefined 
   return undefined;
 }
 
+function valueField(record: JsonRecord, keys: string[], numeric = false): unknown {
+  for (const key of keys) {
+    if (!(key in record)) continue;
+    const value = record[key];
+    if (value === null || value === undefined) return null;
+    if (numeric) {
+      const number = numberField(record, key);
+      return number ?? null;
+    }
+    if (typeof value === "string") return value.trim() || null;
+    if (typeof value === "number" || typeof value === "boolean") return value;
+    if (Array.isArray(value)) return value;
+    if (isRecord(value)) return value;
+    return String(value);
+  }
+  return null;
+}
+
+function listingFieldValues(record: JsonRecord): Record<ListingAmendmentFieldKey, unknown> {
+  return Object.fromEntries(
+    LISTING_AMENDMENT_FIELDS.map((field) => [
+      field.key,
+      field.composite
+        ? Object.fromEntries(
+            field.keys
+              .filter((key) => key in record)
+              .map((key) => [key, valueField(record, [key])]),
+          )
+        : valueField(record, field.keys, field.numeric),
+    ]),
+  ) as Record<ListingAmendmentFieldKey, unknown>;
+}
+
+function comparableValue(value: unknown): unknown {
+  if (typeof value === "string") return value.trim().toLowerCase();
+  if (Array.isArray(value)) return value.map(comparableValue).sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, comparableValue(entry)]),
+    );
+  }
+  return value;
+}
+
+function valueFingerprint(value: unknown): string {
+  return JSON.stringify(comparableValue(value));
+}
+
 function normalized(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -332,13 +458,14 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
         pbsCode: stringField(record, "pbs_code") ?? null,
         drugKey,
         brandName: stringField(record, "brand_name") ?? drugName,
-         strength: stringField(record, "strength", "li_strength") ?? null,
+        strength: stringField(record, "strength", "li_strength") ?? null,
         determinedPrice: numberField(record, "determined_price", "aemp", "current_aemp") ?? null,
         formulary:
           stringField(record, "formulary") === "F1" || stringField(record, "formulary") === "F2"
             ? (stringField(record, "formulary") as "F1" | "F2")
             : null,
-          premiumRules: [],
+        listingFields: listingFieldValues(record),
+        premiumRules: [],
       });
       snapshot.drugs.set(drugKey, items);
       snapshots.set(key, snapshot);
@@ -406,6 +533,62 @@ function premiumFingerprint(item: SnapshotItem): string {
   return JSON.stringify(premiumSnapshotValue(item));
 }
 
+function listingSnapshotValue(item: SnapshotItem): JsonRecord {
+  return {
+    li_item_id: item.liItemId,
+    pbs_code: item.pbsCode,
+    brand_name: item.brandName,
+    strength: item.strength,
+    determined_price: item.determinedPrice,
+    formulary: item.formulary,
+    ...item.listingFields,
+  };
+}
+
+function amendmentValueMap(
+  item: SnapshotItem,
+  fields: ListingAmendmentFieldKey[],
+): JsonRecord {
+  return Object.fromEntries(fields.map((field) => [field, item.listingFields[field]]));
+}
+
+function changedListingFields(
+  previous: SnapshotItem,
+  current: SnapshotItem,
+): Array<{ field: ListingAmendmentField; previous: unknown; current: unknown }> {
+  return LISTING_AMENDMENT_FIELDS.flatMap((field) => {
+    const previousValue = previous.listingFields[field.key];
+    const currentValue = current.listingFields[field.key];
+    return valueFingerprint(previousValue) === valueFingerprint(currentValue)
+      ? []
+      : [{ field, previous: previousValue, current: currentValue }];
+  });
+}
+
+function formatAmendmentValue(field: ListingAmendmentField, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "not specified";
+  if (field.key === "benefit_type") {
+    const normalizedValue = String(value).trim().toLowerCase();
+    if (normalizedValue === "u" || normalizedValue === "unrestricted") return "unrestricted";
+    if (normalizedValue === "r" || normalizedValue === "restricted") return "restricted";
+    if (["a", "s", "authority", "authority required"].includes(normalizedValue)) return "authority";
+  }
+  if (Array.isArray(value)) return value.map((entry) => String(entry)).join(", ") || "none";
+  if (isRecord(value)) return JSON.stringify(value);
+  return String(value);
+}
+
+function amendmentNotes(
+  changes: Array<{ field: ListingAmendmentField; previous: unknown; current: unknown }>,
+): string {
+  return changes
+    .map(
+      ({ field, previous, current }) =>
+        `${field.label} changed from ${formatAmendmentValue(field, previous)} to ${formatAmendmentValue(field, current)}`,
+    )
+    .join("; ") + ".";
+}
+
 function changeRow(input: {
   schedule: ScheduleSnapshot;
   item?: SnapshotItem;
@@ -434,7 +617,7 @@ function changeRow(input: {
   };
 }
 
-function compareSnapshots(
+export function compareScheduleSnapshots(
   previous: ScheduleSnapshot,
   current: ScheduleSnapshot,
   drugIds: Map<string, number>,
@@ -445,7 +628,7 @@ function compareSnapshots(
 
   for (const drugKey of drugKeys) {
     const drugId = drugIds.get(drugKey);
-    if (!drugId || !previous.drugs.has(drugKey) || !current.drugs.has(drugKey)) continue;
+    if (!drugId || !previous.drugs.has(drugKey)) continue;
     const previousItems = previous.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
     const currentItems = current.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
     const previousBrands = new Set([...previousItems.values()].map((item) => normalized(item.brandName)));
@@ -463,11 +646,7 @@ function compareSnapshots(
             changeType: "new_item",
             oldValue: null,
             newValue: {
-              li_item_id: item.liItemId,
-              pbs_code: item.pbsCode,
-              brand_name: item.brandName,
-              determined_price: item.determinedPrice,
-              formulary: item.formulary,
+              ...listingSnapshotValue(item),
             },
             notes: "New PBS listing appeared in this schedule.",
           }),
@@ -584,6 +763,28 @@ function compareSnapshots(
         );
       }
 
+      const listingAmendments = changedListingFields(item, currentItem);
+      if (listingAmendments.length > 0) {
+        const changedFields = listingAmendments.map(({ field }) => field.key);
+        changes.push(
+          changeRow({
+            schedule: current,
+            item: currentItem,
+            drugId,
+            changeType: "listing_amendment",
+            oldValue: {
+              ...amendmentValueMap(item, changedFields),
+              changed_fields: changedFields,
+            },
+            newValue: {
+              ...amendmentValueMap(currentItem, changedFields),
+              changed_fields: changedFields,
+            },
+            notes: amendmentNotes(listingAmendments),
+          }),
+        );
+      }
+
       const previousHasPremium = hasPremium(item);
       const currentHasPremium = hasPremium(currentItem);
       if (!previousHasPremium && currentHasPremium) {
@@ -646,7 +847,7 @@ export async function syncScheduleChangesFromStagedData(): Promise<number> {
 
   const drugIds = new Map(drugs.map((drug) => [normalized(drug.activeIngredient), drug.id]));
   const changes = snapshots.flatMap((snapshot, index) =>
-    index === 0 ? [] : compareSnapshots(snapshots[index - 1], snapshot, drugIds, thresholds),
+    index === 0 ? [] : compareScheduleSnapshots(snapshots[index - 1], snapshot, drugIds, thresholds),
   );
   if (changes.length === 0) return 0;
 
