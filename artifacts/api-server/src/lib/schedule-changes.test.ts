@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { eq, inArray } from "drizzle-orm";
+import {
+  db,
+  drugsTable,
+  rawScheduleStagingTable,
+  scheduleChangesTable,
+} from "@workspace/db";
+import { fetchSchedule } from "./pbs-ingestion";
 import {
   compareScheduleSnapshots,
+  syncScheduleChangesFromStagedData,
   type PriceChangeThresholds,
   type ScheduleSnapshot,
   type SnapshotItem,
@@ -111,4 +120,148 @@ test("detects a delisted item when the drug remains but the item disappears", ()
   const delisted = changes.find((change) => change.changeType === "delisted");
   assert.ok(delisted);
   assert.equal(delisted.liItemId, previousItem.liItemId);
+});
+
+type SnapshotCoverage = "complete" | "filtered" | "capped";
+
+const fixtureItems = [
+  {
+    li_item_id: "task-32-removed",
+    pbs_code: "T32-REMOVED",
+    active_ingredient: "Task 32 fixture ingredient",
+    brand_name: "Task 32 brand",
+    strength: "10 mg",
+    determined_price: 10,
+    formulary: "F1",
+  },
+  {
+    li_item_id: "task-32-retained",
+    pbs_code: "T32-RETAINED",
+    active_ingredient: "Task 32 fixture ingredient",
+    brand_name: "Task 32 brand",
+    strength: "20 mg",
+    determined_price: 20,
+    formulary: "F1",
+  },
+];
+
+async function stageFixtureSchedule(input: {
+  scheduleCode: number;
+  effectiveDate: string;
+  scheduleDate: string;
+  items: typeof fixtureItems;
+  coverage: SnapshotCoverage;
+}): Promise<void> {
+  const request = async (requestUrl: string | URL): Promise<Response> => {
+    const url = new URL(requestUrl);
+    const isScheduleMetadata = url.pathname.endsWith("/schedules");
+    const payload = isScheduleMetadata
+      ? {
+          data: [
+            {
+              schedule_code: input.scheduleCode,
+              effective_date: input.effectiveDate,
+            },
+          ],
+        }
+      : {
+          data: input.items,
+          ...(input.coverage === "capped"
+            ? { _links: [{ rel: "next", href: "/api/v3/items?page=2&limit=1" }] }
+            : {}),
+        };
+
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  await fetchSchedule({
+    scheduleDate: input.scheduleDate,
+    endpoints: ["schedules"],
+    limit: 100,
+    filters: [{ requestKey: `schedule-metadata:${input.scheduleCode}`, params: {} }],
+    request,
+    sleep: async () => {},
+  });
+  await fetchSchedule({
+    scheduleDate: input.scheduleDate,
+    endpoints: ["items"],
+    ...(input.coverage === "capped" ? { maxPages: 1 } : {}),
+    filters: [{ requestKey: `items-snapshot:schedule-${input.scheduleCode}`, params: {} }],
+    coverageScope: input.coverage === "filtered" ? "filtered" : "schedule",
+    request,
+    sleep: async () => {},
+  });
+}
+
+test("only complete unfiltered staged snapshots produce delisted events", async () => {
+  const scenarios: Array<{ coverage: SnapshotCoverage; expectedChanges: number }> = [
+    { coverage: "complete", expectedChanges: 1 },
+    { coverage: "filtered", expectedChanges: 0 },
+    { coverage: "capped", expectedChanges: 0 },
+  ];
+  const fixtureBase = 2_100_000_000 + (process.pid % 10_000) * 10;
+
+  for (const [scenarioIndex, scenario] of scenarios.entries()) {
+    const previousScheduleCode = fixtureBase + scenarioIndex * 2;
+    const currentScheduleCode = previousScheduleCode + 1;
+    const drugId = fixtureBase + scenarioIndex;
+    const scheduleDate = `2090-0${scenarioIndex + 1}-01`;
+    const effectiveDates = [`2091-0${scenarioIndex + 1}-01`, `2091-0${scenarioIndex + 1}-02`];
+
+    try {
+      await db.insert(drugsTable).values({
+        id: drugId,
+        name: "Task 32 fixture drug",
+        activeIngredient: "Task 32 fixture ingredient",
+        sponsor: "Task 32 fixture",
+        firstPbsListingDate: "2090-01-01",
+      });
+      await stageFixtureSchedule({
+        scheduleCode: previousScheduleCode,
+        effectiveDate: effectiveDates[0],
+        scheduleDate,
+        items: fixtureItems,
+        coverage: "complete",
+      });
+      await stageFixtureSchedule({
+        scheduleCode: currentScheduleCode,
+        effectiveDate: effectiveDates[1],
+        scheduleDate,
+        items: [fixtureItems[1]],
+        coverage: scenario.coverage,
+      });
+
+      await syncScheduleChangesFromStagedData();
+      const changes = await db
+        .select({
+          changeType: scheduleChangesTable.changeType,
+          liItemId: scheduleChangesTable.liItemId,
+        })
+        .from(scheduleChangesTable)
+        .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+
+      assert.equal(
+        changes.filter((change) => change.changeType === "delisted").length,
+        scenario.expectedChanges,
+        `${scenario.coverage} fixture should produce the expected delisted event count`,
+      );
+      if (scenario.coverage === "complete") {
+        assert.deepEqual(
+          changes.filter((change) => change.changeType === "delisted").map((change) => change.liItemId),
+          ["task-32-removed"],
+        );
+      }
+    } finally {
+      await db
+        .delete(scheduleChangesTable)
+        .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+      await db
+        .delete(rawScheduleStagingTable)
+        .where(inArray(rawScheduleStagingTable.scheduleDate, [scheduleDate]));
+      await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    }
+  }
 });
