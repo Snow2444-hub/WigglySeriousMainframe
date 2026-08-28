@@ -66,14 +66,24 @@ function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function effectiveDateFromSchedulePayload(payload: unknown): string | undefined {
+function scheduleMetadataFromPayload(payload: unknown): { scheduleCode?: number; effectiveDate?: string } | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
   const data = (payload as { data?: unknown }).data;
   if (!Array.isArray(data)) return undefined;
   for (const record of data) {
     if (typeof record !== "object" || record === null) continue;
-    const value = (record as { effective_date?: unknown }).effective_date;
-    if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const value = record as { schedule_code?: unknown; effective_date?: unknown };
+    const scheduleCode =
+      typeof value.schedule_code === "number"
+        ? value.schedule_code
+        : typeof value.schedule_code === "string" && /^\d+$/.test(value.schedule_code)
+          ? Number(value.schedule_code)
+          : undefined;
+    const effectiveDate =
+      typeof value.effective_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.effective_date)
+        ? value.effective_date
+        : undefined;
+    if (scheduleCode !== undefined || effectiveDate !== undefined) return { scheduleCode, effectiveDate };
   }
   return undefined;
 }
@@ -110,6 +120,7 @@ export async function executeIngestionRun(
     let recordsProcessed = 0;
     let recordsReturned = 0;
     let scheduleEffectiveDate: string | undefined;
+    let scheduleCode: number | undefined;
     let pagesFetched = 0;
     const requestUrls = new Set<string>();
     const atcItemIds = new Set<string>();
@@ -137,7 +148,9 @@ export async function executeIngestionRun(
         }
       }
       if (page.endpoint === "schedules") {
-        scheduleEffectiveDate = effectiveDateFromSchedulePayload(page.payload) ?? scheduleEffectiveDate;
+        const metadata = scheduleMetadataFromPayload(page.payload);
+        scheduleEffectiveDate = metadata?.effectiveDate ?? scheduleEffectiveDate;
+        scheduleCode = metadata?.scheduleCode ?? scheduleCode;
       }
       if (page.endpoint === "items") {
         if (!scheduleEffectiveDate) {
@@ -169,6 +182,9 @@ export async function executeIngestionRun(
     });
     if (!scheduleEffectiveDate) {
       throw new Error("Latest PBS schedule metadata did not include an effective_date");
+    }
+    if (scheduleCode === undefined) {
+      throw new Error("Latest PBS schedule metadata did not include a schedule_code");
     }
     const pagesAvailableAfterSchedule = maxPages === undefined ? undefined : maxPages - schedulePages.length;
     if (pagesAvailableAfterSchedule !== undefined && pagesAvailableAfterSchedule <= 0) {
@@ -213,7 +229,32 @@ export async function executeIngestionRun(
           onPayload: handlePayload,
         })
       : [];
-    const pages = [...schedulePages, ...initialPages, ...relatedItemPages, ...premiumPages];
+    const pagesAvailableForSnapshot =
+      maxPages === undefined
+        ? undefined
+        : maxPages - schedulePages.length - initialPages.length - relatedItemPages.length - premiumPages.length;
+    const snapshotPages =
+      pagesAvailableForSnapshot === 0
+        ? []
+        : await fetchSchedule({
+            scheduleDate,
+            endpoints: ["items"],
+            maxPages: pagesAvailableForSnapshot,
+            filters: [{ requestKey: `items-snapshot:schedule-${scheduleCode}`, params: {} }],
+            coverageScope: "schedule",
+            onPage: async (page) => {
+              requestUrls.add(page.url);
+              pagesFetched += 1;
+              await persistProgress();
+            },
+          });
+    const pages = [
+      ...schedulePages,
+      ...initialPages,
+      ...relatedItemPages,
+      ...premiumPages,
+      ...snapshotPages,
+    ];
     if (recordsReturned > 0 && recordsProcessed === 0) {
       throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
     }
@@ -412,7 +453,24 @@ async function executeBackfillIngestionRun(
         onPage: handlePage,
         onPayload: handlePayload,
       });
-      const pagesLeft = remainingPages === undefined ? undefined : remainingPages - itemPages.length;
+      const pagesAfterItems = remainingPages === undefined ? undefined : remainingPages - itemPages.length;
+      const snapshotPages =
+        pagesAfterItems === 0
+          ? []
+          : await fetchSchedule({
+              scheduleDate,
+              endpoints: ["items"],
+              latestScheduleOnly: false,
+              maxPages: pagesAfterItems,
+              filters: [{ requestKey: `items-snapshot:schedule-${schedule.scheduleCode}`, params: {} }],
+              coverageScope: "schedule",
+              onPage: async (page) => {
+                pagesFetched += 1;
+                requestUrls.add(page.url);
+                await persistProgress();
+              },
+            });
+      const pagesLeft = pagesAfterItems === undefined ? undefined : pagesAfterItems - snapshotPages.length;
       const relatedFilters = pagesLeft === 0
         ? []
         : buildPbsItemIdRequestFilters(scheduleItemIds).map((filter) => ({

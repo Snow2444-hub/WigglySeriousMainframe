@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { date, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const rawScheduleStagingTable = pgTable(
@@ -10,6 +10,8 @@ export const rawScheduleStagingTable = pgTable(
     endpoint: text("endpoint").notNull(),
     requestKey: text("request_key").notNull().default("unfiltered"),
     pageNumber: integer("page_number").notNull(),
+    coverageScope: text("coverage_scope").notNull().default("filtered"),
+    coverageComplete: boolean("coverage_complete").notNull().default(false),
     payload: jsonb("payload").$type<unknown>().notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },

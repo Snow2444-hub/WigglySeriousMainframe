@@ -290,6 +290,19 @@ function recordsFromPayload(payload: unknown): JsonRecord[] {
   return [];
 }
 
+function collectionValues(payload: unknown): unknown[] | undefined {
+  if (Array.isArray(payload)) return payload;
+  if (!isRecord(payload)) return undefined;
+  for (const key of ["data", "items", "results", "records"]) {
+    if (Array.isArray(payload[key])) return payload[key];
+  }
+  return undefined;
+}
+
+function isCollectionPayload(payload: unknown): boolean {
+  return collectionValues(payload) !== undefined;
+}
+
 function stringField(record: JsonRecord, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
@@ -389,6 +402,8 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
         id: rawScheduleStagingTable.id,
         endpoint: rawScheduleStagingTable.endpoint,
         requestKey: rawScheduleStagingTable.requestKey,
+        coverageScope: rawScheduleStagingTable.coverageScope,
+        coverageComplete: rawScheduleStagingTable.coverageComplete,
         payload: rawScheduleStagingTable.payload,
       })
       .from(rawScheduleStagingTable)
@@ -426,7 +441,51 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
   }
 
   const snapshots = new Map<string, ScheduleSnapshot>();
+  const coverage = new Map<string, { valid: boolean }>();
   for (const page of pages) {
+    if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
+
+    const rawRecords = collectionValues(page.payload);
+    const records = recordsFromPayload(page.payload);
+    const firstRecord = records[0];
+    const requestScheduleCode = scheduleCodeFromRequestKey(page.requestKey);
+    const scheduleCode =
+      requestScheduleCode ?? (firstRecord && numberField(firstRecord, "schedule_code"));
+    const effectiveDate =
+      (firstRecord && stringField(firstRecord, "effective_date")) ??
+      (scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode));
+    if (
+      scheduleCode === undefined ||
+      !effectiveDate ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
+    ) {
+      continue;
+    }
+
+    const key = snapshotKey(scheduleCode, effectiveDate);
+    const current = coverage.get(key) ?? { valid: true };
+    if (!isCollectionPayload(page.payload) || rawRecords?.some((record) => !isRecord(record))) {
+      current.valid = false;
+    }
+    for (const record of records) {
+      const recordScheduleCode: number | undefined = numberField(record, "schedule_code") ?? scheduleCode;
+      const recordEffectiveDate =
+        stringField(record, "effective_date") ??
+        (recordScheduleCode === undefined ? undefined : effectiveDates.get(recordScheduleCode));
+      if (
+        recordScheduleCode !== scheduleCode ||
+        recordEffectiveDate !== effectiveDate ||
+        !stringField(record, "li_item_id") ||
+        !stringField(record, "active_ingredient", "li_drug_name", "drug_name")
+      ) {
+        current.valid = false;
+      }
+    }
+    coverage.set(key, current);
+  }
+
+  for (const page of pages) {
+    if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
     for (const record of recordsFromPayload(page.payload)) {
       const scheduleCode =
         numberField(record, "schedule_code") ?? scheduleCodeFromRequestKey(page.requestKey);
@@ -446,6 +505,7 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
       }
 
       const key = snapshotKey(scheduleCode, effectiveDate);
+      if (!coverage.get(key)?.valid) continue;
       const snapshot = snapshots.get(key) ?? {
         scheduleCode,
         effectiveDate,
@@ -470,6 +530,18 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
       snapshot.drugs.set(drugKey, items);
       snapshots.set(key, snapshot);
     }
+  }
+
+  for (const [key, status] of coverage) {
+    if (!status.valid || snapshots.has(key)) continue;
+    const separator = key.indexOf(":");
+    const scheduleCode = Number(key.slice(0, separator));
+    const effectiveDate = key.slice(separator + 1);
+    snapshots.set(key, {
+      scheduleCode,
+      effectiveDate,
+      drugs: new Map<string, Map<string, SnapshotItem>>(),
+    });
   }
 
   for (const row of premiumRows) {

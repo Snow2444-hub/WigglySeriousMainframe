@@ -1,4 +1,5 @@
 import { db, rawScheduleStagingTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 const PBS_API_BASE_URL = "https://data-api.health.gov.au/pbs/api/v3";
@@ -24,6 +25,7 @@ export interface FetchScheduleOptions {
   maxPagesPerEndpoint?: number;
   maxPages?: number;
   filters?: PbsRequestFilter[];
+  coverageScope?: "filtered" | "schedule";
   latestScheduleOnly?: boolean;
   request?: RequestLike;
   sleep?: Sleep;
@@ -285,6 +287,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     maxPagesPerEndpoint = DEFAULT_MAX_PAGES_PER_ENDPOINT,
     maxPages,
     filters = [{ requestKey: "unfiltered", params: {} }],
+    coverageScope = "filtered",
     latestScheduleOnly = true,
     request = fetch,
     sleep = defaultSleep,
@@ -343,6 +346,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
             endpoint,
             requestKey: filter.requestKey,
             pageNumber,
+            coverageScope,
             payload,
           })
           .onConflictDoNothing();
@@ -366,6 +370,19 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         if (!pagination.hasMore) break;
         pageNumber += 1;
         nextUrl = pagination.nextUrl ? resolveNextUrl(pagination.nextUrl) : undefined;
+      }
+
+      if (coverageScope === "schedule") {
+        await db
+          .update(rawScheduleStagingTable)
+          .set({ coverageComplete: true })
+          .where(
+            and(
+              eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+              eq(rawScheduleStagingTable.endpoint, endpoint),
+              eq(rawScheduleStagingTable.requestKey, filter.requestKey),
+            ),
+          );
       }
     }
   }
