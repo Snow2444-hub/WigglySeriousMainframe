@@ -8,6 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "backfill-staged-premiums": "pnpm run build && node --enable-source-maps ./dist/backfill-staged-premiums.mjs",
+    "scheduled-ingestion": "pnpm run build && node --enable-source-maps ./dist/scheduled-ingestion.mjs",
     "test": "../../scripts/node_modules/.bin/tsx --test src/routes/*.test.ts src/lib/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

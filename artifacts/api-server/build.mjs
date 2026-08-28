@@ -18,6 +18,7 @@ async function buildAll() {
     entryPoints: {
       index: path.resolve(artifactDir, "src/index.ts"),
       "backfill-staged-premiums": path.resolve(artifactDir, "src/scripts/backfill-staged-premiums.ts"),
+      "scheduled-ingestion": path.resolve(artifactDir, "src/scripts/scheduled-ingestion.ts"),
     },
     platform: "node",
     bundle: true,

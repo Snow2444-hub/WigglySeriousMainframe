@@ -7,7 +7,7 @@ import {
   recalculateNewBrandSignificance,
   recalculatePriceChangeSignificance,
 } from "./lib/schedule-changes";
-import { recoverInterruptedIngestionRuns } from "./routes/admin";
+import { recoverInterruptedIngestionRuns } from "./lib/ingestion-run-control";
 
 const rawPort = process.env["PORT"];
 

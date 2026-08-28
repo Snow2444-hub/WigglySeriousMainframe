@@ -5,11 +5,22 @@ _Replace the heading above with the project's name, and this line with one sente
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run scheduled-ingestion` — run the uncapped current PBS ingestion job once
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - Required env: `DATABASE_URL` — Postgres connection string
+- PBS ingestion also requires the `PBS_SUBSCRIPTION_KEY` secret and at least one enabled PBS watchlist entry.
+
+### Scheduled PBS ingestion
+
+The API remains an always-on autoscale service. PBS automation is a separate Replit Scheduled Deployment so it does not replace the web application.
+
+- **Build command:** `pnpm --filter @workspace/api-server run build`
+- **Run command:** `node --enable-source-maps artifacts/api-server/dist/scheduled-ingestion.mjs`
+- **Recommended schedule:** daily at 02:00 UTC. PBS schedules are published monthly, but a daily check catches releases that do not land on a fixed calendar day and remains safe when the latest schedule has not changed.
+- The job creates a normal ingestion-run record, uses the enabled watchlist, fetches without a page cap, and skips if another run is active. The administrator-triggered endpoint remains available for on-demand recovery.
 
 ## Stack
 

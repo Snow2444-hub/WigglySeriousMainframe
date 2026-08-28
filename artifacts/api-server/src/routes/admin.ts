@@ -43,12 +43,18 @@ import {
   upsertPbsItemsFromPayload,
   type PbsItemScheduleMetadata,
 } from "../lib/pbs-item-mapping";
-import { ingestPublishedFiles, listLatestPublishedFiles } from "../lib/pbs-published-files";
+import { listLatestPublishedFiles } from "../lib/pbs-published-files";
+import { executeCurrentIngestionRun } from "../lib/pbs-current-ingestion";
 import {
   getPriceChangeThresholds,
   syncScheduleChangesFromStagedData,
   updatePriceChangeThresholds,
 } from "../lib/schedule-changes";
+import {
+  ACTIVE_INGESTION_STATUSES,
+  acquireIngestionRun,
+  currentScheduleDate,
+} from "../lib/ingestion-run-control";
 import {
   ARTG_PARSER_VERSION,
   parseArtgExport,
@@ -58,35 +64,7 @@ import {
 import { requireAdmin } from "../middlewares/requireAuth";
 
 const router: IRouter = Router();
-const ACTIVE_STATUSES = ["queued", "running"] as const;
-const INGESTION_RUN_LOCK_KEY = 502_668_451;
 const ARTG_UPLOAD_LIMIT_BYTES = 15 * 1024 * 1024;
-
-function currentScheduleDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function scheduleMetadataFromPayload(payload: unknown): { scheduleCode?: number; effectiveDate?: string } | undefined {
-  if (typeof payload !== "object" || payload === null) return undefined;
-  const data = (payload as { data?: unknown }).data;
-  if (!Array.isArray(data)) return undefined;
-  for (const record of data) {
-    if (typeof record !== "object" || record === null) continue;
-    const value = record as { schedule_code?: unknown; effective_date?: unknown };
-    const scheduleCode =
-      typeof value.schedule_code === "number"
-        ? value.schedule_code
-        : typeof value.schedule_code === "string" && /^\d+$/.test(value.schedule_code)
-          ? Number(value.schedule_code)
-          : undefined;
-    const effectiveDate =
-      typeof value.effective_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.effective_date)
-        ? value.effective_date
-        : undefined;
-    if (scheduleCode !== undefined || effectiveDate !== undefined) return { scheduleCode, effectiveDate };
-  }
-  return undefined;
-}
 
 type IngestionMode = "current" | "backfill";
 
@@ -100,199 +78,7 @@ export async function executeIngestionRun(
     await executeBackfillIngestionRun(runId, scheduleDate, maxPages);
     return;
   }
-
-  try {
-    await db
-      .update(ingestionRunsTable)
-      .set({ status: "running" })
-      .where(eq(ingestionRunsTable.id, runId));
-
-    const enabledWatchlist = await db
-      .select()
-      .from(pbsWatchlistTable)
-      .where(eq(pbsWatchlistTable.enabled, true))
-      .orderBy(asc(pbsWatchlistTable.id));
-    const filters = buildPbsRequestFilters(enabledWatchlist);
-    if (filters.length === 0) {
-      throw new Error("No enabled PBS watchlist entries are configured; refusing to fetch an unfiltered schedule");
-    }
-
-    let recordsProcessed = 0;
-    let recordsReturned = 0;
-    let scheduleEffectiveDate: string | undefined;
-    let scheduleCode: number | undefined;
-    let pagesFetched = 0;
-    const requestUrls = new Set<string>();
-    const atcItemIds = new Set<string>();
-    const itemMetadata: PbsItemScheduleMetadata = new Map();
-    const persistProgress = async () => {
-      await db
-        .update(ingestionRunsTable)
-        .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
-        .where(eq(ingestionRunsTable.id, runId));
-    };
-    const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
-      requestUrls.add(page.url);
-      pagesFetched += 1;
-      if (page.endpoint === "items") recordsReturned += page.records;
-      await persistProgress();
-    };
-    const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
-      if (page.endpoint === "item-atc-relationships") {
-        itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
-      }
-      if (page.endpoint === "items") {
-        itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
-        for (const [itemId, metadata] of itemScheduleMetadataFromPayload(page.payload)) {
-          itemMetadata.set(itemId, metadata);
-        }
-      }
-      if (page.endpoint === "schedules") {
-        const metadata = scheduleMetadataFromPayload(page.payload);
-        scheduleEffectiveDate = metadata?.effectiveDate ?? scheduleEffectiveDate;
-        scheduleCode = metadata?.scheduleCode ?? scheduleCode;
-      }
-      if (page.endpoint === "items") {
-        if (!scheduleEffectiveDate) {
-          throw new Error("Latest PBS schedule metadata did not include an effective_date");
-        }
-        recordsProcessed += await upsertPbsItemsFromPayload(page.payload, scheduleDate, scheduleEffectiveDate);
-      }
-      if (page.endpoint === "item-dispensing-rule-relationships") {
-        if (!scheduleEffectiveDate) {
-          throw new Error("Latest PBS schedule metadata did not include an effective_date");
-        }
-        recordsProcessed += await upsertPbsItemPremiumsFromPayload(
-          page.payload,
-          scheduleEffectiveDate,
-          itemMetadata,
-        );
-      }
-      await persistProgress();
-    };
-
-    const schedulePages = await fetchSchedule({
-      scheduleDate,
-      endpoints: ["schedules"],
-      limit: 100,
-      maxPages: 1,
-      filters: [{ requestKey: `schedule-metadata:${runId}`, params: {} }],
-      onPage: handlePage,
-      onPayload: handlePayload,
-    });
-    if (!scheduleEffectiveDate) {
-      throw new Error("Latest PBS schedule metadata did not include an effective_date");
-    }
-    if (scheduleCode === undefined) {
-      throw new Error("Latest PBS schedule metadata did not include a schedule_code");
-    }
-    const pagesAvailableAfterSchedule = maxPages === undefined ? undefined : maxPages - schedulePages.length;
-    if (pagesAvailableAfterSchedule !== undefined && pagesAvailableAfterSchedule <= 0) {
-      throw new Error("maxPages was exhausted by schedule metadata before PBS item retrieval");
-    }
-
-    const initialPages = await fetchSchedule({
-      scheduleDate,
-      maxPages: pagesAvailableAfterSchedule,
-      filters,
-      onPage: handlePage,
-      onPayload: handlePayload,
-    });
-    const remainingPages =
-      pagesAvailableAfterSchedule === undefined
-        ? undefined
-        : pagesAvailableAfterSchedule - initialPages.length;
-    const itemIdFilters = remainingPages === 0 ? [] : buildPbsItemIdRequestFilters(atcItemIds);
-    const relatedItemPages = itemIdFilters.length
-      ? await fetchSchedule({
-          scheduleDate,
-          maxPages: remainingPages,
-          filters: itemIdFilters,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        })
-      : [];
-    const pagesAvailableForPremiums =
-      pagesAvailableAfterSchedule === undefined
-        ? undefined
-        : pagesAvailableAfterSchedule - initialPages.length - relatedItemPages.length;
-    const premiumFilters =
-      pagesAvailableForPremiums === 0
-        ? []
-        : buildPbsItemDispensingRuleRequestFilters(itemMetadata.keys());
-    const premiumPages = premiumFilters.length
-      ? await fetchSchedule({
-          scheduleDate,
-          maxPages: pagesAvailableForPremiums,
-          filters: premiumFilters,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        })
-      : [];
-    const pagesAvailableForSnapshot =
-      maxPages === undefined
-        ? undefined
-        : maxPages - schedulePages.length - initialPages.length - relatedItemPages.length - premiumPages.length;
-    const snapshotPages =
-      pagesAvailableForSnapshot === 0
-        ? []
-        : await fetchSchedule({
-            scheduleDate,
-            endpoints: ["items"],
-            maxPages: pagesAvailableForSnapshot,
-            filters: [{ requestKey: `items-snapshot:schedule-${scheduleCode}`, params: {} }],
-            coverageScope: "schedule",
-            stagingRunId: runId,
-            onPage: async (page) => {
-              requestUrls.add(page.url);
-              pagesFetched += 1;
-              await persistProgress();
-            },
-          });
-    const pages = [
-      ...schedulePages,
-      ...initialPages,
-      ...relatedItemPages,
-      ...premiumPages,
-      ...snapshotPages,
-    ];
-    if (recordsReturned > 0 && recordsProcessed === 0) {
-      throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
-    }
-    const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
-    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
-    if (pageCapReached) {
-      logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the ingestion page cap was reached");
-    }
-    const publishedFiles = await ingestPublishedFiles();
-
-    await db
-      .update(ingestionRunsTable)
-      .set({
-        status: "completed",
-        finishedAt: new Date(),
-        recordsProcessed,
-        pagesFetched: pages.length,
-        requestUrls: [...requestUrls],
-      })
-      .where(eq(ingestionRunsTable.id, runId));
-
-    logger.info(
-      { runId, pages: pages.length, recordsProcessed, changesRecorded, publishedFiles, requestUrls: [...requestUrls] },
-      "PBS ingestion run completed",
-    );
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown ingestion error";
-    await db
-      .update(ingestionRunsTable)
-      .set({
-        status: "failed",
-        finishedAt: new Date(),
-        errorMessage: errorMessage.slice(0, 2_000),
-      })
-      .where(eq(ingestionRunsTable.id, runId));
-    logger.error({ err: error, runId }, "PBS ingestion run failed");
-  }
+  await executeCurrentIngestionRun(runId, scheduleDate, maxPages);
 }
 
 interface HistoricalSchedule {
@@ -553,25 +339,6 @@ async function executeBackfillIngestionRun(
   }
 }
 
-export async function recoverInterruptedIngestionRuns(): Promise<void> {
-  const recoveredRuns = await db
-    .update(ingestionRunsTable)
-    .set({
-      status: "failed",
-      finishedAt: new Date(),
-      errorMessage: "Ingestion interrupted by an API server restart",
-    })
-    .where(inArray(ingestionRunsTable.status, ACTIVE_STATUSES))
-    .returning({ id: ingestionRunsTable.id });
-
-  if (recoveredRuns.length > 0) {
-    logger.warn(
-      { runIds: recoveredRuns.map((run) => run.id) },
-      "Recovered interrupted PBS ingestion runs",
-    );
-  }
-}
-
 router.get("/admin/ingestion-runs", requireAdmin, async (_req, res): Promise<void> => {
   const runs = await db
     .select()
@@ -586,7 +353,7 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
   const [run] = await db
     .select()
     .from(ingestionRunsTable)
-    .where(inArray(ingestionRunsTable.status, ACTIVE_STATUSES))
+    .where(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES))
     .orderBy(desc(ingestionRunsTable.startedAt))
     .limit(1);
 
@@ -817,26 +584,7 @@ router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<voi
     return;
   }
 
-  const acquisition = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
-
-    const [activeRun] = await tx
-      .select()
-      .from(ingestionRunsTable)
-      .where(inArray(ingestionRunsTable.status, ACTIVE_STATUSES))
-      .orderBy(desc(ingestionRunsTable.startedAt))
-      .limit(1);
-
-    if (activeRun) return { activeRun };
-
-    const [run] = await tx
-      .insert(ingestionRunsTable)
-      .values({ status: "queued" })
-      .returning();
-
-    if (!run) throw new Error("Unable to create an ingestion run");
-    return { run };
-  });
+  const acquisition = await acquireIngestionRun();
 
   if ("activeRun" in acquisition) {
     res.status(409).json({ error: "An ingestion run is already in progress" });
