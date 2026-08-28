@@ -185,7 +185,7 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
       firstPbsListingDate: "2020-01-01",
     });
     await db.insert(pbsItemsTable).values(item);
-    [scheduleChangeId] = await db
+    const [scheduleChange] = await db
       .insert(scheduleChangesTable)
       .values({
         scheduleCode: 900_102,
@@ -205,6 +205,7 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
         notes: "Regression fixture",
       })
       .returning({ id: scheduleChangesTable.id });
+    scheduleChangeId = scheduleChange?.id;
 
     await recalculatePredictedReductionsForDrug(fixture.drugId, "2026-01-01");
     const predictions = await db
