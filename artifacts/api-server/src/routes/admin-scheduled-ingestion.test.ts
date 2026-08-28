@@ -28,7 +28,7 @@ test("scheduled ingestion route rejects invalid bearer tokens", async () => {
 
   try {
     await withTestServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/admin/run-scheduled-ingestion`, {
+      const response = await fetch(`${baseUrl}/api/admin/run-scheduled-ingestion`, {
         method: "POST",
         headers: { authorization: "Bearer wrong-cron-secret" },
       });
@@ -49,7 +49,7 @@ test("scheduled ingestion route reports missing configuration", async () => {
 
   try {
     await withTestServer(async (baseUrl) => {
-      const response = await fetch(`${baseUrl}/admin/run-scheduled-ingestion`, {
+      const response = await fetch(`${baseUrl}/api/admin/run-scheduled-ingestion`, {
         method: "POST",
       });
 
