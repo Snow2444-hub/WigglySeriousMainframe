@@ -31,13 +31,6 @@ export function createScheduledIngestionRouter(
       return;
     }
     if (!scheduledIngestionTokenMatches(expectedToken, providedToken)) {
-      req.log.warn(
-        {
-          receivedTokenLength: Buffer.byteLength(providedToken ?? "", "utf8"),
-          expectedTokenLength: Buffer.byteLength(expectedToken, "utf8"),
-        },
-        "Scheduled ingestion endpoint rejected bearer token",
-      );
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
