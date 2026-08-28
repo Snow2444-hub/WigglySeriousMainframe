@@ -19,7 +19,7 @@ The API remains an always-on autoscale service. PBS automation is a separate Rep
 
 - **Build command:** `pnpm --filter @workspace/api-server run build`
 - **Run command:** `node --enable-source-maps artifacts/api-server/dist/scheduled-ingestion.mjs`
-- **Recommended schedule:** daily at 02:00 UTC. PBS schedules are published monthly, but a daily check catches releases that do not land on a fixed calendar day and remains safe when the latest schedule has not changed.
+- **Recommended schedule:** 02:00 UTC on the 1st, 2nd, and 3rd of every month (`0 2 1-3 * *`). This catches a schedule published on the 1st without relying on one exact release day; repeated runs are idempotent when the latest schedule has not changed.
 - The job creates a normal ingestion-run record, uses the enabled watchlist, fetches without a page cap, and skips if another run is active. The administrator-triggered endpoint remains available for on-demand recovery.
 
 ## Stack
