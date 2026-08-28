@@ -16,12 +16,14 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ### Scheduled PBS ingestion
 
-The API remains an always-on autoscale service. PBS automation is a separate Replit Scheduled Deployment so it does not replace the web application.
+The API remains an always-on autoscale service. Use an external cron service to call the authenticated endpoint; this keeps automation on the existing API deployment and avoids a separate Scheduled Deployment.
 
-- **Build command:** `pnpm --filter @workspace/api-server run build`
-- **Run command:** `node --enable-source-maps artifacts/api-server/dist/scheduled-ingestion.mjs`
-- **Recommended schedule:** 17:00 UTC on the 1st, 2nd, and 3rd of every month (`0 17 1-3 * *`). This runs at 03:00 AEST or 04:00 AEDT on local days 2, 3, and 4, catching a schedule published on the 1st without relying on one exact release day; repeated runs are idempotent when the latest schedule has not changed.
-- The job creates a normal ingestion-run record, uses the enabled watchlist, fetches without a page cap, and skips if another run is active. The administrator-triggered endpoint remains available for on-demand recovery.
+- **Request:** `POST /api/admin/run-scheduled-ingestion`
+- **Schedule:** Run at 17:00 UTC on the 1st, 2nd, and 3rd of every month (`0 17 1-3 * *`). This runs at 03:00 AEST or 04:00 AEDT on local days 2, 3, and 4, catching a schedule published on the 1st without relying on one exact release day.
+- **Header:** `Authorization: Bearer <PBS_SCHEDULED_INGESTION_TOKEN>`
+- The token is stored in the `PBS_SCHEDULED_INGESTION_TOKEN` Replit secret and must be configured in the external cron service without committing it to the repository.
+- The endpoint creates a normal ingestion-run record, uses the enabled watchlist, fetches without a page cap, and skips if another run is active. Repeated runs are safe when the latest schedule has not changed.
+- The standalone `scheduled-ingestion` script remains available for manual recovery or environments that provide their own scheduler.
 
 ## Stack
 
