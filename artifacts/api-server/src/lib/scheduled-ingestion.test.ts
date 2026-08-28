@@ -127,7 +127,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
     const [run] = await db
       .select({ status: ingestionRunsTable.status })
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, firstRunId));
+      .where(eq(ingestionRunsTable.id, firstResult.runId));
     assert.deepEqual(run, { status: "completed" });
   } finally {
     if (firstRunId) await deleteRuns([firstRunId]);

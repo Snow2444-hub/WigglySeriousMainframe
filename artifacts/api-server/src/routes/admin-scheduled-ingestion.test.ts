@@ -113,3 +113,48 @@ test("scheduled ingestion route returns 202 while background work continues", as
     else process.env[SCHEDULED_INGESTION_TOKEN_ENV] = previousToken;
   }
 });
+
+test("scheduled ingestion route acknowledges a retry while a run is already active", async () => {
+  const previousToken = process.env[SCHEDULED_INGESTION_TOKEN_ENV];
+  process.env[SCHEDULED_INGESTION_TOKEN_ENV] = "configured-cron-secret";
+  let callCount = 0;
+
+  try {
+    const testApp = createApp({
+      scheduledIngestionStarter: async () => {
+        callCount += 1;
+        return callCount === 1
+          ? { status: "accepted", runId: 456, recoveredRunIds: [] }
+          : { status: "skipped", activeRunId: 456, recoveredRunIds: [] };
+      },
+    });
+
+    await withTestServer(async (baseUrl) => {
+      const request = () =>
+        fetch(`${baseUrl}/api/admin/run-scheduled-ingestion`, {
+          method: "POST",
+          headers: { authorization: "Bearer configured-cron-secret" },
+        });
+
+      const firstResponse = await request();
+      assert.equal(firstResponse.status, 202);
+      assert.deepEqual(await firstResponse.json(), {
+        status: "accepted",
+        runId: 456,
+        recoveredRunIds: [],
+      });
+
+      const retryResponse = await request();
+      assert.equal(retryResponse.status, 202);
+      assert.deepEqual(await retryResponse.json(), {
+        status: "skipped",
+        activeRunId: 456,
+        recoveredRunIds: [],
+      });
+      assert.equal(callCount, 2);
+    }, testApp);
+  } finally {
+    if (previousToken === undefined) delete process.env[SCHEDULED_INGESTION_TOKEN_ENV];
+    else process.env[SCHEDULED_INGESTION_TOKEN_ENV] = previousToken;
+  }
+});

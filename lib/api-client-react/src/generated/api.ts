@@ -55,7 +55,7 @@ import type {
   PriceHistory,
   ScheduleChange,
   ScheduleChangeSettings,
-  ScheduledIngestionResult,
+  ScheduledIngestionAcceptedResult,
   StockExposureResponse,
   UpcomingPredictedReductionGroup,
   UpdateScheduleChangeSettings
@@ -2339,9 +2339,9 @@ export const getRunScheduledAdminIngestionUrl = () => {
 /**
  * @summary Run the current PBS ingestion using an external cron token
  */
-export const runScheduledAdminIngestion = async ( options?: Parameters<typeof customFetch>[1]): Promise<ScheduledIngestionResult> => {
+export const runScheduledAdminIngestion = async ( options?: Parameters<typeof customFetch>[1]): Promise<ScheduledIngestionAcceptedResult> => {
 
-  return customFetch<ScheduledIngestionResult>(getRunScheduledAdminIngestionUrl(),
+  return customFetch<ScheduledIngestionAcceptedResult>(getRunScheduledAdminIngestionUrl(),
   {
     ...options,
     method: 'POST'
@@ -2354,7 +2354,7 @@ export const runScheduledAdminIngestion = async ( options?: Parameters<typeof cu
 
 
 
-export const getRunScheduledAdminIngestionMutationOptions = <TError = ErrorType<Error | ScheduledIngestionResult>,
+export const getRunScheduledAdminIngestionMutationOptions = <TError = ErrorType<Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runScheduledAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof runScheduledAdminIngestion>>, TError,void, TContext> => {
 
@@ -2383,12 +2383,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RunScheduledAdminIngestionMutationResult = NonNullable<Awaited<ReturnType<typeof runScheduledAdminIngestion>>>
 
-    export type RunScheduledAdminIngestionMutationError = ErrorType<Error | ScheduledIngestionResult>
+    export type RunScheduledAdminIngestionMutationError = ErrorType<Error>
 
     /**
  * @summary Run the current PBS ingestion using an external cron token
  */
-export const useRunScheduledAdminIngestion = <TError = ErrorType<Error | ScheduledIngestionResult>,
+export const useRunScheduledAdminIngestion = <TError = ErrorType<Error>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runScheduledAdminIngestion>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof runScheduledAdminIngestion>>,

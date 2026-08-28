@@ -771,6 +771,21 @@ export interface ScheduledIngestionResult {
   recoveredRunIds?: number[];
 }
 
+export type ScheduledIngestionAcceptedResultStatus = typeof ScheduledIngestionAcceptedResultStatus[keyof typeof ScheduledIngestionAcceptedResultStatus];
+
+
+export const ScheduledIngestionAcceptedResultStatus = {
+  accepted: 'accepted',
+  skipped: 'skipped',
+} as const;
+
+export interface ScheduledIngestionAcceptedResult {
+  status: ScheduledIngestionAcceptedResultStatus;
+  runId?: number;
+  activeRunId?: number;
+  recoveredRunIds?: number[];
+}
+
 export type PbsWatchlistEntryFilterType = typeof PbsWatchlistEntryFilterType[keyof typeof PbsWatchlistEntryFilterType];
 
 
