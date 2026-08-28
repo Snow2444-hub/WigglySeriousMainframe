@@ -694,12 +694,12 @@ paths:
       security:
         - ScheduledIngestionToken: []
       responses:
-        "200":
-          description: Ingestion completed or was skipped because another run is active
+        "202":
+          description: Ingestion was accepted for background processing, or skipped because another run is already active
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ScheduledIngestionResult"
+                $ref: "#/components/schemas/ScheduledIngestionAcceptedResult"
         "401":
           description: Invalid or missing scheduled-ingestion token
           content:
@@ -707,13 +707,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "500":
-          description: Ingestion failed
+          description: The ingestion run could not be accepted
           content:
             application/json:
               schema:
-                oneOf:
-                  - $ref: "#/components/schemas/ScheduledIngestionResult"
-                  - $ref: "#/components/schemas/Error"
+                $ref: "#/components/schemas/Error"
         "503":
           description: Scheduled-ingestion token is not configured
           content:
@@ -1946,6 +1944,21 @@ components:
           type: integer
         errorMessage:
           type: string
+        recoveredRunIds:
+          type: array
+          items:
+            type: integer
+      required: [status]
+    ScheduledIngestionAcceptedResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [accepted, skipped]
+        runId:
+          type: integer
+        activeRunId:
+          type: integer
         recoveredRunIds:
           type: array
           items:

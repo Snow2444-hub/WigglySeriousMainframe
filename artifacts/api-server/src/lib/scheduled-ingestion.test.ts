@@ -3,7 +3,7 @@ import { after, test } from "node:test";
 import { db, ingestionRunsTable, pool } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import { acquireIngestionRun } from "./ingestion-run-control";
-import { runScheduledIngestion } from "./scheduled-ingestion";
+import { runScheduledIngestion, startScheduledIngestion } from "./scheduled-ingestion";
 
 let fixtureNumber = 0;
 
@@ -69,6 +69,68 @@ test("scheduled ingestion skips an active manual or scheduled run", async () => 
     assert.equal(executorCalled, false);
   } finally {
     await deleteRuns([activeRunId]);
+  }
+});
+
+test("background scheduled ingestion preserves the active-run guard", async () => {
+  let releaseExecution!: () => void;
+  const executionStarted = new Promise<void>((resolve) => {
+    releaseExecution = resolve;
+  });
+  let signalExecutionStarted!: () => void;
+  const executionStartedSignal = new Promise<void>((resolve) => {
+    signalExecutionStarted = resolve;
+  });
+  let executionFinished!: () => void;
+  const executionFinishedSignal = new Promise<void>((resolve) => {
+    executionFinished = resolve;
+  });
+  let firstRunId: number | undefined;
+  let secondExecutorCalled = false;
+
+  try {
+    const firstResult = await startScheduledIngestion({
+      now: new Date("2026-08-28T02:00:00.000Z"),
+      scheduleDate: "2026-08-28",
+      execute: async (runId) => {
+        firstRunId = runId;
+        signalExecutionStarted();
+        await executionStarted;
+        await db
+          .update(ingestionRunsTable)
+          .set({ status: "completed", finishedAt: new Date(), recordsProcessed: 1 })
+          .where(eq(ingestionRunsTable.id, runId));
+        executionFinished();
+      },
+    });
+
+    assert.equal(firstResult.status, "accepted");
+    if (firstResult.status !== "accepted") throw new Error("Expected the first run to be accepted");
+
+    const secondResult = await startScheduledIngestion({
+      now: new Date("2026-08-28T02:00:01.000Z"),
+      execute: async () => {
+        secondExecutorCalled = true;
+      },
+    });
+    assert.deepEqual(secondResult, {
+      status: "skipped",
+      activeRunId: firstResult.runId,
+      recoveredRunIds: [],
+    });
+    assert.equal(secondExecutorCalled, false);
+
+    await executionStartedSignal;
+    releaseExecution();
+    await executionFinishedSignal;
+
+    const [run] = await db
+      .select({ status: ingestionRunsTable.status })
+      .from(ingestionRunsTable)
+      .where(eq(ingestionRunsTable.id, firstRunId));
+    assert.deepEqual(run, { status: "completed" });
+  } finally {
+    if (firstRunId) await deleteRuns([firstRunId]);
   }
 });
 
