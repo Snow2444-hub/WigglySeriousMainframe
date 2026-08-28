@@ -1,19 +1,10 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { test } from "node:test";
-import express from "express";
-import router from "./admin";
+import app from "../app";
 import { SCHEDULED_INGESTION_TOKEN_ENV } from "../lib/scheduled-ingestion-auth";
-import { logger } from "../lib/logger";
 
 async function withTestServer<T>(callback: (baseUrl: string) => Promise<T>): Promise<T> {
-  const app = express();
-  app.use((req, _res, next) => {
-    req.log = logger;
-    next();
-  });
-  app.use(router);
-
   const server: Server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
@@ -43,6 +34,7 @@ test("scheduled ingestion route rejects invalid bearer tokens", async () => {
       });
 
       assert.equal(response.status, 401);
+      assert.equal(response.headers.get("x-clerk-auth-status"), null);
       assert.deepEqual(await response.json(), { error: "Unauthorized" });
     });
   } finally {
