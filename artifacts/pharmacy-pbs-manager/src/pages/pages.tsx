@@ -49,6 +49,16 @@ import { formatDateOnly, formatDateTime, formatDateValue } from '@/lib/date-form
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string | null | undefined) => formatDateValue(value, { day: '2-digit', month: 'short', year: 'numeric' });
 
+function watchlistFilterTypeLabel(value: PbsWatchlistEntry['filterType']) {
+  return value.replaceAll('_', ' ');
+}
+
+function watchlistDisplayValue(entry: PbsWatchlistEntry) {
+  return ['atc_code', 'pbs_code', 'program_code'].includes(entry.filterType)
+    ? entry.filterValue.toLocaleUpperCase()
+    : entry.filterValue;
+}
+
 function daysSinceLabel(days: number) {
   if (days < 31) return `${days} days ago`;
   if (days < 365) return `${Math.floor(days / 30)} months ago`;
@@ -988,7 +998,7 @@ function AdminPage() {
         <input value={watchlistValue} onChange={(event) => setWatchlistValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') addWatchlistEntry(); }} placeholder={watchlistType === 'atc_code' ? 'e.g. N06BA' : 'Filter value'} className="control-input min-w-0 flex-1" data-testid="input-watchlist-filter-value" />
         <button type="button" onClick={addWatchlistEntry} disabled={createWatchlistEntry.isPending} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50" data-testid="button-add-watchlist-entry"><Plus className="h-4 w-4" />Add filter</button>
       </div>
-      {watchlist.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : watchlist.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => watchlist.refetch()} /></div> : !watchlist.data?.length ? <p className="p-5 text-sm text-muted-foreground">No filters configured. Add an enabled entry before starting an ingestion.</p> : <div className="divide-y divide-border">{watchlist.data.map((entry) => <div key={entry.id} className="flex flex-wrap items-center gap-3 px-5 py-3" data-testid={`row-watchlist-entry-${entry.id}`}><span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] font-bold text-muted-foreground">{entry.filterType}</span><span className="min-w-0 flex-1 truncate font-mono text-sm font-bold">{entry.filterValue}</span><button type="button" onClick={() => toggleWatchlistEntry(entry)} disabled={updateWatchlistEntry.isPending} className="status-badge status-neutral" data-testid={`button-toggle-watchlist-${entry.id}`}>{entry.enabled ? 'Enabled' : 'Disabled'}</button><button type="button" onClick={() => removeWatchlistEntry(entry)} disabled={deleteWatchlistEntry.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Remove ${entry.filterValue}`} data-testid={`button-delete-watchlist-${entry.id}`}><Trash2 className="h-4 w-4" /></button></div>)}</div>}
+       {watchlist.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : watchlist.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => watchlist.refetch()} /></div> : !watchlist.data?.length ? <p className="p-5 text-sm text-muted-foreground">No filters configured. Add an enabled entry before starting an ingestion.</p> : <div className="divide-y divide-border">{watchlist.data.map((entry) => <div key={entry.id} className="flex flex-wrap items-center gap-3 px-5 py-3" data-testid={`row-watchlist-entry-${entry.id}`}><span className="rounded-md bg-muted px-2 py-1 font-mono text-[10px] font-bold capitalize text-muted-foreground">{watchlistFilterTypeLabel(entry.filterType)}</span><span className="min-w-0 flex-1 truncate font-mono text-sm font-bold">{watchlistDisplayValue(entry)}</span><button type="button" onClick={() => toggleWatchlistEntry(entry)} disabled={updateWatchlistEntry.isPending} className="status-badge status-neutral" data-testid={`button-toggle-watchlist-${entry.id}`}>{entry.enabled ? 'Enabled' : 'Disabled'}</button><button type="button" onClick={() => removeWatchlistEntry(entry)} disabled={deleteWatchlistEntry.isPending} className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" aria-label={`Remove ${watchlistDisplayValue(entry)}`} data-testid={`button-delete-watchlist-${entry.id}`}><Trash2 className="h-4 w-4" /></button></div>)}</div>}
     </section>
 
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-artg-import">

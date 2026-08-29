@@ -9,6 +9,7 @@ import {
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { drugDisplayName } from '@/lib/drug-label';
 import { reductionTextClass } from '@/lib/percentage-significance';
+import { neutralBadgeClass, historicalBadgeClass } from '@/lib/status-styles';
 import { Link } from 'wouter';
 import { ArrowLeft, TrendingDown, History, AlertTriangle, Info, CalendarDays, Activity, Building2, ArrowRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
@@ -294,7 +295,7 @@ export function PbsItemEvidence() {
                          <div key={pred.id} className="p-5">
                            <div className="flex justify-between items-start mb-2">
                              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{dateStr(pred.predictedDate)}</span>
-                               <span className="rounded bg-info/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-info">{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
+                                <span className={`rounded px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${neutralBadgeClass}`}>{pred.subjectToMinisterialDiscretion ? 'Subject to Ministerial discretion' : pred.confidence === 'indicative' ? 'Indicative PBS report' : `${pred.confidence} confidence`}</span>
                            </div>
                            <div className="flex items-baseline gap-2 mb-2">
                               <span className={`text-2xl font-bold tracking-tight ${reductionTextClass(pred.significance)}`}>-{pred.predictedPercentage}%</span>
@@ -326,7 +327,7 @@ export function PbsItemEvidence() {
                          <div key={change.id} className="p-5 text-sm">
                            <div className="flex items-center justify-between mb-1.5">
                              <span className="font-mono text-[10px] font-bold text-muted-foreground">{dateStr(change.effectiveDate)}</span>
-                              <span className={`rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${change.significance === 'high' ? 'bg-destructive/10 text-destructive' : change.significance === 'medium' ? 'bg-warning/15 text-warning' : 'bg-muted text-muted-foreground'}`}>{change.significance}</span>
+                               <span className={`rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${change.significance === 'high' ? 'bg-destructive/10 text-destructive' : change.significance === 'medium' ? 'bg-warning/15 text-warning' : historicalBadgeClass}`}>{change.significance}</span>
                            </div>
                            <div className="font-bold text-foreground mb-1 capitalize">{change.changeType.replace('_', ' ')}</div>
                            {change.notes && <p className="text-xs text-muted-foreground leading-relaxed">{change.notes}</p>}

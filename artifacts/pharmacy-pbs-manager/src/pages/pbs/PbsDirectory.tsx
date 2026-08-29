@@ -8,6 +8,7 @@ import {
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionTextClass } from '@/lib/percentage-significance';
+import { historicalBadgeClass, neutralBadgeClass } from '@/lib/status-styles';
 import { drugDisplayName } from '@/lib/drug-label';
 import { Search, ChevronDown, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
 
@@ -53,7 +54,7 @@ function PriceForecast({
            {reductionPercentageLabel(predictedPercentage)}
          </span>
        )}
-       {confidence && <span className="font-sans text-[10px] font-semibold capitalize text-info">{confidence}</span>}
+        {confidence && <span className={`rounded px-1.5 py-0.5 font-sans text-[10px] font-semibold capitalize ${neutralBadgeClass}`}>{confidence}</span>}
     </span>
   );
 }
@@ -224,14 +225,14 @@ export function PbsDirectory() {
                           )}
                             {drug.subjectToPriceDisclosure && drug.priceDisclosureCycles.length > 0 && (
                               <span
-                                className="rounded bg-info/10 px-2 py-0.5 font-semibold normal-case tracking-normal text-info"
+                                 className="rounded border border-border/70 bg-muted/40 px-2 py-0.5 font-semibold normal-case tracking-normal text-muted-foreground"
                                 title={drug.priceDisclosureCycles.map((cycle) => `${cycle.cycleLabel}: submit by ${shortDate(cycle.submissionDeadline)}`).join(' · ')}
                               >
                                 Price disclosure · {drug.priceDisclosureCycles.map((cycle) => cycle.cycleLabel).join(', ')}
                               </span>
                             )}
                            {drug.hasTakenFirstNewBrandReduction && drug.firstNewBrandReductionDate && (
-                             <span className="rounded bg-muted px-2 py-0.5 font-semibold normal-case tracking-normal text-muted-foreground">
+                              <span className={`rounded px-2 py-0.5 font-semibold normal-case tracking-normal ${historicalBadgeClass}`}>
                                FNB reduction recorded {shortDate(drug.firstNewBrandReductionDate)}
                              </span>
                            )}

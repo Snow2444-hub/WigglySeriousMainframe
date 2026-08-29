@@ -10,7 +10,8 @@ import {
   getGetDrugScheduleTimelineQueryKey
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
-import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { neutralBadgeClass } from '@/lib/status-styles';
 import { drugDisplayName } from '@/lib/drug-label';
 import { formatDateValue } from '@/lib/date-format';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, CalendarDays, ChevronDown } from 'lucide-react';
@@ -233,6 +234,12 @@ function eventBadgeLabel(group: ScheduleEventGroup): string {
   return 'Schedule update';
 }
 
+function eventScheduleLabel(group: ScheduleEventGroup): string | null {
+  if (group.scheduleCode > 0) return `SCH ${group.scheduleCode}`;
+  if (group.changes.some((change) => change.changeType === 'published_fnb_new')) return 'FNB register';
+  return null;
+}
+
 function significanceForChanges(changes: ScheduleChange[]): 'normal' | 'medium' | 'high' {
   if (changes.some((change) => change.significance === 'high')) return 'high';
   if (changes.some((change) => change.significance === 'medium')) return 'medium';
@@ -265,7 +272,7 @@ function EventDetails({ group }: { group: ScheduleEventGroup }) {
       <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
         <span className={reductionTextClass(impact)}>Brand added</span>
         <span className="text-muted-foreground">across {group.brands.length} brand{group.brands.length === 1 ? '' : 's'}</span>
-        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(impact)}`}>
+        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${neutralBadgeClass}`}>
           {group.itemLabels.length || group.changes.length} listing{(group.itemLabels.length || group.changes.length) === 1 ? '' : 's'}
         </span>
       </div>
@@ -636,7 +643,7 @@ function TimelineGroupSummary({ group }: { group: TimelineGroup }) {
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold">
         <span className={reductionTextClass(significance)}>Removed</span>
         <span className="truncate">{brandLabel}</span>
-        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${reductionBadgeClass(significance)}`}>
+        <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${neutralBadgeClass}`}>
           {itemCount} listing{itemCount === 1 ? '' : 's'}
         </span>
       </div>
@@ -1079,7 +1086,7 @@ export function ChangesPage() {
                   <div className="grid gap-3 px-5 py-4 md:grid-cols-[.7fr_1.5fr_1fr_1fr_.5fr] md:items-center md:gap-4">
                     <div>
                       <p className="font-mono text-sm font-bold">{date(event.effectiveDate)}</p>
-                      {event.scheduleCode && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">SCH {event.scheduleCode}</p>}
+                      {eventScheduleLabel(event) && <p className="mt-0.5 font-mono text-[10px] font-bold text-muted-foreground">{eventScheduleLabel(event)}</p>}
                     </div>
                     <div>
                       {event.brands.length === 1 && changeItemCode(event.changes[0]) ? (
@@ -1095,7 +1102,7 @@ export function ChangesPage() {
                       {event.brands.length > 0 && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.brands.length} brand{event.brands.length === 1 ? '' : 's'}</p>}
                     </div>
                     <div>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${reductionBadgeClass(impact)}`}>
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${neutralBadgeClass}`}>
                         {impact !== 'normal' && <AlertCircle className="h-3 w-3" />}
                         {eventBadgeLabel(event)}
                       </span>

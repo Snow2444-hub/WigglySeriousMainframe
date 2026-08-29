@@ -8,7 +8,8 @@ import {
 import { Link, useLocation } from 'wouter';
 import { CalendarDays, ChevronDown, Filter, Layers3 } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
-import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { neutralBadgeClass } from '@/lib/status-styles';
 import { drugDisplayName } from '@/lib/drug-label';
 import { formatDateValue } from '@/lib/date-format';
 
@@ -102,7 +103,7 @@ export function UpcomingChangesPage() {
                     <div><p className="text-base font-bold text-foreground">{drugDisplayName(event.drugName, event.originatorBrandName)}</p><p className="mt-0.5 text-xs font-semibold text-muted-foreground">{changeLabel(event)} · {singleBrand ? `${singleBrandLabel || '1 brand'} · ` : `${event.brandCount} brands · `}{event.listingCount} listing{event.listingCount === 1 ? '' : 's'}</p></div>
                     <span className="font-mono text-xs font-bold text-foreground">{date(event.predictedDate)}</span>
                     <span className={`text-xs font-semibold ${reductionTextClass(event.significance)}`}>{singleBrand ? 'Single-brand change' : 'Shared price change'}</span>
-                    <span className={`justify-self-start rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase ${reductionBadgeClass(event.significance)}`}>{event.significance}</span>
+                    <span className={`justify-self-start rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase ${neutralBadgeClass}`}>{event.significance}</span>
                     <ChevronDown className={`justify-self-end text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
                   </button>
                   {expanded && (
@@ -128,7 +129,7 @@ export function UpcomingChangesPage() {
                                  <div><p className="text-sm font-bold text-foreground">{brand.brandName}</p><p className="text-xs font-medium text-muted-foreground">{brand.strength ?? 'Multiple strengths'} · {brand.listingCount} listing{brand.listingCount === 1 ? '' : 's'}</p></div>
                                 <span className="font-mono text-xs font-bold text-foreground">{money(brand.currentPrice)} <span className={reductionTextClass(brand.significance)}>→ {money(brand.predictedNewPrice)}</span></span>
                                 <span className={`font-mono text-sm font-bold ${reductionTextClass(brand.significance)}`}>−{percentage(brand.predictedPercentage)}</span>
-                                <span className="justify-self-start rounded bg-info/10 px-2 py-1 text-[10px] font-bold capitalize text-info">{brand.confidence}</span>
+                                <span className={`justify-self-start rounded px-2 py-1 text-[10px] font-bold capitalize ${neutralBadgeClass}`}>{brand.confidence}</span>
                                 <ChevronDown className={`justify-self-end text-muted-foreground transition-transform ${brandExpanded ? 'rotate-180' : ''}`} />
                               </button>
                               {brandExpanded && (
