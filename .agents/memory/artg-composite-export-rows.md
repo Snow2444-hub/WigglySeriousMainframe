@@ -7,4 +7,4 @@ Composite-pack ARTG records may have a legitimately blank active ingredient beca
 
 **Why:** TGA export rows for components such as solvents, placebo tablets, or adjuvant systems can carry the ARTG identity and product metadata without an active ingredient in that row; the export also appends an `Applied filters:` summary as a pseudo-row.
 
-**How to apply:** Detect composite packs before required-ingredient validation and log them separately from unmatched ingredients. Detect non-record summary rows before validation. Convert Excel serial dates to `YYYY-MM-DD` before writing PostgreSQL `date` columns.
+**How to apply:** Detect composite packs before required-ingredient validation and log them separately from unmatched ingredients. Detect non-record summary rows before validation. Match nonblank ARTG ingredients to tracked active ingredients by normalized whole-word containment, and convert Excel serial dates to `YYYY-MM-DD` before writing PostgreSQL `date` columns.
