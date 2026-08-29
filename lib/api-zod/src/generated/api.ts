@@ -932,7 +932,10 @@ export const ListAdminArtgImportRunsResponseItem = zod.object({
   "warnings": zod.array(zod.string()),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "errorMessage": zod.string().nullable()
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']).optional(),
+  "totalSchedules": zod.int().nullish(),
+  "schedulesProcessed": zod.int().optional()
 })
 export const ListAdminArtgImportRunsResponse = zod.array(ListAdminArtgImportRunsResponseItem)
 
@@ -961,7 +964,10 @@ export const UploadAdminArtgExportResponse = zod.object({
   "warnings": zod.array(zod.string()),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "errorMessage": zod.string().nullable()
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']).optional(),
+  "totalSchedules": zod.int().nullish(),
+  "schedulesProcessed": zod.int().optional()
 })
 
 

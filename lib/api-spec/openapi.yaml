@@ -1959,7 +1959,14 @@ components:
             type: string
         errorMessage:
           type: ["string", "null"]
-      required: [id, startedAt, finishedAt, status, recordsProcessed, pagesFetched, requestUrls, errorMessage]
+        mode:
+          type: string
+          enum: [current, backfill]
+        totalSchedules:
+          type: ["integer", "null"]
+        schedulesProcessed:
+          type: integer
+      required: [id, startedAt, finishedAt, status, recordsProcessed, pagesFetched, requestUrls, errorMessage, mode, totalSchedules, schedulesProcessed]
     AdminIngestionInput:
       type: object
       properties:

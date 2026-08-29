@@ -13,6 +13,7 @@ export * from './adminIngestionRunStatus';
 export * from './adminPublishedFile';
 export * from './artgEntry';
 export * from './artgImportRun';
+export * from './artgImportRunMode';
 export * from './artgImportRunStatus';
 export * from './artgImportStatus';
 export * from './artgImportStatusLastAttemptStatus';

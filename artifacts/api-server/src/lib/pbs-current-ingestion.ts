@@ -51,7 +51,13 @@ export async function executeCurrentIngestionRun(
   try {
     await db
       .update(ingestionRunsTable)
-      .set({ status: "running", snapshotComplete: false })
+      .set({
+        status: "running",
+        mode: "current",
+        totalSchedules: null,
+        schedulesProcessed: 0,
+        snapshotComplete: false,
+      })
       .where(eq(ingestionRunsTable.id, runId));
 
     const enabledWatchlist = await db

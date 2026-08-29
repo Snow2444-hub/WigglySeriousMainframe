@@ -4,6 +4,7 @@ import { logger } from "./logger";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
+type IngestionMode = "current" | "backfill";
 
 export type IngestionRunAcquisition =
   | { run: IngestionRun; activeRun?: never; recoveredRunIds: number[] }
@@ -19,6 +20,7 @@ export function currentScheduleDate(): string {
  */
 export async function acquireIngestionRun(options: {
   recoverStaleBefore?: Date;
+  mode?: IngestionMode;
 } = {}): Promise<IngestionRunAcquisition> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
@@ -56,7 +58,7 @@ export async function acquireIngestionRun(options: {
 
     const [run] = await tx
       .insert(ingestionRunsTable)
-      .values({ status: "queued" })
+      .values({ status: "queued", mode: options.mode ?? "current" })
       .returning();
     if (!run) throw new Error("Unable to create an ingestion run");
     return { run, recoveredRunIds };

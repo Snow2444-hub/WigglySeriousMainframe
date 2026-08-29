@@ -478,6 +478,24 @@ function DeleteStockDialog({ row, pending, error, onClose, onConfirm }: { row: S
   </div>;
 }
 
+function DeleteWatchlistDialog({ entry, pending, error, onClose, onConfirm }: { entry: PbsWatchlistEntry; pending: boolean; error: string; onClose: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-end justify-center bg-sidebar/35 p-0 backdrop-blur-sm sm:items-center sm:p-6" role="alertdialog" aria-modal="true" aria-labelledby="delete-watchlist-title" data-testid="dialog-delete-watchlist">
+    <button type="button" className="absolute inset-0 cursor-default" onClick={onClose} disabled={pending} aria-label="Close delete confirmation" data-testid="button-close-delete-watchlist-backdrop" />
+    <div className="relative w-full max-w-md rounded-t-3xl border border-border bg-card p-6 shadow-2xl sm:rounded-3xl">
+      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><Trash2 className="h-5 w-5" /></div>
+      <p className="mt-5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-destructive">Remove watchlist filter</p>
+      <h2 id="delete-watchlist-title" className="mt-2 text-2xl font-bold tracking-[-0.05em]">Remove this watchlist filter?</h2>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">This removes the filter from future PBS ingestion runs. Existing reference data and previous ingestion runs will not be changed.</p>
+      <div className="mt-5 rounded-xl border border-border bg-muted/45 px-3 py-2.5"><p className="text-sm font-bold">{entry.filterValue}</p><p className="mt-1 text-xs text-muted-foreground">{entry.filterType} · {entry.enabled ? 'Enabled' : 'Disabled'}</p></div>
+      {error && <p className="mt-4 rounded-lg bg-destructive/10 px-3 py-2 text-xs font-semibold text-destructive" role="alert">{error}</p>}
+      <div className="mt-7 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <button type="button" onClick={onClose} disabled={pending} className="rounded-xl px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted disabled:opacity-50" data-testid="button-cancel-delete-watchlist">Keep filter</button>
+        <button type="button" onClick={onConfirm} disabled={pending} className="inline-flex items-center justify-center gap-2 rounded-xl bg-destructive px-5 py-2.5 text-sm font-bold text-destructive-foreground hover:-translate-y-0.5 disabled:opacity-50" data-testid="button-confirm-delete-watchlist">{pending && <LoaderCircle className="h-4 w-4 animate-spin" />}Remove filter</button>
+      </div>
+    </div>
+  </div>;
+}
+
 function StockQuantityControl({ row, onSaved, onFailed }: { row: StockExposureLine; onSaved: (message: string) => Promise<void>; onFailed: (message: string) => void }) {
   const [quantity, setQuantity] = useState(String(row.quantity));
   const [soldQuantity, setSoldQuantity] = useState('');
@@ -704,7 +722,7 @@ function formatDateTime(value: string | null): string {
 function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
   const styles = {
     queued: 'status-neutral',
-    running: 'status-info',
+    running: 'status-running',
     completed: 'status-success',
     failed: 'status-error',
   } as const;
@@ -719,6 +737,8 @@ function AdminPage() {
   const [inputError, setInputError] = useState('');
   const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('atc_code');
   const [watchlistValue, setWatchlistValue] = useState('');
+  const [watchlistDeleteCandidate, setWatchlistDeleteCandidate] = useState<PbsWatchlistEntry | null>(null);
+  const [watchlistDeleteError, setWatchlistDeleteError] = useState('');
   const [mediumThreshold, setMediumThreshold] = useState('');
   const [highThreshold, setHighThreshold] = useState('');
   const [firstNewBrandHighSignificance, setFirstNewBrandHighSignificance] = useState(true);
@@ -816,12 +836,21 @@ function AdminPage() {
   };
 
   const removeWatchlistEntry = (entry: PbsWatchlistEntry) => {
-    if (!window.confirm(`Remove the ${entry.filterType} watchlist entry “${entry.filterValue}”?`)) return;
+    setWatchlistDeleteError('');
+    setWatchlistDeleteCandidate(entry);
+  };
+
+  const confirmWatchlistRemoval = () => {
+    if (!watchlistDeleteCandidate) return;
     deleteWatchlistEntry.mutate(
-      { id: entry.id },
+      { id: watchlistDeleteCandidate.id },
       {
-        onSuccess: refreshWatchlist,
-        onError: () => setInputError('The PBS watchlist entry could not be removed.'),
+        onSuccess: () => {
+          setWatchlistDeleteCandidate(null);
+          setWatchlistDeleteError('');
+          refreshWatchlist();
+        },
+        onError: () => setWatchlistDeleteError('The PBS watchlist entry could not be removed.'),
       },
     );
   };
@@ -1007,13 +1036,25 @@ function AdminPage() {
         <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Current run</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Live ingestion progress</h2></div>
         {activeRun ? <IngestionStatus status={activeRun.status} /> : <span className="status-badge status-neutral">Idle</span>}
       </div>
-      {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-4">
+       {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-4">
+        {activeRun.mode === 'backfill' ? <div className="sm:col-span-4 rounded-xl border border-primary/15 bg-primary/5 p-4" data-testid="progress-backfill-schedules">
+          {activeRun.totalSchedules ? (() => {
+            const completedSchedules = Math.min(activeRun.schedulesProcessed, activeRun.totalSchedules);
+            const currentSchedule = Math.min(completedSchedules + 1, activeRun.totalSchedules);
+            const percentage = Math.round((completedSchedules / activeRun.totalSchedules) * 100);
+            return <><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-primary">Backfill progress</p><p className="mt-1 text-sm font-bold">Schedule {currentSchedule} of {activeRun.totalSchedules}</p></div><span className="font-mono text-xs font-bold text-primary">{percentage}%</span></div><div className="mt-3 h-2 overflow-hidden rounded-full bg-primary/10" role="progressbar" aria-label="Backfill schedule progress" aria-valuemin={0} aria-valuemax={activeRun.totalSchedules} aria-valuenow={completedSchedules}><div className="h-full rounded-full bg-primary transition-[width] duration-500" style={{ width: `${percentage}%` }} /></div></>;
+          })() : <><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-primary">Backfill progress</p><p className="mt-1 text-sm font-semibold">Preparing the 12-month schedule list…</p></>}
+        </div> : <div className="sm:col-span-4 rounded-xl border border-info/20 bg-info/5 p-4" data-testid="progress-current-live">
+          <p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-info">Current-schedule crawl</p>
+          <p className="mt-1 text-sm font-semibold">Live counts update as pages are fetched and items are mapped. The total page count is not known until the crawl finishes.</p>
+        </div>}
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Run ID</p><p className="mt-2 font-mono text-lg font-bold">#{activeRun.id}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Items mapped</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-records-processed">{activeRun.recordsProcessed.toLocaleString('en-AU')}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Pages fetched</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-pages-fetched">{activeRun.pagesFetched.toLocaleString('en-AU')}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Started</p><p className="mt-2 text-sm font-bold">{formatDateTime(activeRun.startedAt)}</p></div>
       </div> : <div className="flex items-start gap-4 p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info"><DatabaseZap className="h-5 w-5" /></span><div><h3 className="font-bold">No ingestion is running.</h3><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Start a run when you are ready to fetch the latest PBS schedule into raw staging. Progress refreshes automatically while a run is active.</p></div></div>}
-    </section>
+     </section>
+     {watchlistDeleteCandidate && <DeleteWatchlistDialog entry={watchlistDeleteCandidate} pending={deleteWatchlistEntry.isPending} error={watchlistDeleteError} onClose={() => { if (!deleteWatchlistEntry.isPending) { setWatchlistDeleteCandidate(null); setWatchlistDeleteError(''); } }} onConfirm={confirmWatchlistRemoval} />}
 
     <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-ingestion-history">
       <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Operational history</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Recent ingestion runs</h2></div><span className="font-mono text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{runs.data?.length ?? 0} shown</span></div>

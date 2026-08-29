@@ -126,7 +126,12 @@ async function executeBackfillIngestionRun(
   try {
     await db
       .update(ingestionRunsTable)
-      .set({ status: "running" })
+      .set({
+        status: "running",
+        mode: "backfill",
+        totalSchedules: null,
+        schedulesProcessed: 0,
+      })
       .where(eq(ingestionRunsTable.id, runId));
 
     const enabledWatchlist = await db
@@ -142,12 +147,20 @@ async function executeBackfillIngestionRun(
     let recordsProcessed = 0;
     let recordsReturned = 0;
     let pagesFetched = 0;
+    let totalSchedules: number | null = null;
+    let schedulesProcessed = 0;
     const requestUrls = new Set<string>();
     const schedules: HistoricalSchedule[] = [];
     const persistProgress = async () => {
       await db
         .update(ingestionRunsTable)
-        .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
+        .set({
+          pagesFetched,
+          requestUrls: [...requestUrls],
+          recordsProcessed,
+          totalSchedules,
+          schedulesProcessed,
+        })
         .where(eq(ingestionRunsTable.id, runId));
     };
 
@@ -184,10 +197,13 @@ async function executeBackfillIngestionRun(
     if (uniqueSchedules.length === 0) {
       throw new Error(`PBS backfill returned no schedules in the 12-month window beginning ${cutoffDate}`);
     }
+    totalSchedules = uniqueSchedules.length;
+    await persistProgress();
 
-    for (const schedule of uniqueSchedules) {
+    for (const [scheduleIndex, schedule] of uniqueSchedules.entries()) {
       const remainingPages = maxPages === undefined ? undefined : maxPages - pagesFetched;
       if (remainingPages === 0) break;
+      await persistProgress();
 
       const scheduleFilters = filters.map((filter) => ({
         ...filter,
@@ -296,6 +312,8 @@ async function executeBackfillIngestionRun(
           onPayload: handlePayload,
         });
       }
+      schedulesProcessed = scheduleIndex + 1;
+      await persistProgress();
     }
 
     if (recordsReturned > 0 && recordsProcessed === 0) {
@@ -314,6 +332,8 @@ async function executeBackfillIngestionRun(
         finishedAt: new Date(),
         recordsProcessed,
         pagesFetched,
+        totalSchedules,
+        schedulesProcessed,
         requestUrls: [...requestUrls],
       })
       .where(eq(ingestionRunsTable.id, runId));
@@ -584,7 +604,7 @@ router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<voi
     return;
   }
 
-  const acquisition = await acquireIngestionRun();
+  const acquisition = await acquireIngestionRun({ mode: parsedBody.data.mode ?? "current" });
 
   if ("activeRun" in acquisition) {
     res.status(409).json({ error: "An ingestion run is already in progress" });

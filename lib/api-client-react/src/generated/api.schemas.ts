@@ -553,6 +553,14 @@ export const ArtgImportRunStatus = {
   failed: 'failed',
 } as const;
 
+export type ArtgImportRunMode = typeof ArtgImportRunMode[keyof typeof ArtgImportRunMode];
+
+
+export const ArtgImportRunMode = {
+  current: 'current',
+  backfill: 'backfill',
+} as const;
+
 export interface ArtgImportRun {
   id: number;
   sourceType: string;
@@ -574,6 +582,10 @@ export interface ArtgImportRun {
   finishedAt: string | null;
   /** @nullable */
   errorMessage: string | null;
+  mode?: ArtgImportRunMode;
+  /** @nullable */
+  totalSchedules?: number | null;
+  schedulesProcessed?: number;
 }
 
 export interface PharmacyStock {

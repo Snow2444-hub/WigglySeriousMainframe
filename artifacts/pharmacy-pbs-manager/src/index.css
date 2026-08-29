@@ -259,6 +259,10 @@
     @apply bg-info/10 text-info;
   }
 
+  .status-running {
+    @apply animate-pulse border border-cyan-400 bg-cyan-200 text-cyan-950 shadow-sm;
+  }
+
   .status-neutral {
     @apply bg-muted text-muted-foreground;
   }
