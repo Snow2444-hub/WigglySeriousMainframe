@@ -553,8 +553,6 @@ export const ArtgImportRunStatus = {
   failed: 'failed',
 } as const;
 
-export type AdminIngestionRunMode = typeof AdminIngestionRunMode[keyof typeof AdminIngestionRunMode];
-
 export interface ArtgImportRun {
   id: number;
   sourceType: string;
@@ -1058,9 +1056,4 @@ export const ListArtgEntriesPbs = {
   all: 'all',
   listed: 'listed',
   unlisted: 'unlisted',
-} as const;
-
-export const AdminIngestionRunMode = {
-  current: 'current',
-  backfill: 'backfill',
 } as const;

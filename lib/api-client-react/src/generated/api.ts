@@ -3062,4 +3062,3 @@ export const useUpdateScheduleChangeSettings = <TError = ErrorType<Error>,
       > => {
       return useMutation(getUpdateScheduleChangeSettingsMutationOptions(options));
     }
-
