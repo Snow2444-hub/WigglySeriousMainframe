@@ -41,6 +41,41 @@ test("dashboard price reductions only include a strictly lower determined price"
   assert.equal(dashboardPriceReduction({ determined_price: 99 }, { determined_price: 100 }), false);
 });
 
+test("dashboard tolerates a complete run with no finished timestamp", async () => {
+  const scheduleCode = 980_000 + fixtureNumber;
+  const scheduleEffectiveDate = new Date().toISOString().slice(0, 10);
+  let runId: number | undefined;
+
+  try {
+    const [run] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "completed",
+        recordsProcessed: 0,
+        pagesFetched: 0,
+        requestUrls: [],
+        scheduleCode,
+        scheduleEffectiveDate,
+        snapshotComplete: true,
+        finishedAt: null,
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(run);
+    runId = run.id;
+
+    const response = await request(userA, "/dashboard");
+    assert.equal(response.status, 200);
+    const dashboard = (await response.json()) as {
+      currentSchedule: { lastSuccessfulIngestionAt: string | null };
+    };
+    assert.ok("lastSuccessfulIngestionAt" in dashboard.currentSchedule);
+  } finally {
+    if (runId !== undefined) {
+      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, runId));
+    }
+  }
+});
+
 function newFixtureToken() {
   fixtureNumber += 1;
   return `T21_${process.pid}_${fixtureNumber}_${Date.now()}`;
