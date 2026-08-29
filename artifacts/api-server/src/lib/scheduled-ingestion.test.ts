@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { db, ingestionRunsTable, pool } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
-import { acquireIngestionRun, recoverInterruptedIngestionRuns } from "./ingestion-run-control";
+import {
+  acquireIngestionRun,
+  recoverInterruptedIngestionRuns,
+  recoverStaleIngestionRuns,
+} from "./ingestion-run-control";
 import { resumeIngestionRun, runScheduledIngestion, startScheduledIngestion } from "./scheduled-ingestion";
 
 let fixtureNumber = 0;
@@ -156,7 +160,8 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
   const staleStartedAt = new Date("2026-08-27T20:00:00.000Z");
   await db.insert(ingestionRunsTable).values({
     id: staleRunId,
-    startedAt: staleStartedAt,
+    startedAt: now,
+    lastProgressAt: staleStartedAt,
     status: "running",
   });
   let failedRunId: number | undefined;
@@ -202,6 +207,52 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
     );
   } finally {
     await deleteRuns([staleRunId, ...(failedRunId ? [failedRunId] : [])]);
+  }
+});
+
+test("stalled ingestion runs are retired using last page progress, not start time", async () => {
+  const staleRunId = fixtureId();
+  const activeRunId = fixtureId();
+  const now = new Date("2026-08-28T02:00:00.000Z");
+  const staleProgressAt = new Date("2026-08-27T20:00:00.000Z");
+  const recentProgressAt = new Date("2026-08-28T01:59:00.000Z");
+
+  try {
+    await db.insert(ingestionRunsTable).values([
+      {
+        id: staleRunId,
+        startedAt: now,
+        lastProgressAt: staleProgressAt,
+        status: "running",
+      },
+      {
+        id: activeRunId,
+        startedAt: now,
+        lastProgressAt: recentProgressAt,
+        status: "running",
+      },
+    ]);
+
+    const recovered = await recoverStaleIngestionRuns(new Date("2026-08-28T01:00:00.000Z"));
+    assert.deepEqual(recovered.map((run) => run.id), [staleRunId]);
+
+    const runs = await db
+      .select({
+        id: ingestionRunsTable.id,
+        status: ingestionRunsTable.status,
+        errorMessage: ingestionRunsTable.errorMessage,
+      })
+      .from(ingestionRunsTable)
+      .where(inArray(ingestionRunsTable.id, [staleRunId, activeRunId]));
+    assert.deepEqual(
+      runs.sort((left, right) => left.id - right.id),
+      [
+        { id: staleRunId, status: "failed", errorMessage: "Ingestion marked stale after no page progress" },
+        { id: activeRunId, status: "running", errorMessage: null },
+      ].sort((left, right) => left.id - right.id),
+    );
+  } finally {
+    await deleteRuns([staleRunId, activeRunId]);
   }
 });
 

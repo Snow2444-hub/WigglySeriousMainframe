@@ -22,3 +22,4 @@
 - [Orval generated-output cleanup](orval-generated-output-cleanup.md) — Pre-clean generated trees before Orval; its clean option can leave stale shared-schema declarations.
 - [Ingestion restart resume](ingestion-restart-resume.md) — Requeue interrupted runs, replay run-scoped staged pages, and trust schedule changes only after complete coverage.
 - [Ingestion test isolation](ingestion-test-isolation.md) — Integration tests must scope staged snapshots and active-run checks to their own fixtures and run serially.
+- [Ingestion heartbeat recovery](ingestion-heartbeat-recovery.md) — Retire silent in-process hangs instead of concurrently resuming the same run; restart recovery alone may safely replay staged pages.

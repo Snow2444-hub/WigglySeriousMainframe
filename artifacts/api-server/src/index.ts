@@ -7,7 +7,10 @@ import {
   recalculateNewBrandSignificance,
   recalculatePriceChangeSignificance,
 } from "./lib/schedule-changes";
-import { recoverInterruptedIngestionRuns } from "./lib/ingestion-run-control";
+import {
+  recoverInterruptedIngestionRuns,
+  recoverStaleIngestionRuns,
+} from "./lib/ingestion-run-control";
 import { resumeIngestionRun } from "./lib/scheduled-ingestion";
 import { executeIngestionRun } from "./routes/admin";
 
@@ -41,6 +44,12 @@ async function start(): Promise<void> {
     }
 
     logger.info({ port }, "Server listening");
+    const staleRunWatchdog = setInterval(() => {
+      void recoverStaleIngestionRuns().catch((error) => {
+        logger.error({ err: error }, "Failed to check for stalled PBS ingestion runs");
+      });
+    }, 60_000);
+    staleRunWatchdog.unref();
     if (interruptedRuns.length > 0) {
       setImmediate(() => {
         void (async () => {

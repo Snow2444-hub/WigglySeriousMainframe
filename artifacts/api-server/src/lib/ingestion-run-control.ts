@@ -4,6 +4,9 @@ import { logger } from "./logger";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
+export const DEFAULT_INGESTION_STALE_MINUTES = 15;
+export const INGESTION_STALE_MINUTES_ENV = "PBS_INGESTION_STALE_MINUTES";
+export const INGESTION_STALE_ERROR = "Ingestion marked stale after no page progress";
 type IngestionMode = "current" | "backfill";
 
 export type IngestionRunAcquisition =
@@ -12,6 +15,18 @@ export type IngestionRunAcquisition =
 
 export function currentScheduleDate(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+export function configuredIngestionStaleMinutes(): number {
+  const rawValue = process.env[INGESTION_STALE_MINUTES_ENV];
+  if (rawValue === undefined || rawValue.trim() === "") return DEFAULT_INGESTION_STALE_MINUTES;
+  const staleMinutes = Number(rawValue);
+  if (Number.isInteger(staleMinutes) && staleMinutes > 0) return staleMinutes;
+  logger.warn(
+    { envVar: INGESTION_STALE_MINUTES_ENV, value: rawValue, fallback: DEFAULT_INGESTION_STALE_MINUTES },
+    "Invalid PBS ingestion stale threshold; using the default",
+  );
+  return DEFAULT_INGESTION_STALE_MINUTES;
 }
 
 type IngestionRunOptions = {
@@ -42,7 +57,10 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
         .where(
           and(
             inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
-            lt(ingestionRunsTable.startedAt, options.recoverStaleBefore),
+            lt(
+              sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
+              options.recoverStaleBefore,
+            ),
           ),
         )
         .returning({ id: ingestionRunsTable.id });
@@ -111,6 +129,7 @@ export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promis
       .update(ingestionRunsTable)
       .set({
         status: "queued",
+        lastProgressAt: new Date(),
         finishedAt: null,
         errorMessage: null,
         scheduleDate,
@@ -127,4 +146,38 @@ export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promis
     );
   }
   return recoveredRuns;
+}
+
+export async function recoverStaleIngestionRuns(
+  staleBefore = new Date(Date.now() - configuredIngestionStaleMinutes() * 60_000),
+): Promise<IngestionRun[]> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
+    const recoveredAt = new Date();
+    const staleRuns = await tx
+      .update(ingestionRunsTable)
+      .set({
+        status: "failed",
+        lastProgressAt: recoveredAt,
+        finishedAt: recoveredAt,
+        errorMessage: INGESTION_STALE_ERROR,
+      })
+      .where(
+        and(
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          lt(
+            sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
+            staleBefore,
+          ),
+        ),
+      )
+      .returning();
+    if (staleRuns.length > 0) {
+      logger.warn(
+        { runIds: staleRuns.map((run) => run.id), staleBefore },
+        "Retired stalled PBS ingestion runs",
+      );
+    }
+    return staleRuns;
+  });
 }

@@ -128,6 +128,7 @@ async function executeBackfillIngestionRun(
       .update(ingestionRunsTable)
       .set({
         status: "running",
+        lastProgressAt: new Date(),
         mode: "backfill",
         scheduleDate,
         maxPages: maxPages ?? null,
@@ -158,6 +159,7 @@ async function executeBackfillIngestionRun(
         .update(ingestionRunsTable)
         .set({
           pagesFetched,
+          lastProgressAt: new Date(),
           requestUrls: [...requestUrls],
           recordsProcessed,
           totalSchedules,
@@ -340,6 +342,7 @@ async function executeBackfillIngestionRun(
       .update(ingestionRunsTable)
       .set({
         status: "completed",
+        lastProgressAt: new Date(),
         finishedAt: new Date(),
         recordsProcessed,
         pagesFetched,

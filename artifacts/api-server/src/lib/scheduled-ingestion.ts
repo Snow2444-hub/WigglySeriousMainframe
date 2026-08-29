@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { executeCurrentIngestionRun } from "./pbs-current-ingestion";
 import {
   acquireIngestionRun,
+  configuredIngestionStaleMinutes,
   currentScheduleDate,
 } from "./ingestion-run-control";
 import { logger } from "./logger";
@@ -45,14 +46,12 @@ type PreparedScheduledIngestion =
       execute: IngestionExecutor;
     };
 
-const DEFAULT_STALE_RUN_MINUTES = 180;
-
 async function prepareScheduledIngestion(
   options: ScheduledIngestionOptions = {},
 ): Promise<PreparedScheduledIngestion> {
   const now = options.now ?? new Date();
   const scheduleDate = options.scheduleDate ?? currentScheduleDate();
-  const staleRunMinutes = options.staleRunMinutes ?? DEFAULT_STALE_RUN_MINUTES;
+  const staleRunMinutes = options.staleRunMinutes ?? configuredIngestionStaleMinutes();
   if (!Number.isInteger(staleRunMinutes) || staleRunMinutes <= 0) {
     throw new Error("staleRunMinutes must be a positive integer");
   }

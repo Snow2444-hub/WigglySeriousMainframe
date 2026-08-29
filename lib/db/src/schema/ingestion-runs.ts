@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 export const ingestionRunsTable = pgTable("ingestion_runs", {
   id: serial("id").primaryKey(),
   startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+  lastProgressAt: timestamp("last_progress_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
   status: text("status").notNull(),
   recordsProcessed: integer("records_processed").notNull().default(0),

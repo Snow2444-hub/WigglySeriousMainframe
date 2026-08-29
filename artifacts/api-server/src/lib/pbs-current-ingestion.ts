@@ -53,6 +53,7 @@ export async function executeCurrentIngestionRun(
       .update(ingestionRunsTable)
       .set({
         status: "running",
+        lastProgressAt: new Date(),
         mode: "current",
         scheduleDate,
         maxPages: maxPages ?? null,
@@ -83,7 +84,7 @@ export async function executeCurrentIngestionRun(
     const persistProgress = async () => {
       await db
         .update(ingestionRunsTable)
-        .set({ pagesFetched, requestUrls: [...requestUrls], recordsProcessed })
+        .set({ pagesFetched, lastProgressAt: new Date(), requestUrls: [...requestUrls], recordsProcessed })
         .where(eq(ingestionRunsTable.id, runId));
     };
     const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
@@ -235,6 +236,7 @@ export async function executeCurrentIngestionRun(
         scheduleCode,
         scheduleEffectiveDate,
         status: "completed",
+        lastProgressAt: new Date(),
         finishedAt: new Date(),
         recordsProcessed,
         pagesFetched: pages.length,
