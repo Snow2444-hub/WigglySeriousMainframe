@@ -332,10 +332,10 @@ function ArtgUploadControl() {
           <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Upload a TGA export</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Add one or more CSV or Excel exports with ARTG ID, active ingredient, sponsor, start date, and product or good name.</p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
-          <label className="min-w-0 flex-1">
+        <div className="grid w-full min-w-0 gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end lg:w-[560px]">
+          <label className="block min-w-0">
             <span className="sr-only">TGA ARTG export file</span>
-            <input type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setError(''); setNotice(''); }} className="block h-11 w-full cursor-pointer rounded-xl border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-info/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-info hover:file:bg-info/15" data-testid="input-artg-register-export-file" />
+            <input type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={(event) => { setFiles(Array.from(event.target.files ?? [])); setError(''); setNotice(''); }} className="block w-full cursor-pointer rounded-xl border border-input bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-info/10 file:px-3 file:py-1.5 file:text-xs file:font-bold file:text-info hover:file:bg-info/15" data-testid="input-artg-register-export-file" />
           </label>
           <button type="button" onClick={submit} disabled={!files.length || isUploading} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-upload-artg-register-export">{isUploading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <DatabaseZap className="h-4 w-4" />}{isUploading ? `Importing ${completedCount}/${files.length}…` : files.length > 1 ? `Import ${files.length} files` : 'Import export'}</button>
         </div>
@@ -730,7 +730,7 @@ function AdminPage() {
   const [maxPages, setMaxPages] = useState('');
   const [ingestionMode, setIngestionMode] = useState<'current' | 'backfill'>('current');
   const [inputError, setInputError] = useState('');
-  const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('atc_code');
+  const [watchlistType, setWatchlistType] = useState<PbsWatchlistEntry['filterType']>('drug_name');
   const [watchlistValue, setWatchlistValue] = useState('');
   const [watchlistDeleteCandidate, setWatchlistDeleteCandidate] = useState<PbsWatchlistEntry | null>(null);
   const [watchlistDeleteError, setWatchlistDeleteError] = useState('');

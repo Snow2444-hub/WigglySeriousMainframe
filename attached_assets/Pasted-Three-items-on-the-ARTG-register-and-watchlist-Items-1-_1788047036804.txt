@@ -1,0 +1,39 @@
+Three items on the ARTG register and watchlist. Items 1 and 2 are small fixes.
+Item 3 is READ-ONLY investigation — do not change import behaviour yet, I need
+to make a product decision first.
+
+=== 1. WATCHLIST FILTER TYPE DEFAULT ===
+The "Enabled watchlist" add-filter control defaults to "ATC code" but should
+default to "Drug name". The dropdown already contains Drug name as an option.
+Change only the default selected value to Drug name. Confirm the other options
+(ATC code, Brand name, PBS code, Formulary, Program code) still work.
+
+=== 2. TRUNCATED BROWSE CONTROL (ARTG upload panel, top of page) ===
+The upload control in the blue "Upload a TGA export" panel shows a cramped
+"Browse… N…" where the file-status text is truncated. The same control in the
+lower "ARTG registrations" panel renders fine ("Browse… No file selected.").
+Fix the top one so the file-status text isn't truncated — match the working
+lower panel's layout.
+
+=== 3. ARTG IMPORT SCOPE — investigate and report, DO NOT CHANGE ===
+On the last big ARTG import, most rows were dropped: one run reported "720 not
+tracked" and another "12 rows did not match an active tracked ingredient and
+were not added." I need to understand the exact current behaviour before
+deciding whether to change it.
+
+Report:
+a. Confirm the rule: does the ARTG importer only PERSIST rows whose active
+   ingredient matches an enabled watchlist entry, discarding all others? Or does
+   it store everything and only DISPLAY/ALERT on watched ones? Show where in the
+   code this decision happens.
+b. When a row is "not tracked," is it dropped entirely (not written to any
+   table), or written but flagged? I want to know if the 720 rows exist anywhere
+   or are gone.
+c. If I wanted to change this so ARTG stores ALL registrations but only
+   surfaces/alerts on watchlist ingredients, what would that touch — schema,
+   importer, the ARTG register query? Give me the scope of that change, but do
+   NOT implement it.
+d. Roughly how many rows/how much storage would a full TGA export add if
+   unfiltered, if you can tell from the files already imported?
+
+Report all of the above. I'll decide on 3 after seeing it. Just do 1 and 2.
