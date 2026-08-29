@@ -77,3 +77,59 @@ test("resumes from a staged page without fetching it again", async () => {
       );
   }
 });
+
+test("marks a naturally completed capped snapshot page complete", async () => {
+  const runId = 2_080_000_000 + ((Date.now() + process.pid) % 100_000);
+  const scheduleDate = "2094-01-01";
+  const requestKey = `cap-complete:run-${runId}`;
+  const previousSubscriptionKey = process.env.PBS_SUBSCRIPTION_KEY;
+  process.env.PBS_SUBSCRIPTION_KEY = "test-subscription-key";
+  let requestCount = 0;
+
+  try {
+    const pages = await fetchSchedule({
+      scheduleDate,
+      endpoints: ["item-dispensing-rule-relationships"],
+      limit: 100,
+      maxPages: 1,
+      filters: [{ requestKey: "cap-complete", params: { schedule_code: "20940101" } }],
+      coverageScope: "schedule",
+      stagingRunId: runId,
+      request: async () => {
+        requestCount += 1;
+        return new Response(JSON.stringify({ data: [{ li_item_id: "cap-complete-item" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      sleep: async () => {},
+    });
+
+    assert.equal(requestCount, 1);
+    assert.equal(pages.length, 1);
+    const [stagedPage] = await db
+      .select({ coverageComplete: rawScheduleStagingTable.coverageComplete })
+      .from(rawScheduleStagingTable)
+      .where(
+        and(
+          eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+          eq(rawScheduleStagingTable.requestKey, requestKey),
+        ),
+      );
+    assert.deepEqual(stagedPage, { coverageComplete: true });
+  } finally {
+    await db
+      .delete(rawScheduleStagingTable)
+      .where(
+        and(
+          eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+          eq(rawScheduleStagingTable.requestKey, requestKey),
+        ),
+      );
+    if (previousSubscriptionKey === undefined) {
+      delete process.env.PBS_SUBSCRIPTION_KEY;
+    } else {
+      process.env.PBS_SUBSCRIPTION_KEY = previousSubscriptionKey;
+    }
+  }
+});

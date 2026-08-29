@@ -14,3 +14,9 @@ Development staging can also contain request-filtered item pages even when no pa
 **Why:** The available staged history includes drug-filtered requests and produced no trustworthy deleted-item evidence across the last twelve months.
 
 **How to apply:** Treat schedule-wide coverage as a prerequisite for authoritative delisted alerts; keep filtered or exploratory staging useful for parsing but out of deletion comparisons.
+
+A page that consumes the cap can still complete its endpoint snapshot when the PBS response has no successor page. The overall run remains incomplete and must skip schedule-change comparison, but terminal endpoint snapshots should retain their complete coverage marker.
+
+**Why:** A capped live run exposed that returning before inspecting pagination incorrectly labeled a naturally terminal dispensing-rule snapshot as incomplete.
+
+**How to apply:** Inspect pagination before enforcing the global cap; only leave coverage incomplete when the response actually advertises another page.

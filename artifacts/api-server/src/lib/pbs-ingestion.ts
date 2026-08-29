@@ -391,27 +391,27 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         await onPage?.(page);
         await onPayload?.({ ...page, payload });
 
+        const pagination = getPaginationInfo(payload, pageNumber, limit);
+        if (!pagination.hasMore) {
+          if (coverageScope === "schedule") {
+            await db
+              .update(rawScheduleStagingTable)
+              .set({ coverageComplete: true })
+              .where(
+                and(
+                  eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+                  eq(rawScheduleStagingTable.endpoint, endpoint),
+                  eq(rawScheduleStagingTable.requestKey, stagingRequestKey),
+                ),
+              );
+          }
+          break;
+        }
         if (maxPages !== undefined && fetchedPages.length >= maxPages) {
           return fetchedPages;
         }
-
-        const pagination = getPaginationInfo(payload, pageNumber, limit);
-        if (!pagination.hasMore) break;
         pageNumber += 1;
         nextUrl = pagination.nextUrl ? resolveNextUrl(pagination.nextUrl) : undefined;
-      }
-
-      if (coverageScope === "schedule") {
-        await db
-          .update(rawScheduleStagingTable)
-          .set({ coverageComplete: true })
-          .where(
-            and(
-              eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
-              eq(rawScheduleStagingTable.endpoint, endpoint),
-              eq(rawScheduleStagingTable.requestKey, stagingRequestKey),
-            ),
-          );
       }
     }
   }
