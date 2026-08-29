@@ -11,6 +11,8 @@ import type { UpcomingPredictedReductionGroupSignificance } from './upcomingPred
 export interface UpcomingPredictedReductionGroup {
   drugId: number;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   predictedDate: Date;
   currentPrice: number;
   predictedNewPrice: number;

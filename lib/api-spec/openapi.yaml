@@ -1078,6 +1078,8 @@ components:
           type: integer
         drugName:
           type: string
+        originatorBrandName:
+          type: ["string", "null"]
         activeIngredient:
           type: string
         brandCount:
@@ -1124,7 +1126,7 @@ components:
         firstNewBrandReductionDate:
           type: ["string", "null"]
           pattern: '^\d{4}-\d{2}-\d{2}$'
-      required: [drugId, drugName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, nextPredictedReductionConfidence, nextPredictedReductionSignificance, recentHighChangeCount, subjectToPriceDisclosure, priceDisclosureCycles, hasTakenFirstNewBrandReduction, firstNewBrandReductionDate, searchMatchLevel, matchedBrandName, matchedItemCode]
+      required: [drugId, drugName, originatorBrandName, activeIngredient, brandCount, itemCount, formulary, minimumPrice, maximumPrice, upcomingPredictedReductionCount, nextPredictedReductionDate, nextPredictedReductionType, nextPredictedReductionPercentage, nextPredictedReductionConfidence, nextPredictedReductionSignificance, recentHighChangeCount, subjectToPriceDisclosure, priceDisclosureCycles, hasTakenFirstNewBrandReduction, firstNewBrandReductionDate, searchMatchLevel, matchedBrandName, matchedItemCode]
     PriceDisclosureCycleSummary:
       type: object
       properties:
@@ -1395,6 +1397,8 @@ components:
           type: integer
         drugName:
           type: string
+        originatorBrandName:
+          type: ["string", "null"]
         predictedDate:
           type: string
           format: date
@@ -1415,7 +1419,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/UpcomingPredictedBrandReductionGroup"
-      required: [drugId, drugName, predictedDate, currentPrice, predictedNewPrice, predictedPercentage, brandCount, listingCount, significance, brands]
+      required: [drugId, drugName, originatorBrandName, predictedDate, currentPrice, predictedNewPrice, predictedPercentage, brandCount, listingCount, significance, brands]
     PriceHistory:
       type: object
       properties:
@@ -1532,6 +1536,8 @@ components:
           type: integer
         drugName:
           type: string
+        originatorBrandName:
+          type: ["string", "null"]
         brandName:
           type: ["string", "null"]
         oldValue:
@@ -1552,7 +1558,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, brandName, oldValue, newValue, affectedItems, significance, notes, createdAt]
+      required: [id, scheduleCode, effectiveDate, changeType, liItemId, pbsCode, drugId, drugName, originatorBrandName, brandName, oldValue, newValue, affectedItems, significance, notes, createdAt]
     ScheduleChangeSettings:
       type: object
       properties:

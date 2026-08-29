@@ -54,6 +54,8 @@ export interface PriceDisclosureCycleSummary {
 export interface MedicineDrugSummary {
   drugId: number;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   activeIngredient: string;
   brandCount: number;
   itemCount: number;
@@ -321,6 +323,8 @@ export const UpcomingPredictedReductionGroupSignificance = {
 export interface UpcomingPredictedReductionGroup {
   drugId: number;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   predictedDate: string;
   currentPrice: number;
   predictedNewPrice: number;
@@ -457,6 +461,8 @@ export interface ScheduleChange {
   pbsCode: string | null;
   drugId: number;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   /** @nullable */
   brandName: string | null;
   /** @nullable */

@@ -24,6 +24,8 @@ export interface ScheduleChange {
   drugId: number;
   drugName: string;
   /** @nullable */
+  originatorBrandName: string | null;
+  /** @nullable */
   brandName: string | null;
   /** @nullable */
   oldValue: ScheduleChangeOldValue;

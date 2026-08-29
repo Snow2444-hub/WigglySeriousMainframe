@@ -263,6 +263,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
   const search = parsed.data.search?.trim().toLowerCase();
   const summaries = [...grouped.entries()].flatMap(([drugId, group]) => {
     const first = group[0];
+    const originatorBrandName = group.find((item) => indicatorIsTrue(item.innovatorIndicator))?.brandName ?? null;
     const drugMatch = Boolean(
       search &&
         (first.drugName.toLowerCase().includes(search) ||
@@ -286,6 +287,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
       {
         drugId,
         drugName: first.drugName,
+         originatorBrandName,
         activeIngredient: first.activeIngredient,
         brandCount: new Set(group.map((item) => brandGroupKey(item.brandName))).size,
         itemCount: group.length,
@@ -460,6 +462,26 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
   const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
+  const originatorItems = [...new Set(visibleRows.map((row) => row.drugId))].length
+    ? await db
+        .select({
+          drugId: pbsItemsTable.drugId,
+          brandName: pbsItemsTable.brandName,
+          innovatorIndicator: pbsItemsTable.innovatorIndicator,
+        })
+        .from(pbsItemsTable)
+        .where(inArray(pbsItemsTable.drugId, [...new Set(visibleRows.map((row) => row.drugId))]))
+    : [];
+  const originatorBrandByDrug = new Map<number, string>();
+  for (const item of originatorItems) {
+    if (
+      indicatorIsTrue(item.innovatorIndicator)
+      && !isBrandHidden(hiddenBrandKeys, item.drugId, item.brandName)
+      && !originatorBrandByDrug.has(item.drugId)
+    ) {
+      originatorBrandByDrug.set(item.drugId, item.brandName);
+    }
+  }
   visibleRows.sort((left, right) => {
     const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
     if (strengthOrder !== 0) return strengthOrder;
@@ -625,6 +647,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     return {
       drugId: group.drugId,
       drugName: group.drugName,
+      originatorBrandName: originatorBrandByDrug.get(group.drugId) ?? null,
       predictedDate: group.predictedDate,
       currentPrice: group.currentPrice,
       predictedNewPrice: group.predictedNewPrice,
@@ -770,37 +793,61 @@ const scheduleChangeSelect = {
 };
 
 async function enrichScheduleChangeRows<T extends {
+  drugId: number;
   liItemId: string | null;
   affectedItems: ScheduleChangeAffectedItem[] | null;
 }>(rows: T[]): Promise<T[]> {
+  const drugIds = [...new Set(rows.map((row) => row.drugId))];
   const itemIdentifiers = [
     ...new Set([
       ...rows.map((row) => row.liItemId),
       ...rows.flatMap((row) => row.affectedItems?.map((item) => item.liItemId) ?? []),
     ].filter((value): value is string => Boolean(value))),
   ];
-  if (!itemIdentifiers.length) return rows;
-
-  const matchingItems = await db
-    .select({
-      itemCode: pbsItemsTable.itemCode,
-      liItemId: pbsItemsTable.liItemId,
-      pbsCode: pbsItemsTable.pbsCode,
-      brandName: pbsItemsTable.brandName,
-      strength: pbsItemsTable.strength,
-      determinedPrice: pbsItemsTable.determinedPrice,
-      formulary: pbsItemsTable.formulary,
-    })
-    .from(pbsItemsTable)
-    .where(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)));
+  const [matchingItems, originatorItems] = await Promise.all([
+    itemIdentifiers.length
+      ? db
+          .select({
+            itemCode: pbsItemsTable.itemCode,
+            liItemId: pbsItemsTable.liItemId,
+            pbsCode: pbsItemsTable.pbsCode,
+            brandName: pbsItemsTable.brandName,
+            strength: pbsItemsTable.strength,
+            determinedPrice: pbsItemsTable.determinedPrice,
+            formulary: pbsItemsTable.formulary,
+          })
+          .from(pbsItemsTable)
+          .where(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)))
+      : [],
+    drugIds.length
+      ? db
+          .select({
+            drugId: pbsItemsTable.drugId,
+            brandName: pbsItemsTable.brandName,
+            innovatorIndicator: pbsItemsTable.innovatorIndicator,
+          })
+          .from(pbsItemsTable)
+          .where(inArray(pbsItemsTable.drugId, drugIds))
+      : [],
+  ]);
   const itemsByIdentifier = new Map(
     matchingItems.flatMap((item) => [
       [item.itemCode, item],
       ...(item.liItemId ? [[item.liItemId, item] as const] : []),
     ]),
   );
+  const originatorBrandByDrug = new Map<number, string>();
+  for (const item of originatorItems) {
+    if (indicatorIsTrue(item.innovatorIndicator) && !originatorBrandByDrug.has(item.drugId)) {
+      originatorBrandByDrug.set(item.drugId, item.brandName);
+    }
+  }
 
   return rows.map((row) => {
+    const rowWithOriginator = {
+      ...row,
+      originatorBrandName: originatorBrandByDrug.get(row.drugId) ?? null,
+    };
     const fillItem = (item: ScheduleChangeAffectedItem): ScheduleChangeAffectedItem => {
       const current = itemsByIdentifier.get(item.liItemId);
       if (!current) return item;
@@ -814,13 +861,13 @@ async function enrichScheduleChangeRows<T extends {
       };
     };
     if (row.affectedItems?.length) {
-      return { ...row, affectedItems: row.affectedItems.map(fillItem) };
+      return { ...rowWithOriginator, affectedItems: row.affectedItems.map(fillItem) };
     }
-    if (!row.liItemId) return row;
+    if (!row.liItemId) return rowWithOriginator;
     const current = itemsByIdentifier.get(row.liItemId);
     return current
       ? {
-          ...row,
+          ...rowWithOriginator,
           affectedItems: [{
             liItemId: current.liItemId ?? current.itemCode,
             pbsCode: current.pbsCode,
@@ -830,7 +877,7 @@ async function enrichScheduleChangeRows<T extends {
             formulary: current.formulary,
           }],
         }
-      : row;
+      : rowWithOriginator;
   });
 }
 

@@ -12,6 +12,8 @@ import type { PriceDisclosureCycleSummary } from './priceDisclosureCycleSummary'
 export interface MedicineDrugSummary {
   drugId: number;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   activeIngredient: string;
   brandCount: number;
   itemCount: number;

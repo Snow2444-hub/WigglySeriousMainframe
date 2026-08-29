@@ -11,6 +11,7 @@ import {
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { drugDisplayName } from '@/lib/drug-label';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
 import { Link } from 'wouter';
 
@@ -114,6 +115,7 @@ type ScheduleEventGroup = {
   key: string;
   drugId: number;
   drugName: string;
+  originatorBrandName: string | null;
   effectiveDate: string;
   scheduleCode: number;
   changes: ScheduleChange[];
@@ -196,6 +198,7 @@ function groupScheduleChanges(changes: ScheduleChange[]): ScheduleEventGroup[] {
       key,
       drugId: change.drugId,
       drugName: change.drugName,
+      originatorBrandName: change.originatorBrandName,
       effectiveDate: change.effectiveDate,
       scheduleCode: change.scheduleCode,
       changes: [],
@@ -1051,10 +1054,10 @@ export function ChangesPage() {
                           href={`/pbs/${encodeURIComponent(changeItemCode(event.changes[0]) as string)}`}
                           className="text-sm font-bold leading-tight text-foreground hover:text-primary hover:underline"
                         >
-                          {event.drugName}
+                           {drugDisplayName(event.drugName, event.originatorBrandName)}
                         </Link>
                       ) : (
-                        <p className="text-sm font-bold leading-tight">{event.drugName}</p>
+                        <p className="text-sm font-bold leading-tight">{drugDisplayName(event.drugName, event.originatorBrandName)}</p>
                       )}
                       {event.brands.length > 0 && <p className="mt-1 truncate text-[11px] font-semibold text-muted-foreground">{event.brands.length} brand{event.brands.length === 1 ? '' : 's'}</p>}
                     </div>
@@ -1068,7 +1071,7 @@ export function ChangesPage() {
                     <div className="flex justify-between gap-1 md:justify-end">
                       <button
                         type="button"
-                        onClick={() => { setTimelineDrugId(event.drugId); setTimelineDrugName(event.drugName); }}
+                         onClick={() => { setTimelineDrugId(event.drugId); setTimelineDrugName(drugDisplayName(event.drugName, event.originatorBrandName)); }}
                         className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold text-info hover:bg-info/10"
                         data-testid={`button-timeline-event-${event.key}`}
                       >

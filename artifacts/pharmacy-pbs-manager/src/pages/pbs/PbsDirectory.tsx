@@ -8,6 +8,7 @@ import {
 import { Link, useLocation } from 'wouter';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionTextClass } from '@/lib/percentage-significance';
+import { drugDisplayName } from '@/lib/drug-label';
 import { Search, ChevronDown, ChevronRight, ArrowLeft, Pill, Building2, Tag } from 'lucide-react';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -60,7 +61,7 @@ function PriceForecast({
 type Tier = 
   | { level: 'drugs' }
   | { level: 'brands', drug: MedicineDrugSummary }
-  | { level: 'items', drugId: number, drugName: string, brand: MedicineBrandSummary | { brandName: string } };
+  | { level: 'items', drugId: number, drugName: string, originatorBrandName: string | null, brand: MedicineBrandSummary | { brandName: string } };
 
 export function PbsDirectory() {
   const [, setLocation] = useLocation();
@@ -92,14 +93,14 @@ export function PbsDirectory() {
     if (drug.searchMatchLevel === 'item' && drug.matchedItemCode) {
       setLocation(`/pbs/${drug.matchedItemCode}`);
     } else if (drug.searchMatchLevel === 'brand' && drug.matchedBrandName) {
-      setTier({ level: 'items', drugId: drug.drugId, drugName: drug.drugName, brand: { brandName: drug.matchedBrandName } });
+      setTier({ level: 'items', drugId: drug.drugId, drugName: drug.drugName, originatorBrandName: drug.originatorBrandName, brand: { brandName: drug.matchedBrandName } });
     } else {
       setTier({ level: 'brands', drug });
     }
   };
 
   const clickBrand = (brand: MedicineBrandSummary, drugName: string) => {
-    setTier({ level: 'items', drugId: brand.drugId, drugName, brand });
+    setTier({ level: 'items', drugId: brand.drugId, drugName, originatorBrandName: null, brand });
   };
 
   return (
@@ -143,13 +144,13 @@ export function PbsDirectory() {
                 onClick={() => setTier({ level: 'brands', drug: { drugId: tier.drugId, drugName: tier.drugName } as MedicineDrugSummary })} 
                 className="hover:text-foreground transition-colors"
               >
-                {tier.drugName}
+                 {drugDisplayName(tier.drugName, tier.originatorBrandName)}
               </button>
               <ChevronRight className="h-4 w-4 opacity-50" />
               <span className="text-foreground">{tier.brand.brandName}</span>
             </>
           ) : (
-            <span className="text-foreground">{tier.drug.drugName}</span>
+             <span className="text-foreground">{drugDisplayName(tier.drug.drugName, tier.drug.originatorBrandName)}</span>
           )}
         </div>
       )}
@@ -169,10 +170,11 @@ export function PbsDirectory() {
                   const isBrand = drug.searchMatchLevel === 'brand';
                   const isItem = drug.searchMatchLevel === 'item';
                   const ingredientDiffers = normalise(drug.activeIngredient) !== normalise(drug.drugName);
-                  const secondaryLabel = isBrand || isItem
+                   const displayDrugName = drugDisplayName(drug.drugName, drug.originatorBrandName);
+                   const secondaryLabel = isBrand || isItem
                     ? ingredientDiffers
-                      ? <>{drug.drugName} <span className="mx-1.5 opacity-50">•</span> {drug.activeIngredient}</>
-                      : drug.drugName
+                       ? <>{displayDrugName} <span className="mx-1.5 opacity-50">•</span> {drug.activeIngredient}</>
+                       : displayDrugName
                     : ingredientDiffers
                       ? drug.activeIngredient
                       : null;
@@ -199,7 +201,7 @@ export function PbsDirectory() {
                         )}
                         
                         <div className="text-lg font-bold tracking-tight">
-                          {isItem ? (drug.matchedBrandName || drug.drugName) : isBrand ? drug.matchedBrandName : drug.drugName}
+                          {isItem ? (drug.matchedBrandName || displayDrugName) : isBrand ? drug.matchedBrandName : displayDrugName}
                         </div>
                          {secondaryLabel && (
                            <div className="mt-1 text-sm font-medium text-muted-foreground">
@@ -317,7 +319,7 @@ export function PbsDirectory() {
                       {sectionBrands.map((brand) => (
                         <button
                           key={brand.brandName}
-                          onClick={() => clickBrand(brand, tier.drug.drugName)}
+                       onClick={() => clickBrand(brand, tier.drug.drugName)}
                           className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.25fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
                         >
                             <span className="flex min-w-0 flex-col gap-1">
@@ -377,7 +379,7 @@ export function PbsDirectory() {
                 <>
                   <div className="flex items-center justify-between border-b border-border bg-muted/30 px-6 py-3">
                     <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
-                      Brands for {tier.drug.drugName}
+                       Brands for {drugDisplayName(tier.drug.drugName, tier.drug.originatorBrandName)}
                     </span>
                     <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
                       {brands.length} brand{brands.length === 1 ? '' : 's'}

@@ -9,6 +9,7 @@ import { Link } from 'wouter';
 import { CalendarDays, ChevronDown, Filter, Layers3 } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
+import { drugDisplayName } from '@/lib/drug-label';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
@@ -95,7 +96,7 @@ export function UpcomingChangesPage() {
               return (
                 <article key={eventKey} className={`border-l-4 ${reductionBorderClass(event.significance)}`} data-testid={`upcoming-event-${eventKey}`}>
                   <button type="button" onClick={() => toggleKey(setOpenEvents, eventKey)} aria-expanded={expanded} className="grid w-full gap-2 px-5 py-4 text-left transition-colors hover:bg-secondary/25 md:grid-cols-[1.25fr_.85fr_1fr_1fr_auto] md:items-center md:gap-4">
-                    <div><p className="text-base font-bold text-foreground">{event.drugName}</p><p className="mt-0.5 text-xs font-semibold text-muted-foreground">{changeLabel(event)} · {singleBrand ? `${singleBrandLabel || '1 brand'} · ` : `${event.brandCount} brands · `}{event.listingCount} listing{event.listingCount === 1 ? '' : 's'}</p></div>
+                    <div><p className="text-base font-bold text-foreground">{drugDisplayName(event.drugName, event.originatorBrandName)}</p><p className="mt-0.5 text-xs font-semibold text-muted-foreground">{changeLabel(event)} · {singleBrand ? `${singleBrandLabel || '1 brand'} · ` : `${event.brandCount} brands · `}{event.listingCount} listing{event.listingCount === 1 ? '' : 's'}</p></div>
                     <span className="font-mono text-xs font-bold text-foreground">{date(event.predictedDate)}</span>
                     <span className={`text-xs font-semibold ${reductionTextClass(event.significance)}`}>{singleBrand ? 'Single-brand change' : 'Shared price change'}</span>
                     <span className={`justify-self-start rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase ${reductionBadgeClass(event.significance)}`}>{event.significance}</span>
