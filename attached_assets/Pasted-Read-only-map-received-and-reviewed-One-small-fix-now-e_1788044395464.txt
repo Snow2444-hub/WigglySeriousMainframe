@@ -1,0 +1,55 @@
+Read-only map received and reviewed. One small fix now; everything else is
+documented as deferred debt, NOT fixed in this pass.
+
+=== DO NOW ===
+
+1. NEUTRALISE THE POOLING SCRIPT
+   scripts/backfill-staged-premiums.ts is the one path that pools all staged
+   runs (complete and incomplete), and is the live latent form of the
+   schedule-4708 pooling bug.
+   Preferred fix: make it impossible to run accidentally AND stop it pooling.
+   - Add a guard so it cannot execute without an explicit, deliberate flag
+     (e.g. requires an env var or --confirm argument; refuses to run otherwise),
+     since it is legacy/operational, not a user path.
+   - If it must remain runnable, change its run-selection to the SAME highest-
+     numeric-run-per-(scheduleCode, effectiveDate) rule used by
+     loadStagedSnapshots(), and skip incomplete/non-schedule-scoped pages the
+     same way.
+   - Add a short comment at the top explaining why this script is dangerous
+     (pools runs, can manufacture bad premium data against duplicated staging)
+     and that canonical selection is highest-run.
+   Tell me which option you took and show the diff.
+
+=== DO NOT FIX — JUST RECORD ===
+
+2. Create or append to a known-issues doc (e.g. docs/known-issues.md) capturing
+   these as DEFERRED technical debt, with a one-line description and the file/
+   function for each. Do not change any of this code now:
+
+   a. NO SOURCE-RUN PROVENANCE ON MATERIALISED TABLES (the big one)
+      pbs_items and schedule_changes carry no source ingestion-run ID, so the
+      directory, change feed, Overview counts, predictions, stock and exposure
+      are all "run-blind" — they cannot verify their data came from the
+      canonical run. This is why the 1,140 phantom rows stayed visible through
+      the API. Proper fix (future): add source_run_id provenance to these tables
+      and have readers assert canonical run. Flag as a schema + write-path +
+      consumer change — needs its own planned piece of work, not a drive-by.
+
+   b. loadStagedSnapshots() metadata selection uses "last staging row wins" for
+      schedule effective dates, while its item-page selection uses highest run.
+      Harmless while run/insert order agree; can mismatch provenance if not.
+
+   c. pruneRawScheduleStaging() protects by latest effective date, not canonical
+      run, so duplicate complete runs for the newest date coexist — which is what
+      made the misleading 4708 query possible in the first place.
+
+   d. Overview getDashboardSummary() selects the current run by most-recent
+      finishedAt, not highest run ID. Normally equivalent; can disagree if runs
+      finish out of order or are manually resumed.
+
+   For each, note the current harmlessness condition (why it's not biting today)
+   so future-me knows what would make it start to matter.
+
+STOP after the script fix + the doc. Do not start the provenance refactor or
+touch b/c/d. Report the script option you chose, the diff, and confirm the
+known-issues doc is written.

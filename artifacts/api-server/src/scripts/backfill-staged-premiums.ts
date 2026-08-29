@@ -10,6 +10,10 @@ import {
 } from "../lib/pbs-item-mapping";
 import { syncScheduleChangesFromStagedData } from "../lib/schedule-changes";
 
+// This is a legacy operational script. Running it against duplicated staged
+// data without canonical run selection can pool runs and manufacture bad
+// premium data. The canonical rule is highest numeric run per schedule/date.
+
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -33,8 +37,13 @@ function numberField(record: JsonRecord, key: string): number | undefined {
 }
 
 function scheduleCodeFromRequestKey(requestKey: string): number | undefined {
-  const match = requestKey.match(/schedule-(\d+)$/);
+  const match = requestKey.match(/schedule-(\d+)(?::run-\d+)?$/);
   return match ? Number(match[1]) : undefined;
+}
+
+function sourceRunIdFromRequestKey(requestKey: string): number {
+  const match = requestKey.match(/:run-(\d+)$/);
+  return match ? Number(match[1]) : 0;
 }
 
 function oneYearBefore(dateValue: string): string {
@@ -45,23 +54,36 @@ function oneYearBefore(dateValue: string): string {
 }
 
 async function main(): Promise<void> {
+  if (process.env.PBS_PREMIUM_BACKFILL_CONFIRM !== "true") {
+    throw new Error(
+      "Refusing to run staged PBS premium backfill. Set PBS_PREMIUM_BACKFILL_CONFIRM=true to run it deliberately.",
+    );
+  }
+
   const [itemPages, schedulePages] = await Promise.all([
     db
       .select({
+        id: rawScheduleStagingTable.id,
         requestKey: rawScheduleStagingTable.requestKey,
+        coverageScope: rawScheduleStagingTable.coverageScope,
+        coverageComplete: rawScheduleStagingTable.coverageComplete,
         payload: rawScheduleStagingTable.payload,
       })
       .from(rawScheduleStagingTable)
       .where(eq(rawScheduleStagingTable.endpoint, "items"))
       .orderBy(asc(rawScheduleStagingTable.id)),
     db
-      .select({ payload: rawScheduleStagingTable.payload })
+      .select({
+        id: rawScheduleStagingTable.id,
+        requestKey: rawScheduleStagingTable.requestKey,
+        payload: rawScheduleStagingTable.payload,
+      })
       .from(rawScheduleStagingTable)
       .where(eq(rawScheduleStagingTable.endpoint, "schedules"))
       .orderBy(asc(rawScheduleStagingTable.id)),
   ]);
 
-  const effectiveDates = new Map<number, string>();
+  const effectiveDates = new Map<number, { effectiveDate: string; sourceRunId: number; rowId: number }>();
   for (const page of schedulePages) {
     for (const record of recordsFromPayload(page.payload)) {
       const scheduleCode = numberField(record, "schedule_code");
@@ -71,8 +93,56 @@ async function main(): Promise<void> {
         typeof effectiveDate === "string" &&
         /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
       ) {
-        effectiveDates.set(scheduleCode, effectiveDate);
+        const sourceRunId = sourceRunIdFromRequestKey(page.requestKey);
+        const existing = effectiveDates.get(scheduleCode);
+        if (
+          !existing
+          || sourceRunId > existing.sourceRunId
+          || (sourceRunId === existing.sourceRunId && page.id > existing.rowId)
+        ) {
+          effectiveDates.set(scheduleCode, { effectiveDate, sourceRunId, rowId: page.id });
+        }
       }
+    }
+  }
+
+  const candidatePages: Array<{
+    requestKey: string;
+    payload: unknown;
+    scheduleCode: number;
+    effectiveDate: string;
+    sourceRunId: number;
+  }> = [];
+  for (const page of itemPages) {
+    if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
+    const records = recordsFromPayload(page.payload);
+    const firstRecord = records[0];
+    const scheduleCode =
+      (firstRecord && numberField(firstRecord, "schedule_code"))
+      ?? scheduleCodeFromRequestKey(page.requestKey);
+    const effectiveDateFromRecord = firstRecord?.effective_date;
+    const effectiveDate =
+      typeof effectiveDateFromRecord === "string" && /^\d{4}-\d{2}-\d{2}$/.test(effectiveDateFromRecord)
+        ? effectiveDateFromRecord
+        : scheduleCode === undefined
+          ? undefined
+          : effectiveDates.get(scheduleCode)?.effectiveDate;
+    if (scheduleCode === undefined || !effectiveDate) continue;
+    candidatePages.push({
+      requestKey: page.requestKey,
+      payload: page.payload,
+      scheduleCode,
+      effectiveDate,
+      sourceRunId: sourceRunIdFromRequestKey(page.requestKey),
+    });
+  }
+
+  const highestRunBySchedule = new Map<string, number>();
+  for (const page of candidatePages) {
+    const key = `${page.scheduleCode}:${page.effectiveDate}`;
+    const current = highestRunBySchedule.get(key);
+    if (current === undefined || page.sourceRunId > current) {
+      highestRunBySchedule.set(key, page.sourceRunId);
     }
   }
 
@@ -80,22 +150,20 @@ async function main(): Promise<void> {
     string,
     { scheduleCode: number; effectiveDate: string; itemMetadata: PbsItemScheduleMetadata }
   >();
-  for (const page of itemPages) {
+  for (const page of candidatePages) {
+    const key = `${page.scheduleCode}:${page.effectiveDate}`;
+    if (highestRunBySchedule.get(key) !== page.sourceRunId) continue;
+    const schedule = stagedSchedules.get(key) ?? {
+      scheduleCode: page.scheduleCode,
+      effectiveDate: page.effectiveDate,
+      itemMetadata: new Map(),
+    };
     for (const record of recordsFromPayload(page.payload)) {
-      const scheduleCode = numberField(record, "schedule_code") ?? scheduleCodeFromRequestKey(page.requestKey);
-      const effectiveDate = scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode);
-      if (scheduleCode === undefined || !effectiveDate) continue;
-      const key = `${scheduleCode}:${effectiveDate}`;
-      const schedule = stagedSchedules.get(key) ?? {
-        scheduleCode,
-        effectiveDate,
-        itemMetadata: new Map(),
-      };
       for (const [itemId, metadata] of itemScheduleMetadataFromPayload({ data: [record] })) {
-        schedule.itemMetadata.set(itemId, metadata);
+          schedule.itemMetadata.set(itemId, metadata);
       }
-      stagedSchedules.set(key, schedule);
     }
+    stagedSchedules.set(key, schedule);
   }
 
   const allSchedules = [...stagedSchedules.values()].sort((left, right) =>
@@ -115,7 +183,7 @@ async function main(): Promise<void> {
 
   if (process.env.PBS_PREMIUM_SYNC_ONLY !== "true") {
     for (const schedule of schedulesToFetch) {
-    const filters = buildPbsItemDispensingRuleRequestFilters(schedule.itemMetadata.keys())
+      const filters = buildPbsItemDispensingRuleRequestFilters(schedule.itemMetadata.keys())
       .map((filter) => ({
         ...filter,
         requestKey: `premium-backfill:${filter.requestKey}:schedule-${schedule.scheduleCode}`,
@@ -127,16 +195,16 @@ async function main(): Promise<void> {
           ? requestedBatchLimit
           : undefined,
       );
-    if (filters.length === 0) continue;
-    logger.info(
-      {
-        scheduleCode: schedule.scheduleCode,
-        effectiveDate: schedule.effectiveDate,
-        items: schedule.itemMetadata.size,
-        requestBatches: filters.length,
-      },
-      "Backfilling PBS item premium relationships from staged schedule",
-    );
+      if (filters.length === 0) continue;
+      logger.info(
+        {
+          scheduleCode: schedule.scheduleCode,
+          effectiveDate: schedule.effectiveDate,
+          items: schedule.itemMetadata.size,
+          requestBatches: filters.length,
+        },
+        "Backfilling PBS item premium relationships from staged schedule",
+      );
       await fetchSchedule({
         scheduleDate: latestEffectiveDate,
         latestScheduleOnly: false,
