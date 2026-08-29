@@ -1,4 +1,12 @@
 import * as XLSX from "xlsx";
+import {
+  cleanText,
+  ingredientContainsWholeWord,
+  normaliseIngredient,
+  normaliseProductForMatch,
+} from "./ingredient-normalisation";
+
+export { normaliseIngredient, normaliseProductForMatch };
 
 export const ARTG_PARSER_VERSION = "2";
 
@@ -41,15 +49,6 @@ const HEADER_ALIASES = {
   productType: ["product type"],
 } as const;
 
-const SALT_WORDS = new Set([
-  "acetate", "calcium", "citrate", "hydrochloride", "hydrobromide", "maleate", "mesylate",
-  "monohydrate", "phosphate", "potassium", "sodium", "succinate", "sulfate", "tartrate",
-]);
-
-function cleanText(value: unknown): string {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
 function normaliseHeader(value: unknown): string {
   return cleanText(value).toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -60,23 +59,6 @@ function normaliseStatus(value: unknown): string {
   if (normalized.includes("CANCEL")) return "CANCELLED";
   if (normalized.includes("REGISTER")) return "REGISTERED";
   return normalized;
-}
-
-export function normaliseIngredient(value: string): string {
-  return cleanText(value)
-    .toLocaleLowerCase()
-    .replace(/[()[\],]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word && !SALT_WORDS.has(word))
-    .join(" ");
-}
-
-function normaliseIngredientForMatch(value: string): string {
-  return cleanText(value)
-    .toLocaleLowerCase()
-    .replace(/[()[\],.;:+/]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function findHeader(headers: Map<string, string>, aliases: readonly string[]): string | undefined {
@@ -109,13 +91,7 @@ function dateString(value: unknown): string | null {
 }
 
 function matchedDrug(ingredient: string, drugs: TrackedDrug[]): TrackedDrug | undefined {
-  const candidate = normaliseIngredientForMatch(ingredient);
-  if (!candidate) return undefined;
-  const candidateWords = ` ${candidate} `;
-  return drugs.find((drug) => {
-    const key = normaliseIngredientForMatch(normaliseIngredient(drug.activeIngredient));
-    return Boolean(key && candidateWords.includes(` ${key} `));
-  });
+  return drugs.find((drug) => ingredientContainsWholeWord(ingredient, normaliseIngredient(drug.activeIngredient)));
 }
 
 function parseWorkbook(buffer: Buffer, fileName: string): SourceRow[] {
@@ -250,10 +226,6 @@ export function parseArtgExport(buffer: Buffer, fileName: string, drugs: Tracked
     warnings,
     records: [...records.values()],
   };
-}
-
-export function normaliseProductForMatch(value: string): string {
-  return cleanText(value).toLocaleLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 export function pbsBrandMatchesArtgProduct(productName: string, brandName: string): boolean {

@@ -32,13 +32,15 @@ import {
 import { logger } from "../lib/logger";
 import { fetchSchedule } from "../lib/pbs-ingestion";
 import {
-  buildPbsItemDispensingRuleRequestFilters,
-  buildPbsItemIdRequestFilters,
-  buildPbsRequestFilters,
+  buildAtcWatchlistFilters,
+  buildDirectWatchlistMatchers,
+  recordMatchesWatchlist,
 } from "../lib/pbs-filtering";
 import {
   itemIdsFromAtcRelationshipPayload,
   itemScheduleMetadataFromPayload,
+  recordsFromPayload,
+  stringField,
   upsertPbsItemPremiumsFromPayload,
   upsertPbsItemsFromPayload,
   type PbsItemScheduleMetadata,
@@ -54,6 +56,7 @@ import {
   ACTIVE_INGESTION_STATUSES,
   acquireIngestionRun,
   currentScheduleDate,
+  pruneRawScheduleStaging,
 } from "../lib/ingestion-run-control";
 import {
   ARTG_PARSER_VERSION,

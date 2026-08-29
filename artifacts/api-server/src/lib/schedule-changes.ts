@@ -375,7 +375,7 @@ function normalized(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function scheduleCodeFromRequestKey(requestKey: string): number | undefined {
+export function scheduleCodeFromRequestKey(requestKey: string): number | undefined {
   const match = requestKey.match(/schedule-(\d+)(?::run-\d+)?$/);
   if (!match) return undefined;
   const value = Number(match[1]);

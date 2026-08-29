@@ -2,17 +2,17 @@ import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistory
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
-type JsonRecord = Record<string, unknown>;
+export type JsonRecord = Record<string, unknown>;
 export type PbsItemScheduleMetadata = Map<
   string,
   { itemCode: string; therapeuticExemptionIndicator: string | null }
 >;
 
-function isRecord(value: unknown): value is JsonRecord {
+export function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function recordsFromPayload(payload: unknown): JsonRecord[] {
+export function recordsFromPayload(payload: unknown): JsonRecord[] {
   if (Array.isArray(payload)) return payload.filter(isRecord);
   if (!isRecord(payload)) return [];
 
@@ -84,7 +84,7 @@ export async function upsertPbsItemPremiumsFromPayload(
   return processed;
 }
 
-function stringField(record: JsonRecord, ...keys: string[]): string | undefined {
+export function stringField(record: JsonRecord, ...keys: string[]): string | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -93,7 +93,7 @@ function stringField(record: JsonRecord, ...keys: string[]): string | undefined 
   return undefined;
 }
 
-function numberField(record: JsonRecord, ...keys: string[]): number | undefined {
+export function numberField(record: JsonRecord, ...keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
     if (typeof value === "number" && Number.isFinite(value)) return value;

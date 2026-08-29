@@ -7,18 +7,21 @@ import {
 import { logger } from "./logger";
 import { fetchSchedule } from "./pbs-ingestion";
 import {
-  buildPbsItemDispensingRuleRequestFilters,
-  buildPbsItemIdRequestFilters,
-  buildPbsRequestFilters,
+  buildAtcWatchlistFilters,
+  buildDirectWatchlistMatchers,
+  recordMatchesWatchlist,
 } from "./pbs-filtering";
 import {
   itemIdsFromAtcRelationshipPayload,
   itemScheduleMetadataFromPayload,
+  recordsFromPayload,
+  stringField,
   upsertPbsItemPremiumsFromPayload,
   upsertPbsItemsFromPayload,
   type PbsItemScheduleMetadata,
 } from "./pbs-item-mapping";
 import { ingestPublishedFiles } from "./pbs-published-files";
+import { pruneRawScheduleStaging } from "./ingestion-run-control";
 import { syncScheduleChangesFromStagedData } from "./schedule-changes";
 
 function scheduleMetadataFromPayload(payload: unknown): { scheduleCode?: number; effectiveDate?: string } | undefined {
@@ -68,13 +71,15 @@ export async function executeCurrentIngestionRun(
       .from(pbsWatchlistTable)
       .where(eq(pbsWatchlistTable.enabled, true))
       .orderBy(asc(pbsWatchlistTable.id));
-    const filters = buildPbsRequestFilters(enabledWatchlist);
-    if (filters.length === 0) {
+    const directMatchers = buildDirectWatchlistMatchers(enabledWatchlist);
+    const atcFilters = buildAtcWatchlistFilters(enabledWatchlist);
+    if (directMatchers.length === 0 && atcFilters.length === 0) {
       throw new Error("No enabled PBS watchlist entries are configured; refusing to fetch an unfiltered schedule");
     }
 
     let recordsProcessed = 0;
     let recordsReturned = 0;
+    let recordsMatched = 0;
     let scheduleEffectiveDate: string | undefined;
     let scheduleCode: number | undefined;
     let pagesFetched = 0;
@@ -93,38 +98,6 @@ export async function executeCurrentIngestionRun(
       if (page.endpoint === "items") recordsReturned += page.records;
       await persistProgress();
     };
-    const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
-      if (page.endpoint === "item-atc-relationships") {
-        itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
-      }
-      if (page.endpoint === "items") {
-        for (const [itemId, metadata] of itemScheduleMetadataFromPayload(page.payload)) {
-          itemMetadata.set(itemId, metadata);
-        }
-      }
-      if (page.endpoint === "schedules") {
-        const metadata = scheduleMetadataFromPayload(page.payload);
-        scheduleEffectiveDate = metadata?.effectiveDate ?? scheduleEffectiveDate;
-        scheduleCode = metadata?.scheduleCode ?? scheduleCode;
-      }
-      if (page.endpoint === "items") {
-        if (!scheduleEffectiveDate) {
-          throw new Error("Latest PBS schedule metadata did not include an effective_date");
-        }
-        recordsProcessed += await upsertPbsItemsFromPayload(page.payload, scheduleDate, scheduleEffectiveDate);
-      }
-      if (page.endpoint === "item-dispensing-rule-relationships") {
-        if (!scheduleEffectiveDate) {
-          throw new Error("Latest PBS schedule metadata did not include an effective_date");
-        }
-        recordsProcessed += await upsertPbsItemPremiumsFromPayload(
-          page.payload,
-          scheduleEffectiveDate,
-          itemMetadata,
-        );
-      }
-      await persistProgress();
-    };
 
     const schedulePages = await fetchSchedule({
       scheduleDate,
@@ -135,7 +108,13 @@ export async function executeCurrentIngestionRun(
       stagingRunId: runId,
       resumeFromStaging: true,
       onPage: handlePage,
-      onPayload: handlePayload,
+      onPayload: async (page) => {
+        if (page.endpoint !== "schedules") return;
+        const metadata = scheduleMetadataFromPayload(page.payload);
+        scheduleEffectiveDate = metadata?.effectiveDate ?? scheduleEffectiveDate;
+        scheduleCode = metadata?.scheduleCode ?? scheduleCode;
+        await persistProgress();
+      },
     });
     if (!scheduleEffectiveDate) {
       throw new Error("Latest PBS schedule metadata did not include an effective_date");
@@ -148,85 +127,117 @@ export async function executeCurrentIngestionRun(
       throw new Error("maxPages was exhausted by schedule metadata before PBS item retrieval");
     }
 
-    const initialPages = await fetchSchedule({
-      scheduleDate,
-      maxPages: pagesAvailableAfterSchedule,
-      filters,
-      stagingRunId: runId,
-      resumeFromStaging: true,
-      onPage: handlePage,
-      onPayload: handlePayload,
-    });
-    const remainingPages =
-      pagesAvailableAfterSchedule === undefined
-        ? undefined
-        : pagesAvailableAfterSchedule - initialPages.length;
-    const itemIdFilters = remainingPages === 0 ? [] : buildPbsItemIdRequestFilters(atcItemIds);
-    const relatedItemPages = itemIdFilters.length
-      ? await fetchSchedule({
-          scheduleDate,
-          maxPages: remainingPages,
-          filters: itemIdFilters,
-          stagingRunId: runId,
-          resumeFromStaging: true,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        })
-      : [];
-    const pagesAvailableForPremiums =
-      pagesAvailableAfterSchedule === undefined
-        ? undefined
-        : pagesAvailableAfterSchedule - initialPages.length - relatedItemPages.length;
-    const premiumFilters =
-      pagesAvailableForPremiums === 0
+    // Step 1 of the ATC path: a live, filtered relationship lookup per ATC
+    // watchlist entry. Step 2 (resolving those IDs to full item records)
+    // happens locally below against the full items snapshot instead of a
+    // second live fetch, so an ATC-heavy watchlist no longer multiplies
+    // fetch time.
+    const atcPages =
+      atcFilters.length === 0
         ? []
-        : buildPbsItemDispensingRuleRequestFilters(itemMetadata.keys());
-    const premiumPages = premiumFilters.length
-      ? await fetchSchedule({
-          scheduleDate,
-          maxPages: pagesAvailableForPremiums,
-          filters: premiumFilters,
-          stagingRunId: runId,
-          resumeFromStaging: true,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        })
-      : [];
-    const pagesAvailableForSnapshot =
-      maxPages === undefined
-        ? undefined
-        : maxPages - schedulePages.length - initialPages.length - relatedItemPages.length - premiumPages.length;
-    const snapshotPages =
-      pagesAvailableForSnapshot === 0
+        : await fetchSchedule({
+            scheduleDate,
+            maxPages: pagesAvailableAfterSchedule,
+            filters: atcFilters,
+            stagingRunId: runId,
+            resumeFromStaging: true,
+            onPage: handlePage,
+            onPayload: async (page) => {
+              if (page.endpoint === "item-atc-relationships") {
+                itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
+              }
+              await persistProgress();
+            },
+          });
+
+    const pagesAvailableForItems =
+      pagesAvailableAfterSchedule === undefined ? undefined : pagesAvailableAfterSchedule - atcPages.length;
+    const itemsPages =
+      pagesAvailableForItems === 0
         ? []
         : await fetchSchedule({
             scheduleDate,
             endpoints: ["items"],
-            maxPages: pagesAvailableForSnapshot,
+            maxPages: pagesAvailableForItems,
             filters: [{ requestKey: `items-snapshot:schedule-${scheduleCode}`, params: {} }],
             coverageScope: "schedule",
             stagingRunId: runId,
             resumeFromStaging: true,
-            onPage: async (page) => {
-              requestUrls.add(page.url);
-              pagesFetched += 1;
+            onPage: handlePage,
+            onPayload: async (page) => {
+              if (page.endpoint !== "items") return;
+              if (!scheduleEffectiveDate) {
+                throw new Error("Latest PBS schedule metadata did not include an effective_date");
+              }
+              const matched = recordsFromPayload(page.payload).filter((record) =>
+                recordMatchesWatchlist(record, directMatchers, atcItemIds),
+              );
+              recordsMatched += matched.length;
+              if (matched.length > 0) {
+                recordsProcessed += await upsertPbsItemsFromPayload(
+                  { data: matched },
+                  scheduleDate,
+                  scheduleEffectiveDate,
+                );
+                for (const [itemId, metadata] of itemScheduleMetadataFromPayload({ data: matched })) {
+                  itemMetadata.set(itemId, metadata);
+                }
+              }
               await persistProgress();
             },
           });
-    const pages = [
-      ...schedulePages,
-      ...initialPages,
-      ...relatedItemPages,
-      ...premiumPages,
-      ...snapshotPages,
-    ];
-    if (recordsReturned > 0 && recordsProcessed === 0) {
-      throw new Error(`PBS returned ${recordsReturned} records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
+
+    const pagesAvailableForPremiums =
+      pagesAvailableForItems === undefined ? undefined : pagesAvailableForItems - itemsPages.length;
+    const premiumPages =
+      pagesAvailableForPremiums === 0
+        ? []
+        : await fetchSchedule({
+            scheduleDate,
+            endpoints: ["item-dispensing-rule-relationships"],
+            maxPages: pagesAvailableForPremiums,
+            filters: [{ requestKey: `item-dispensing-rules-snapshot:schedule-${scheduleCode}`, params: {} }],
+            coverageScope: "schedule",
+            stagingRunId: runId,
+            resumeFromStaging: true,
+            onPage: handlePage,
+            onPayload: async (page) => {
+              if (page.endpoint !== "item-dispensing-rule-relationships") return;
+              if (!scheduleEffectiveDate) {
+                throw new Error("Latest PBS schedule metadata did not include an effective_date");
+              }
+              const matched = recordsFromPayload(page.payload).filter((record) => {
+                const liItemId = stringField(record, "li_item_id");
+                return liItemId !== undefined && itemMetadata.has(liItemId);
+              });
+              if (matched.length > 0) {
+                recordsProcessed += await upsertPbsItemPremiumsFromPayload(
+                  { data: matched },
+                  scheduleEffectiveDate,
+                  itemMetadata,
+                );
+              }
+              await persistProgress();
+            },
+          });
+
+    const pages = [...schedulePages, ...atcPages, ...itemsPages, ...premiumPages];
+    if (recordsReturned > 0 && recordsMatched === 0) {
+      logger.warn({ runId }, "PBS schedule snapshot returned records but none matched the configured watchlist");
+    }
+    if (recordsMatched > 0 && recordsProcessed === 0) {
+      throw new Error(
+        `PBS matched ${recordsMatched} watchlist records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`,
+      );
     }
     const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
     const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the page cap was reached");
+    } else {
+      await pruneRawScheduleStaging().catch((error) => {
+        logger.error({ err: error, runId }, "Failed to prune raw PBS schedule staging after ingestion");
+      });
     }
     const publishedFiles = await ingestPublishedFiles();
 
