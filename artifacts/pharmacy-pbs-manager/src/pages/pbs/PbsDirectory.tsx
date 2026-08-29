@@ -99,8 +99,8 @@ export function PbsDirectory() {
     }
   };
 
-  const clickBrand = (brand: MedicineBrandSummary, drugName: string) => {
-    setTier({ level: 'items', drugId: brand.drugId, drugName, originatorBrandName: null, brand });
+  const clickBrand = (brand: MedicineBrandSummary, drugName: string, originatorBrandName: string | null) => {
+    setTier({ level: 'items', drugId: brand.drugId, drugName, originatorBrandName, brand });
   };
 
   return (
@@ -141,7 +141,7 @@ export function PbsDirectory() {
           {tier.level === 'items' ? (
             <>
               <button 
-                onClick={() => setTier({ level: 'brands', drug: { drugId: tier.drugId, drugName: tier.drugName } as MedicineDrugSummary })} 
+                onClick={() => setTier({ level: 'brands', drug: { drugId: tier.drugId, drugName: tier.drugName, originatorBrandName: tier.originatorBrandName } as MedicineDrugSummary })}
                 className="hover:text-foreground transition-colors"
               >
                  {drugDisplayName(tier.drugName, tier.originatorBrandName)}
@@ -319,7 +319,7 @@ export function PbsDirectory() {
                       {sectionBrands.map((brand) => (
                         <button
                           key={brand.brandName}
-                       onClick={() => clickBrand(brand, tier.drug.drugName)}
+                        onClick={() => clickBrand(brand, tier.drug.drugName, tier.drug.originatorBrandName)}
                           className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1.25fr)_auto_auto_auto_auto] md:px-6 md:py-1.5"
                         >
                             <span className="flex min-w-0 flex-col gap-1">

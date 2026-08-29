@@ -15,5 +15,6 @@
 - [Brand visibility preferences](brand-visibility-preferences.md) — Per-account display filters never constrain shared PBS ingestion, storage, or calculations.
 - [Development schema alignment](development-schema-alignment.md) — Database-backed tests need the development schema pushed after shared schema changes.
 - [External PBS automation](external-pbs-automation.md) — External schedulers must call the published API; development URLs are not stable third-party targets.
+- [Originator brand display](originator-brand-display.md) — Use `innovator_indicator`, not `originator_brand_indicator`, for ingredient-plus-brand labels.
 - [Clerk and custom bearer routes](clerk-custom-bearer-routing.md) — Mount machine-token endpoints before Clerk so non-Clerk bearer headers reach their own authentication.
 - [Deployment startup database termination](deployment-startup-db.md) — A successful image build can still fail autoscale promotion when pre-listen DB work hits PostgreSQL SQLSTATE 57P01.

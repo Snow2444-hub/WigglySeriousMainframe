@@ -37,6 +37,8 @@ export interface PbsItem {
   /** @nullable */
   programCode: string | null;
   drugName: string;
+  /** @nullable */
+  originatorBrandName: string | null;
   activeIngredient: string;
   sponsor: string;
   formulary: PbsItemFormulary;

@@ -129,6 +129,29 @@ const pbsSelect = {
   sponsor: drugsTable.sponsor,
 };
 
+async function enrichPbsItemRows<T extends { drugId: number }>(rows: T[]): Promise<Array<T & { originatorBrandName: string | null }>> {
+  const drugIds = [...new Set(rows.map((row) => row.drugId))];
+  if (!drugIds.length) return rows.map((row) => ({ ...row, originatorBrandName: null }));
+  const originatorItems = await db
+    .select({
+      drugId: pbsItemsTable.drugId,
+      brandName: pbsItemsTable.brandName,
+      innovatorIndicator: pbsItemsTable.innovatorIndicator,
+    })
+    .from(pbsItemsTable)
+    .where(inArray(pbsItemsTable.drugId, drugIds));
+  const originatorBrandByDrug = new Map<number, string>();
+  for (const item of originatorItems) {
+    if (indicatorIsTrue(item.innovatorIndicator) && !originatorBrandByDrug.has(item.drugId)) {
+      originatorBrandByDrug.set(item.drugId, item.brandName);
+    }
+  }
+  return rows.map((row) => ({
+    ...row,
+    originatorBrandName: originatorBrandByDrug.get(row.drugId) ?? null,
+  }));
+}
+
 function summarizedFormulary(values: Array<string | null>): string {
   const unique = [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
   return unique.length > 0 ? unique.join(" / ") : "Not specified";
@@ -462,26 +485,6 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
   const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
-  const originatorItems = [...new Set(visibleRows.map((row) => row.drugId))].length
-    ? await db
-        .select({
-          drugId: pbsItemsTable.drugId,
-          brandName: pbsItemsTable.brandName,
-          innovatorIndicator: pbsItemsTable.innovatorIndicator,
-        })
-        .from(pbsItemsTable)
-        .where(inArray(pbsItemsTable.drugId, [...new Set(visibleRows.map((row) => row.drugId))]))
-    : [];
-  const originatorBrandByDrug = new Map<number, string>();
-  for (const item of originatorItems) {
-    if (
-      indicatorIsTrue(item.innovatorIndicator)
-      && !isBrandHidden(hiddenBrandKeys, item.drugId, item.brandName)
-      && !originatorBrandByDrug.has(item.drugId)
-    ) {
-      originatorBrandByDrug.set(item.drugId, item.brandName);
-    }
-  }
   visibleRows.sort((left, right) => {
     const strengthOrder = strengthSortValue(left.strength) - strengthSortValue(right.strength);
     if (strengthOrder !== 0) return strengthOrder;
@@ -496,7 +499,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
   }
   res.json(
     ListMedicineBrandItemsResponse.parse(
-       visibleRows.map((row) => {
+      (await enrichPbsItemRows(visibleRows)).map((row) => {
         const prediction = nextPrediction(predictionsByItem.get(row.itemCode) ?? []);
         return {
           ...row,
@@ -556,6 +559,27 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
   const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
+  const visibleDrugIds = [...new Set(visibleRows.map((row) => row.drugId))];
+  const originatorItems = visibleDrugIds.length
+    ? await db
+        .select({
+          drugId: pbsItemsTable.drugId,
+          brandName: pbsItemsTable.brandName,
+          innovatorIndicator: pbsItemsTable.innovatorIndicator,
+        })
+        .from(pbsItemsTable)
+        .where(inArray(pbsItemsTable.drugId, visibleDrugIds))
+    : [];
+  const originatorBrandByDrug = new Map<number, string>();
+  for (const item of originatorItems) {
+    if (
+      indicatorIsTrue(item.innovatorIndicator)
+      && !isBrandHidden(hiddenBrandKeys, item.drugId, item.brandName)
+      && !originatorBrandByDrug.has(item.drugId)
+    ) {
+      originatorBrandByDrug.set(item.drugId, item.brandName);
+    }
+  }
   type BrandGroup = {
     brandName: string;
     strength: string | null;
@@ -698,7 +722,7 @@ router.get("/pbs-items", async (req, res): Promise<void> => {
     )
     .orderBy(asc(pbsItemsTable.brandName))
     .limit(limit);
-  res.json(ListPbsItemsResponse.parse(rows));
+  res.json(ListPbsItemsResponse.parse(await enrichPbsItemRows(rows)));
 });
 
 router.get("/pbs-items/:itemCode", async (req, res): Promise<void> => {
@@ -716,7 +740,7 @@ router.get("/pbs-items/:itemCode", async (req, res): Promise<void> => {
     res.status(404).json({ error: "PBS item not found" });
     return;
   }
-  res.json(GetPbsItemResponse.parse(row));
+  res.json(GetPbsItemResponse.parse((await enrichPbsItemRows([row]))[0]));
 });
 
 router.get("/pbs-items/:itemCode/price-history", async (req, res): Promise<void> => {

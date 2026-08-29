@@ -7,6 +7,7 @@ import {
   useListItemPremiumHistory, getListItemPremiumHistoryQueryKey,
 } from '@workspace/api-client-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+import { drugDisplayName } from '@/lib/drug-label';
 import { reductionTextClass } from '@/lib/percentage-significance';
 import { Link } from 'wouter';
 import { ArrowLeft, TrendingDown, History, AlertTriangle, Info, CalendarDays, Activity, Building2, ArrowRight } from 'lucide-react';
@@ -118,7 +119,7 @@ export function PbsItemEvidence() {
       price: p.aemp
     }));
   const medicineContext = item
-    ? [item.drugName, item.activeIngredient].filter((value, index, values) =>
+    ? [drugDisplayName(item.drugName, item.originatorBrandName), item.activeIngredient].filter((value, index, values) =>
         values.findIndex((candidate) => candidate.trim().toLocaleLowerCase() === value.trim().toLocaleLowerCase()) === index,
       )
     : [];

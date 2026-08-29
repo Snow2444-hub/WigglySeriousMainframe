@@ -1280,6 +1280,8 @@ components:
           type: ["string", "null"]
         drugName:
           type: string
+        originatorBrandName:
+          type: ["string", "null"]
         activeIngredient:
           type: string
         sponsor:
@@ -1319,7 +1321,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, originatorBrandName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     MedicineBrandItemSummary:
       allOf:
         - $ref: "#/components/schemas/PbsItem"
