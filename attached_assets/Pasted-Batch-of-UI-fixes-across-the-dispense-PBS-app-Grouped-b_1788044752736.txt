@@ -1,0 +1,93 @@
+Batch of UI fixes across the dispense PBS app. Grouped by type. The first two
+are DATA-WIRING bugs — fix the source of the wrong value, do NOT paper over them
+with a display fallback or hardcoded value. The rest are display/copy/styling.
+
+For each item, tell me what the cause was and what you changed. If a "looks
+broken" item turns out to have a deeper cause than a display glitch, stop and
+report it rather than masking it.
+
+=== GROUP A — LOOKS BROKEN (fix the real cause) ===
+
+A1. OVERVIEW HERO "Next reduction date unavailable"
+    The Overview page headline reads "Next reduction date unavailable" and lower
+    down shows "Effective date unavailable" for Schedule 4708. But the date is
+    NOT unavailable — the header pill correctly shows Schedule 4708 ·
+    2026-08-01. So the Overview is not reading the same schedule effective-date
+    the header already resolves.
+    - Find why the Overview's date lookup returns null while the header's
+      succeeds. They should draw from the same source.
+    - Fix the wiring so the Overview shows the real effective date.
+    - Do NOT fix this by hiding the "unavailable" message or hardcoding
+      2026-08-01 — trace why the value doesn't reach this component.
+    - Also reconsider the headline: "next reduction date" is a strange primary
+      H1 for a workspace overview. Report what it's currently bound to and
+      propose a more sensible headline, but confirm with me before changing
+      copy if it means changing what data the headline reads.
+
+A2. "0" WHERE SCHEDULE CODE SHOULD BE (PBS updates feed)
+    The Guanfacine (Intuniv) FNB ENTRY row renders a bare "0" under the medicine
+    name where other rows show "SCH 4708" etc. This is a null/zero schedule code
+    printing literally as 0.
+    - Find where that row's schedule code comes from and why it's 0/null for FNB
+      ENTRY events specifically.
+    - If the code is legitimately absent for this event type, render nothing (or
+      a neutral em-dash), NOT "0".
+    - If it should have a code, fix the source so it populates.
+    - Report which case it was.
+
+A3. HEADER PILL TRUNCATION "INGESTE_"
+    The top-right status pill truncates the last field to "INGESTE_" on every
+    page. Either widen the pill to fit the full word, shorten the label, or drop
+    that field. Truncation in persistent chrome reads as unfinished. Report what
+    the full field is and how you resolved it.
+
+=== GROUP B — CLARITY ===
+
+B1. CONFIDENCE BADGE COLOURS ARE MISLEADING
+    HIGH confidence renders red, MEDIUM renders amber. Red universally reads as
+    "danger/stop/unreliable," but HIGH here means the prediction is SOLID — the
+    opposite. Change the confidence badges so colour does not imply risk:
+    - Make confidence a quiet, neutral treatment (e.g. subtle label or muted
+      chip), not a red/amber alarm palette.
+    - Do NOT just swap red<->green; the point is that confidence and
+      impact/urgency are different axes and shouldn't share alarm colours.
+    Report your new treatment before applying it widely if it touches many
+    components.
+
+B2. RESERVE ALARM COLOUR FOR MAGNITUDE, NOT EVENT TYPE (PBS updates feed)
+    Right now MULTIPLE CHANGES, AMENDED LISTINGS, and large PRICE CHANGES all
+    render solid red, so the eye is pulled to event-type rather than to big
+    reductions. The percentage colouring already does the right thing (−67% and
+    −55% strong, −12% amber). Extend that logic:
+    - Let the reduction MAGNITUDE drive the strong colour.
+    - Make the event-TYPE badges (MULTIPLE CHANGES, AMENDED LISTINGS, NEW
+      LISTINGS, FNB ENTRY, etc.) neutral / non-alarm.
+    Report the threshold logic you use for magnitude colour.
+
+B3. HISTORICAL PILLS LOOK LIKE LIVE ALERTS
+    Pills like "FNB reduction recorded 1 Apr 2012" and statutory dates far in the
+    future (e.g. 1 Apr 2031) render with the same weight as imminent live
+    signals, so they read as data errors.
+    - Visually de-emphasise clearly historical context (past "recorded" pills)
+      vs live/upcoming signals — e.g. muted styling for historical.
+    - Do not delete the information, just lower its visual priority.
+
+=== GROUP C — SMALL CONSISTENCY ===
+
+C1. WATCHLIST CASING (Data updates)
+    Watchlist entries mix cases: lisdexamfetamine / rosuvastatin / guanfacine
+    lowercase, but Rivaroxaban / Ferric carboxymaltose title-case. Normalise the
+    DISPLAY casing (e.g. consistent title-case or sentence-case) without changing
+    the stored filter values used for matching. Confirm matching still works
+    after the display change.
+
+C2. POSSIBLE DUPLICATE STOCK ROWS (Overview · Recent stock records)
+    Three rows show identical "Xarelto 20mg pack 28 · PBS 13462M · added 27 Jan
+    2026 · 200 units · $11.39". READ-ONLY: check whether these are three distinct
+    stock records or the same record displayed multiple times. Report which. Do
+    not delete anything — just tell me if it's a real duplication bug or just
+    similar test data.
+
+Throughout: report cause + fix per item. For anything where the fix would change
+data behaviour rather than presentation (A1, A2, C1), confirm the approach in
+your report rather than assuming.
