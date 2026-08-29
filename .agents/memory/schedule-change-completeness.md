@@ -15,6 +15,12 @@ Development staging can also contain request-filtered item pages even when no pa
 
 **How to apply:** Treat schedule-wide coverage as a prerequisite for authoritative delisted alerts; keep filtered or exploratory staging useful for parsing but out of deletion comparisons.
 
+Schedule-wide item coverage is not sufficient provenance by itself: a request key can contain an arbitrary schedule code, and its effective date may be recovered from unrelated or incomplete schedule metadata. Snapshot promotion must also validate canonical schedule identity and trusted metadata provenance.
+
+**Why:** A leaked database-backed test fixture had complete schedule-wide item coverage, so an untrusted far-future fixture snapshot was compared with real schedules and emitted false delistings.
+
+**How to apply:** Require a valid four-digit PBS schedule code and a matching trusted schedule metadata record before including a staged snapshot in change detection; do not let filtered or cross-run fixture metadata establish a snapshot’s date.
+
 A page that consumes the cap can still complete its endpoint snapshot when the PBS response has no successor page. The overall run remains incomplete and must skip schedule-change comparison, but terminal endpoint snapshots should retain their complete coverage marker.
 
 **Why:** A capped live run exposed that returning before inspecting pagination incorrectly labeled a naturally terminal dispensing-rule snapshot as incomplete.
