@@ -1,0 +1,46 @@
+Read-only investigation of the 64 remaining delisting rows. Do NOT delete,
+modify, or clean up anything. Report and stop.
+
+CONTEXT
+The 64 non-phantom delistings are:
+  - 46 rows on schedule 4558, brand Abrilada, previous price $444.17
+  - 18 rows on schedule 4580, brand Abrilada, previous price $272.84
+  - all drug 2100003000 (adalimumab)
+The earlier "is the drug in the latest schedule" check was too coarse:
+adalimumab has many brands, so the drug is always present. A delisting is a
+BRAND/ITEM-level event, so the check must be at the li_item_id / PBS item-code
+level, not the drug level.
+
+INVESTIGATE
+
+1. ITEM-LEVEL PRESENCE
+   Take the exact li_item_ids (and PBS item codes) from those 64 rows. For each,
+   check whether that same item is present in the latest completed real schedule
+   (4708, 2026-08-01).
+   - Present in 4708  -> it was not actually delisted (or was relisted); the
+     delisting record is misleading.
+   - Absent from 4708 -> potentially a real delisting; continue to step 2.
+   Report the counts each way.
+
+2. TRACE THE TRANSITION (for any item absent from 4708)
+   For those items, walk the schedules between 4558/4580 and 4708 and report at
+   which schedule the item actually disappeared, and whether it reappeared
+   later. I want to see the real listing trajectory, not just endpoints.
+
+3. TEST THE PRICE-CHANGE HYPOTHESIS
+   The same brand shows $444.17 on schedule 4558 and $272.84 on 4580 (~39%
+   lower). Check whether these items continued to exist across that boundary at
+   the lower price — i.e. whether the backfill's unscoped change-detection pass
+   misread a PRICE CHANGE as a delisting (and possibly a re-listing). Report
+   whether the data supports "price change misread as delist" versus "genuine
+   delisting."
+
+4. CLASSIFY
+   Give a clear verdict: are the 64 rows (a) false records from the same backfill
+   pass, just a different mechanism than the fixture leak, or (b) genuine
+   delistings? If the two schedule groups (46 on 4558, 18 on 4580) differ in
+   classification, say so per group.
+
+STOP. Report the item-level presence counts, the transition traces, the
+price-change finding, and the classification. Do not propose or perform any
+cleanup — I'll decide the next step based on what you find.
