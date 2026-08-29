@@ -23,6 +23,7 @@ import {
 import { ingestPublishedFiles } from "./pbs-published-files";
 import { pruneRawScheduleStaging } from "./ingestion-run-control";
 import { syncScheduleChangesFromStagedData } from "./schedule-changes";
+import type { PbsIngestionExecutorDependencies } from "./pbs-ingestion-executor-dependencies";
 
 function scheduleMetadataFromPayload(payload: unknown): { scheduleCode?: number; effectiveDate?: string } | undefined {
   if (typeof payload !== "object" || payload === null) return undefined;
@@ -50,8 +51,15 @@ export async function executeCurrentIngestionRun(
   runId: number,
   scheduleDate: string,
   maxPages?: number,
+  dependencies: PbsIngestionExecutorDependencies = {},
 ): Promise<void> {
   try {
+    const fetchScheduleImpl = dependencies.fetchSchedule ?? fetchSchedule;
+    const syncScheduleChangesImpl =
+      dependencies.syncScheduleChangesFromStagedData ?? syncScheduleChangesFromStagedData;
+    const pruneRawScheduleStagingImpl = dependencies.pruneRawScheduleStaging ?? pruneRawScheduleStaging;
+    const ingestPublishedFilesImpl = dependencies.ingestPublishedFiles ?? ingestPublishedFiles;
+
     await db
       .update(ingestionRunsTable)
       .set({
@@ -99,7 +107,7 @@ export async function executeCurrentIngestionRun(
       await persistProgress();
     };
 
-    const schedulePages = await fetchSchedule({
+    const schedulePages = await fetchScheduleImpl({
       scheduleDate,
       endpoints: ["schedules"],
       limit: 100,
@@ -135,7 +143,7 @@ export async function executeCurrentIngestionRun(
     const atcPages =
       atcFilters.length === 0
         ? []
-        : await fetchSchedule({
+        : await fetchScheduleImpl({
             scheduleDate,
             maxPages: pagesAvailableAfterSchedule,
             filters: atcFilters,
@@ -155,7 +163,7 @@ export async function executeCurrentIngestionRun(
     const itemsPages =
       pagesAvailableForItems === 0
         ? []
-        : await fetchSchedule({
+        : await fetchScheduleImpl({
             scheduleDate,
             endpoints: ["items"],
             maxPages: pagesAvailableForItems,
@@ -192,11 +200,14 @@ export async function executeCurrentIngestionRun(
     const premiumPages =
       pagesAvailableForPremiums === 0
         ? []
-        : await fetchSchedule({
+        : await fetchScheduleImpl({
             scheduleDate,
             endpoints: ["item-dispensing-rule-relationships"],
             maxPages: pagesAvailableForPremiums,
-            filters: [{ requestKey: `item-dispensing-rules-snapshot:schedule-${scheduleCode}`, params: {} }],
+            filters: [{
+              requestKey: `item-dispensing-rules-snapshot:schedule-${scheduleCode}`,
+              params: {},
+            }],
             coverageScope: "schedule",
             stagingRunId: runId,
             resumeFromStaging: true,
@@ -215,6 +226,7 @@ export async function executeCurrentIngestionRun(
                   { data: matched },
                   scheduleEffectiveDate,
                   itemMetadata,
+                  scheduleCode,
                 );
               }
               await persistProgress();
@@ -231,15 +243,15 @@ export async function executeCurrentIngestionRun(
       );
     }
     const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
-    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
+    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesImpl();
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the page cap was reached");
     } else {
-      await pruneRawScheduleStaging().catch((error) => {
+      await pruneRawScheduleStagingImpl().catch((error) => {
         logger.error({ err: error, runId }, "Failed to prune raw PBS schedule staging after ingestion");
       });
     }
-    const publishedFiles = await ingestPublishedFiles();
+    const publishedFiles = await ingestPublishedFilesImpl();
 
     await db
       .update(ingestionRunsTable)

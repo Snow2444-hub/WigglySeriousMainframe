@@ -81,7 +81,10 @@ async function prepareScheduledIngestion(
     runId: acquisition.run.id,
     recoveredRunIds: acquisition.recoveredRunIds,
     scheduleDate,
-    execute: options.execute ?? executeCurrentIngestionRun,
+    execute:
+      options.execute ??
+      ((runId, executionScheduleDate, maxPages) =>
+        executeCurrentIngestionRun(runId, executionScheduleDate, maxPages)),
   };
 }
 

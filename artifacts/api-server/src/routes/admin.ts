@@ -65,6 +65,7 @@ import {
   shouldReplaceLegacySeedRecords,
 } from "../lib/artg-import";
 import { requireAdmin } from "../middlewares/requireAuth";
+import type { PbsIngestionExecutorDependencies } from "../lib/pbs-ingestion-executor-dependencies";
 
 const router: IRouter = Router();
 const ARTG_UPLOAD_LIMIT_BYTES = 15 * 1024 * 1024;
@@ -76,12 +77,13 @@ export async function executeIngestionRun(
   scheduleDate: string,
   maxPages?: number,
   mode: IngestionMode = "current",
+  dependencies: PbsIngestionExecutorDependencies = {},
 ): Promise<void> {
   if (mode === "backfill") {
-    await executeBackfillIngestionRun(runId, scheduleDate, maxPages);
+    await executeBackfillIngestionRun(runId, scheduleDate, maxPages, dependencies);
     return;
   }
-  await executeCurrentIngestionRun(runId, scheduleDate, maxPages);
+  await executeCurrentIngestionRun(runId, scheduleDate, maxPages, dependencies);
 }
 
 interface HistoricalSchedule {
@@ -121,12 +123,18 @@ function dateOneYearBefore(dateValue: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-async function executeBackfillIngestionRun(
+export async function executeBackfillIngestionRun(
   runId: number,
   scheduleDate: string,
   maxPages?: number,
+  dependencies: PbsIngestionExecutorDependencies = {},
 ): Promise<void> {
   try {
+    const fetchScheduleImpl = dependencies.fetchSchedule ?? fetchSchedule;
+    const syncScheduleChangesImpl =
+      dependencies.syncScheduleChangesFromStagedData ?? syncScheduleChangesFromStagedData;
+    const pruneRawScheduleStagingImpl = dependencies.pruneRawScheduleStaging ?? pruneRawScheduleStaging;
+
     await db
       .update(ingestionRunsTable)
       .set({
@@ -145,13 +153,15 @@ async function executeBackfillIngestionRun(
       .from(pbsWatchlistTable)
       .where(eq(pbsWatchlistTable.enabled, true))
       .orderBy(asc(pbsWatchlistTable.id));
-    const filters = buildPbsRequestFilters(enabledWatchlist);
-    if (filters.length === 0) {
+    const directMatchers = buildDirectWatchlistMatchers(enabledWatchlist);
+    const atcFilters = buildAtcWatchlistFilters(enabledWatchlist);
+    if (directMatchers.length === 0 && atcFilters.length === 0) {
       throw new Error("No enabled PBS watchlist entries are configured; refusing to backfill an unfiltered schedule");
     }
 
     let recordsProcessed = 0;
     let recordsReturned = 0;
+    let recordsMatched = 0;
     let pagesFetched = 0;
     let totalSchedules: number | null = null;
     let schedulesProcessed = 0;
@@ -171,7 +181,7 @@ async function executeBackfillIngestionRun(
         .where(eq(ingestionRunsTable.id, runId));
     };
 
-    const schedulePages = await fetchSchedule({
+    const schedulePages = await fetchScheduleImpl({
       scheduleDate,
       endpoints: ["schedules"],
       limit: 100,
@@ -212,14 +222,8 @@ async function executeBackfillIngestionRun(
     for (const [scheduleIndex, schedule] of uniqueSchedules.entries()) {
       const remainingPages = maxPages === undefined ? undefined : maxPages - pagesFetched;
       if (remainingPages === 0) break;
-      await persistProgress();
 
-      const scheduleFilters = filters.map((filter) => ({
-        ...filter,
-        requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
-        params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
-      }));
-      const scheduleItemIds = new Set<string>();
+      const atcItemIds = new Set<string>();
       const itemMetadata: PbsItemScheduleMetadata = new Map();
       const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
         pagesFetched += 1;
@@ -227,118 +231,128 @@ async function executeBackfillIngestionRun(
         if (page.endpoint === "items") recordsReturned += page.records;
         await persistProgress();
       };
-      const handlePayload = async (page: { endpoint: string; payload: unknown }) => {
+      const handleAtcPayload = async (page: { endpoint: string; payload: unknown }) => {
         if (page.endpoint === "item-atc-relationships") {
-          itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => scheduleItemIds.add(itemId));
-        }
-        if (page.endpoint === "items") {
-          itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => scheduleItemIds.add(itemId));
-          for (const [itemId, metadata] of itemScheduleMetadataFromPayload(page.payload)) {
-            itemMetadata.set(itemId, metadata);
-          }
-          recordsProcessed += await upsertPbsItemsFromPayload(
-            page.payload,
-            scheduleDate,
-            schedule.effectiveDate,
-            {
-              scheduleCode: schedule.scheduleCode,
-              updateCurrentItem: schedule.effectiveDate === latestEffectiveDate,
-            },
-          );
-        }
-        if (page.endpoint === "item-dispensing-rule-relationships") {
-          recordsProcessed += await upsertPbsItemPremiumsFromPayload(
-            page.payload,
-            schedule.effectiveDate,
-            itemMetadata,
-            schedule.scheduleCode,
-          );
+          itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
         }
         await persistProgress();
       };
 
-      const itemPages = await fetchSchedule({
-        scheduleDate,
-        latestScheduleOnly: false,
-        maxPages: remainingPages,
-        filters: scheduleFilters,
-        stagingRunId: runId,
-        resumeFromStaging: true,
-        onPage: handlePage,
-        onPayload: handlePayload,
-      });
-      const pagesAfterItems = remainingPages === undefined ? undefined : remainingPages - itemPages.length;
-      const snapshotPages =
-        pagesAfterItems === 0
+      const scheduleAtcFilters = atcFilters.map((filter) => ({
+        ...filter,
+        requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
+        params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
+      }));
+      const atcPages =
+        scheduleAtcFilters.length === 0
           ? []
-          : await fetchSchedule({
+          : await fetchScheduleImpl({
+              scheduleDate,
+              latestScheduleOnly: false,
+              maxPages: remainingPages,
+              filters: scheduleAtcFilters,
+              stagingRunId: runId,
+              resumeFromStaging: true,
+              onPage: handlePage,
+              onPayload: handleAtcPayload,
+            });
+      const pagesAvailableForItems =
+        remainingPages === undefined ? undefined : remainingPages - atcPages.length;
+      const itemPages =
+        pagesAvailableForItems === 0
+          ? []
+          : await fetchScheduleImpl({
               scheduleDate,
               endpoints: ["items"],
               latestScheduleOnly: false,
-              maxPages: pagesAfterItems,
-              filters: [{ requestKey: `items-snapshot:schedule-${schedule.scheduleCode}`, params: {} }],
+              maxPages: pagesAvailableForItems,
+              filters: [{
+                requestKey: `items-snapshot:schedule-${schedule.scheduleCode}`,
+                params: { schedule_code: String(schedule.scheduleCode) },
+              }],
               coverageScope: "schedule",
               stagingRunId: runId,
               resumeFromStaging: true,
-              onPage: async (page) => {
-                pagesFetched += 1;
-                requestUrls.add(page.url);
+              onPage: handlePage,
+              onPayload: async (page) => {
+                if (page.endpoint !== "items") return;
+                const matched = recordsFromPayload(page.payload).filter((record) =>
+                  recordMatchesWatchlist(record, directMatchers, atcItemIds),
+                );
+                recordsMatched += matched.length;
+                if (matched.length > 0) {
+                  recordsProcessed += await upsertPbsItemsFromPayload(
+                    { data: matched },
+                    scheduleDate,
+                    schedule.effectiveDate,
+                    {
+                      scheduleCode: schedule.scheduleCode,
+                      updateCurrentItem: schedule.effectiveDate === latestEffectiveDate,
+                    },
+                  );
+                  for (const [itemId, metadata] of itemScheduleMetadataFromPayload({ data: matched })) {
+                    itemMetadata.set(itemId, metadata);
+                  }
+                }
                 await persistProgress();
               },
             });
-      const pagesLeft = pagesAfterItems === undefined ? undefined : pagesAfterItems - snapshotPages.length;
-      const relatedFilters = pagesLeft === 0
-        ? []
-        : buildPbsItemIdRequestFilters(scheduleItemIds).map((filter) => ({
-            ...filter,
-            requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
-            params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
-          }));
-      const relatedItemPages = relatedFilters.length > 0
-        ? await fetchSchedule({
-          scheduleDate,
-          latestScheduleOnly: false,
-          maxPages: pagesLeft,
-          filters: relatedFilters,
-           stagingRunId: runId,
-           resumeFromStaging: true,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        })
-        : [];
-      const pagesLeftForPremiums =
-        pagesLeft === undefined ? undefined : pagesLeft - relatedItemPages.length;
-      const premiumFilters =
-        pagesLeftForPremiums === 0
+      const pagesAvailableForPremiums =
+        pagesAvailableForItems === undefined ? undefined : pagesAvailableForItems - itemPages.length;
+      const premiumPages =
+        pagesAvailableForPremiums === 0
           ? []
-          : buildPbsItemDispensingRuleRequestFilters(itemMetadata.keys()).map((filter) => ({
-              ...filter,
-              requestKey: `${filter.requestKey}:schedule-${schedule.scheduleCode}`,
-              params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
-            }));
-      if (premiumFilters.length > 0) {
-        await fetchSchedule({
-          scheduleDate,
-          latestScheduleOnly: false,
-          maxPages: pagesLeftForPremiums,
-          filters: premiumFilters,
-          stagingRunId: runId,
-          resumeFromStaging: true,
-          onPage: handlePage,
-          onPayload: handlePayload,
-        });
-      }
+          : await fetchScheduleImpl({
+              scheduleDate,
+              endpoints: ["item-dispensing-rule-relationships"],
+              latestScheduleOnly: false,
+              maxPages: pagesAvailableForPremiums,
+              filters: [{
+                requestKey: `item-dispensing-rules-snapshot:schedule-${schedule.scheduleCode}`,
+                params: { schedule_code: String(schedule.scheduleCode) },
+              }],
+              coverageScope: "schedule",
+              stagingRunId: runId,
+              resumeFromStaging: true,
+              onPage: handlePage,
+              onPayload: async (page) => {
+                if (page.endpoint !== "item-dispensing-rule-relationships") return;
+                const matched = recordsFromPayload(page.payload).filter((record) => {
+                  const liItemId = stringField(record, "li_item_id");
+                  return liItemId !== undefined && itemMetadata.has(liItemId);
+                });
+                if (matched.length > 0) {
+                  recordsProcessed += await upsertPbsItemPremiumsFromPayload(
+                    { data: matched },
+                    schedule.effectiveDate,
+                    itemMetadata,
+                    schedule.scheduleCode,
+                  );
+                }
+                await persistProgress();
+              },
+            });
+      if (atcPages.length + itemPages.length + premiumPages.length === 0) break;
       schedulesProcessed = scheduleIndex + 1;
       await persistProgress();
     }
 
-    if (recordsReturned > 0 && recordsProcessed === 0) {
-      throw new Error(`PBS backfill returned ${recordsReturned} item records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`);
+    if (recordsReturned > 0 && recordsMatched === 0) {
+      logger.warn({ runId }, "PBS backfill snapshots returned records but none matched the configured watchlist");
+    }
+    if (recordsMatched > 0 && recordsProcessed === 0) {
+      throw new Error(
+        `PBS backfill matched ${recordsMatched} watchlist records, but 0 were mapped; all records were skipped because required PBS item fields were unavailable or invalid`,
+      );
     }
     const pageCapReached = maxPages !== undefined && pagesFetched >= maxPages;
-    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesFromStagedData();
+    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesImpl();
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the backfill page cap was reached");
+    } else {
+      await pruneRawScheduleStagingImpl().catch((error) => {
+        logger.error({ err: error, runId }, "Failed to prune raw PBS schedule staging after backfill");
+      });
     }
 
     await db
@@ -352,6 +366,7 @@ async function executeBackfillIngestionRun(
         totalSchedules,
         schedulesProcessed,
         requestUrls: [...requestUrls],
+        snapshotComplete: !pageCapReached,
       })
       .where(eq(ingestionRunsTable.id, runId));
 
