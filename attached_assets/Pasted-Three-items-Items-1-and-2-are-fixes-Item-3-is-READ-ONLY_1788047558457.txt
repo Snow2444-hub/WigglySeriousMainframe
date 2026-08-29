@@ -1,0 +1,39 @@
+Three items. Items 1 and 2 are fixes. Item 3 is READ-ONLY investigation — don't
+change import behaviour yet.
+
+=== 1. WATCHLIST FILTER TYPE DEFAULT ===
+The "Enabled watchlist" add-filter control defaults to "ATC code" but should
+default to "Drug name". The option already exists in the dropdown. Change only
+the default selected value to Drug name; confirm the other options still work.
+
+=== 2. ARTG REGISTER PAGE — RESPONSIVE LAYOUT AT NARROW WIDTHS ===
+The ARTG register page doesn't hold together on smaller screens. Known symptom:
+the "Browse…" control in the blue upload panel truncates to "Browse… N…"
+because the row can't fit its contents when narrow.
+- Build and view the ARTG register page at narrow/tablet widths (and confirm
+  desktop still looks right).
+- Fix the elements that break or crowd when the viewport narrows — the upload
+  panel's Browse/status/Import row is the obvious one; also check the filter bar
+  (status / PBS matches / date pickers) and the product rows (product name,
+  strengths/ARTG-ID cards, ingredient, sponsor, registration, status columns).
+- Let the layout reflow/stack sensibly at narrow widths rather than truncating
+  text or overflowing. Nothing should clip or cut off a label.
+- Report which breakpoints you adjusted and what you changed. Don't alter any
+  data or the page's content — layout/styling only.
+
+=== 3. ARTG IMPORT SCOPE — investigate and report, DO NOT CHANGE ===
+On the last big ARTG import most rows were dropped: "720 not tracked" on one run,
+"12 rows did not match an active tracked ingredient and were not added" on
+another. Before deciding whether to change this, report:
+a. Confirm the rule: does the ARTG importer only PERSIST rows whose active
+   ingredient matches an enabled watchlist entry, discarding the rest? Or store
+   everything and only display/alert on watched ones? Show where this happens in
+   code.
+b. When a row is "not tracked," is it dropped entirely or written and flagged?
+   I want to know whether the 720 rows exist anywhere or are gone.
+c. If I wanted ARTG to store ALL registrations but only surface/alert on
+   watchlist ingredients, what would that touch (schema, importer, register
+   query)? Give the scope — do NOT implement it.
+d. Roughly how many rows / how much storage a full unfiltered TGA export would
+   add, if you can tell from the files already imported.
+Report all of the above; I'll decide on 3 afterwards. Just do 1 and 2 now.
