@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 
-export const ARTG_PARSER_VERSION = "1";
+export const ARTG_PARSER_VERSION = "2";
 
 type SourceRow = Record<string, unknown>;
 
