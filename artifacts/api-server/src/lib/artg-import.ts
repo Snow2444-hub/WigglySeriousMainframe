@@ -71,6 +71,14 @@ export function normaliseIngredient(value: string): string {
     .join(" ");
 }
 
+function normaliseIngredientForMatch(value: string): string {
+  return cleanText(value)
+    .toLocaleLowerCase()
+    .replace(/[()[\],.;:+/]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function findHeader(headers: Map<string, string>, aliases: readonly string[]): string | undefined {
   return aliases.map(normaliseHeader).map((alias) => headers.get(alias)).find(Boolean);
 }
@@ -101,13 +109,12 @@ function dateString(value: unknown): string | null {
 }
 
 function matchedDrug(ingredient: string, drugs: TrackedDrug[]): TrackedDrug | undefined {
-  const candidates = ingredient
-    .split(/\s*(?:;|\+|\/|\band\b)\s*/i)
-    .map(normaliseIngredient)
-    .filter(Boolean);
+  const candidate = normaliseIngredientForMatch(ingredient);
+  if (!candidate) return undefined;
+  const candidateWords = ` ${candidate} `;
   return drugs.find((drug) => {
-    const keys = [drug.activeIngredient, drug.name].map(normaliseIngredient).filter(Boolean);
-    return candidates.some((candidate) => keys.includes(candidate));
+    const key = normaliseIngredientForMatch(normaliseIngredient(drug.activeIngredient));
+    return Boolean(key && candidateWords.includes(` ${key} `));
   });
 }
 

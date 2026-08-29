@@ -59,6 +59,30 @@ test("parses a valid XLSX ARTG export", () => {
   assert.equal(result.records[0]?.registrationDate, "2024-03-01");
 });
 
+test("matches tracked ingredients contained as whole words in ARTG text", () => {
+  const csv = [
+    "ARTG ID,Active Ingredient,Sponsor Name,Start Date,Good Name,Status",
+    "401239,lisdexamfetamine dimesilate,Example Pharma,01/04/2024,Lisdexamfetamine medicine,Registered",
+    "401240,rivaroxaban (as rivaroxaban),Example Pharma,02/04/2024,Rivaroxaban medicine,Registered",
+    "401241,rosuvastatin calcium,Example Pharma,03/04/2024,Actavanz 10 mg tablets,Registered",
+    "401242,rivaroxabanine,Example Pharma,04/04/2024,Unrelated medicine,Registered",
+  ].join("\n");
+  const result = parseArtgExport(Buffer.from(csv), "tga-artg-export.csv", [
+    { id: 10, name: "Lisdexamfetamine", activeIngredient: "Lisdexamfetamine" },
+    { id: 11, name: "Rivaroxaban", activeIngredient: "Rivaroxaban" },
+    { id: 12, name: "Rosuvastatin", activeIngredient: "Rosuvastatin" },
+  ]);
+
+  assert.equal(result.recordsAccepted, 3);
+  assert.equal(result.recordsRejected, 0);
+  assert.equal(result.recordsSkipped, 1);
+  assert.deepEqual(result.records.map((record) => [record.artgId, record.matchedDrugId]), [
+    ["401239", 10],
+    ["401240", 11],
+    ["401241", 12],
+  ]);
+});
+
 test("converts Excel serial dates and ignores composite/footer rows without counting them invalid", () => {
   const worksheet = XLSX.utils.aoa_to_sheet([
     ["ARTG Number", "Generic Name", "Sponsor", "Date of Registration", "Product Name", "ARTG Status", "Product Type"],
