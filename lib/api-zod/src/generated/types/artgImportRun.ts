@@ -5,7 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { ArtgImportRunMode } from './artgImportRunMode';
 import type { ArtgImportRunStatus } from './artgImportRunStatus';
 
 export interface ArtgImportRun {
@@ -29,8 +28,4 @@ export interface ArtgImportRun {
   finishedAt: Date | null;
   /** @nullable */
   errorMessage: string | null;
-  mode?: ArtgImportRunMode;
-  /** @nullable */
-  totalSchedules?: number | null;
-  schedulesProcessed?: number;
 }

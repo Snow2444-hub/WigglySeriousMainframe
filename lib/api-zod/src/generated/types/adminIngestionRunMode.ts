@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type ArtgImportRunMode = typeof ArtgImportRunMode[keyof typeof ArtgImportRunMode];
+export type AdminIngestionRunMode = typeof AdminIngestionRunMode[keyof typeof AdminIngestionRunMode];
 
 
-export const ArtgImportRunMode = {
+export const AdminIngestionRunMode = {
   current: 'current',
   backfill: 'backfill',
 } as const;

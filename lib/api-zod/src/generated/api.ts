@@ -854,7 +854,10 @@ export const ListAdminIngestionRunsResponseItem = zod.object({
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
-  "errorMessage": zod.string().nullable()
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']),
+  "totalSchedules": zod.int().nullable(),
+  "schedulesProcessed": zod.int()
 })
 export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsResponseItem)
 
@@ -880,7 +883,10 @@ export const TriggerAdminIngestionResponse = zod.object({
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
-  "errorMessage": zod.string().nullable()
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']),
+  "totalSchedules": zod.int().nullable(),
+  "schedulesProcessed": zod.int()
 })
 
 
@@ -896,7 +902,10 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
-  "errorMessage": zod.string().nullable()
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']),
+  "totalSchedules": zod.int().nullable(),
+  "schedulesProcessed": zod.int()
 }),zod.null()])
 })
 
@@ -932,10 +941,7 @@ export const ListAdminArtgImportRunsResponseItem = zod.object({
   "warnings": zod.array(zod.string()),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']).optional(),
-  "totalSchedules": zod.int().nullish(),
-  "schedulesProcessed": zod.int().optional()
+  "errorMessage": zod.string().nullable()
 })
 export const ListAdminArtgImportRunsResponse = zod.array(ListAdminArtgImportRunsResponseItem)
 
@@ -964,10 +970,7 @@ export const UploadAdminArtgExportResponse = zod.object({
   "warnings": zod.array(zod.string()),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']).optional(),
-  "totalSchedules": zod.int().nullish(),
-  "schedulesProcessed": zod.int().optional()
+  "errorMessage": zod.string().nullable()
 })
 
 
