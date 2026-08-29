@@ -3,8 +3,21 @@ import { createServer, type Server } from "node:http";
 import { after, before, test } from "node:test";
 import express from "express";
 import { inArray } from "drizzle-orm";
-import { db, drugsTable, pharmacyStockTable, pbsItemsTable, pool, predictedReductionsTable } from "@workspace/db";
+import {
+  artgEntriesTable,
+  db,
+  drugsTable,
+  ingestionRunsTable,
+  pharmacyBrandPreferencesTable,
+  pharmacyStockTable,
+  pbsItemsTable,
+  pool,
+  predictedReductionsTable,
+  scheduleChangesTable,
+} from "@workspace/db";
 import { requireAuth } from "../middlewares/requireAuth";
+import { normalizeBrandName } from "../lib/brand-preferences";
+import { createReferenceRouter } from "./reference";
 import { createStockRouter, dashboardPriceReduction } from "./stock";
 
 const userA = "clerk_test_pharmacy_a";
@@ -76,6 +89,81 @@ async function seedItem(itemCode: string, drugId: number) {
   });
 }
 
+function monthsFromDate(dateValue: string, months: number) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1 + months, day)).toISOString().slice(0, 10);
+}
+
+function daysFromDate(dateValue: string, days: number) {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const result = new Date(Date.UTC(year, month - 1, day));
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
+async function seedDashboardItem(
+  itemCode: string,
+  drugId: number,
+  brandName: string,
+  liItemId: string,
+) {
+  await db.insert(pbsItemsTable).values({
+    itemCode,
+    pbsCode: `PBS-${itemCode}`,
+    liItemId,
+    scheduleCode: 900,
+    drugId,
+    brandName,
+    strength: "10 mg",
+    form: "tablet",
+    packSize: "30",
+    pricingQuantity: null,
+    liForm: null,
+    programCode: null,
+    formulary: "F1",
+    currentAemp: 100,
+    currentDpmq: null,
+    lastUpdated: "2026-01-01",
+    firstListedDate: "2026-01-01",
+    weightedAvgDisclosedPrice: null,
+    originatorBrandIndicator: null,
+    brandSubstitutionGroupId: null,
+    advancedNoticeDate: null,
+    nonEffectiveDate: null,
+    determinedPrice: null,
+    claimedPrice: null,
+    proportionalPrice: null,
+    therapeuticGroupId: null,
+    innovatorIndicator: null,
+  });
+}
+
+async function seedDashboardChange(input: {
+  scheduleCode: number;
+  effectiveDate: string;
+  changeType: string;
+  drugId: number;
+  brandName: string | null;
+  liItemId: string;
+  oldValue?: unknown;
+  newValue?: unknown;
+}) {
+  await db.insert(scheduleChangesTable).values({
+    scheduleCode: input.scheduleCode,
+    effectiveDate: input.effectiveDate,
+    changeType: input.changeType,
+    liItemId: input.liItemId,
+    pbsCode: `PBS-${input.liItemId}`,
+    drugId: input.drugId,
+    brandName: input.brandName,
+    oldValue: input.oldValue ?? null,
+    newValue: input.newValue ?? null,
+    affectedItems: null,
+    significance: "normal",
+    notes: "Dashboard boundary fixture",
+  });
+}
+
 async function seedStock(userId: string, itemCode: string, quantity: number, purchasePrice: number) {
   const [stock] = await db
     .insert(pharmacyStockTable)
@@ -112,11 +200,20 @@ async function seedPrediction(
   });
 }
 
-async function cleanupFixture(itemCodes: string[], drugIds: number[]) {
+async function cleanupFixture(
+  itemCodes: string[],
+  drugIds: number[],
+  artgIds: string[] = [],
+  runIds: number[] = [],
+) {
   await db.delete(predictedReductionsTable).where(inArray(predictedReductionsTable.itemCode, itemCodes));
+  await db.delete(scheduleChangesTable).where(inArray(scheduleChangesTable.drugId, drugIds));
+  if (artgIds.length) await db.delete(artgEntriesTable).where(inArray(artgEntriesTable.artgId, artgIds));
+  await db.delete(pharmacyBrandPreferencesTable).where(inArray(pharmacyBrandPreferencesTable.drugId, drugIds));
   await db.delete(pharmacyStockTable).where(inArray(pharmacyStockTable.itemCode, itemCodes));
   await db.delete(pbsItemsTable).where(inArray(pbsItemsTable.itemCode, itemCodes));
   await db.delete(drugsTable).where(inArray(drugsTable.id, drugIds));
+  if (runIds.length) await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
 }
 
 async function request(userId: string, path: string, init: RequestInit = {}) {
@@ -131,6 +228,7 @@ async function request(userId: string, path: string, init: RequestInit = {}) {
 before(async () => {
   const app = express();
   app.use(express.json());
+  app.use(createReferenceRouter(db, testAuth));
   app.use(createStockRouter(db, testAuth));
   server = createServer(app);
   await new Promise<void>((resolve, reject) => {
@@ -145,6 +243,353 @@ before(async () => {
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   await pool.end();
+});
+
+test("authenticated dashboard counts stay correct across schedule boundaries and detail filters", async () => {
+  const token = newFixtureToken();
+  const itemCodes = [`${token}_VISIBLE`, `${token}_HIDDEN`];
+  const drugId = 2_100_000_000 + (process.pid % 100_000) * 10 + fixtureNumber;
+  const drugIds = [drugId];
+  const artgIds = [
+    `${token}_ARTG_CURRENT`,
+    `${token}_ARTG_THREE_MONTHS`,
+    `${token}_ARTG_TWELVE_MONTHS`,
+    `${token}_ARTG_MATCHED_VISIBLE`,
+    `${token}_ARTG_MATCHED_HIDDEN`,
+    `${token}_ARTG_CANCELLED`,
+  ];
+  const runIds: number[] = [];
+  const today = new Date().toISOString().slice(0, 10);
+  const threeMonthsAgo = monthsFromDate(today, -3);
+  const twelveMonthsAgo = monthsFromDate(today, -12);
+  const scheduleDate = daysFromDate(today, -7);
+  const scheduleCode = 900_000 + fixtureNumber;
+  const visibleBrand = `${token} visible brand`;
+  const hiddenBrand = `${token} hidden brand`;
+  const visibleItem = itemCodes[0];
+  const hiddenItem = itemCodes[1];
+  assert.ok(visibleItem);
+  assert.ok(hiddenItem);
+
+  try {
+    const unavailableResponse = await request(userA, "/dashboard");
+    assert.equal(unavailableResponse.status, 200);
+    const unavailable = (await unavailableResponse.json()) as {
+      periods: Array<{ available: boolean; counts: Record<string, number> }>;
+      currentSchedule: { status: string };
+    };
+    assert.equal(unavailable.currentSchedule.status, "unavailable");
+    assert.ok(unavailable.periods.every((period) => !period.available));
+    assert.ok(unavailable.periods.every((period) => Object.values(period.counts).every((count) => count === 0)));
+
+    const [activeRun] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "running",
+        recordsProcessed: 1,
+        pagesFetched: 1,
+        requestUrls: [],
+        scheduleCode,
+        scheduleEffectiveDate: scheduleDate,
+        snapshotComplete: false,
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(activeRun);
+    runIds.push(activeRun.id);
+    const inProgressResponse = await request(userA, "/dashboard");
+    assert.equal(inProgressResponse.status, 200);
+    const inProgress = (await inProgressResponse.json()) as {
+      periods: Array<{ available: boolean; counts: Record<string, number> }>;
+      currentSchedule: { status: string };
+    };
+    assert.equal(inProgress.currentSchedule.status, "in_progress");
+    assert.ok(inProgress.periods.every((period) => !period.available));
+    assert.ok(inProgress.periods.every((period) => Object.values(period.counts).every((count) => count === 0)));
+    await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    runIds.length = 0;
+
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: `${token} dashboard medicine`,
+      activeIngredient: `${token} ingredient`,
+      sponsor: "Dashboard boundary fixture",
+      firstPbsListingDate: twelveMonthsAgo,
+    });
+    await seedDashboardItem(visibleItem, drugId, visibleBrand, `${token}_LI_VISIBLE`);
+    await seedDashboardItem(hiddenItem, drugId, hiddenBrand, `${token}_LI_HIDDEN`);
+    await db.insert(pharmacyBrandPreferencesTable).values({
+      userId: userA,
+      drugId,
+      brandKey: normalizeBrandName(hiddenBrand),
+      brandName: hiddenBrand,
+      hidden: true,
+    });
+
+    const [completedRun] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "completed",
+        recordsProcessed: 2,
+        pagesFetched: 1,
+        requestUrls: [],
+        scheduleCode,
+        scheduleEffectiveDate: scheduleDate,
+        snapshotComplete: true,
+        startedAt: new Date("2026-01-01T00:00:00Z"),
+        finishedAt: new Date("2099-01-01T00:00:00Z"),
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(completedRun);
+    runIds.push(completedRun.id);
+    const baselineResponse = await request(userA, "/dashboard");
+    assert.equal(baselineResponse.status, 200);
+    const baselineDashboard = (await baselineResponse.json()) as {
+      periods: Array<{ key: string; available: boolean; counts: Record<string, number> }>;
+    };
+    assert.ok(baselineDashboard.periods.every((period) => period.available));
+
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "new_brand",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_NEW`,
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "new_brand",
+      drugId,
+      brandName: hiddenBrand,
+      liItemId: `${token}_LI_HIDDEN_NEW`,
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "price_change",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_PRICE_DOWN`,
+      oldValue: { determined_price: 100 },
+      newValue: { determined_price: 90 },
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "price_change",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_PRICE_UP`,
+      oldValue: { determined_price: 100 },
+      newValue: { determined_price: 110 },
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "delisted",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_DELISTED`,
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "delisted",
+      drugId,
+      brandName: hiddenBrand,
+      liItemId: `${token}_LI_HIDDEN_DELISTED`,
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "formulary_change",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_FORMULARY`,
+    });
+    await seedDashboardChange({
+      scheduleCode,
+      effectiveDate: scheduleDate,
+      changeType: "listing_amendment",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_VISIBLE_AMENDMENT`,
+    });
+    await seedDashboardChange({
+      scheduleCode: 899,
+      effectiveDate: threeMonthsAgo,
+      changeType: "new_brand",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_THREE_MONTHS`,
+    });
+    await seedDashboardChange({
+      scheduleCode: 898,
+      effectiveDate: twelveMonthsAgo,
+      changeType: "new_brand",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_TWELVE_MONTHS`,
+    });
+    await seedDashboardChange({
+      scheduleCode: 897,
+      effectiveDate: daysFromDate(threeMonthsAgo, -1),
+      changeType: "delisted",
+      drugId,
+      brandName: visibleBrand,
+      liItemId: `${token}_LI_OUTSIDE_THREE_MONTHS`,
+    });
+
+    await seedPrediction(visibleItem, drugId, today, 90, "confirmed");
+    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 3), 80, "confirmed");
+    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 12), 70, "confirmed");
+    await seedPrediction(hiddenItem, drugId, today, 60, "confirmed");
+
+    await db.insert(artgEntriesTable).values([
+      {
+        artgId: artgIds[0],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: scheduleDate,
+        productName: `${token} unmatched current product`,
+        status: "REGISTERED",
+      },
+      {
+        artgId: artgIds[1],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: threeMonthsAgo,
+        productName: `${token} unmatched three month product`,
+        status: "REGISTERED",
+      },
+      {
+        artgId: artgIds[2],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: twelveMonthsAgo,
+        productName: `${token} unmatched twelve month product`,
+        status: "REGISTERED",
+      },
+      {
+        artgId: artgIds[3],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: scheduleDate,
+        productName: `${visibleBrand} 10 mg`,
+        status: "REGISTERED",
+      },
+      {
+        artgId: artgIds[4],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: scheduleDate,
+        productName: `${hiddenBrand} 10 mg`,
+        status: "REGISTERED",
+      },
+      {
+        artgId: artgIds[5],
+        activeIngredient: `${token} ingredient`,
+        normalizedIngredient: `${token.toLocaleLowerCase()} ingredient`,
+        matchedDrugId: drugId,
+        sponsor: "Dashboard boundary fixture",
+        registrationDate: scheduleDate,
+        productName: `${token} cancelled product`,
+        status: "CANCELLED",
+      },
+    ]);
+
+    const dashboardResponse = await request(userA, "/dashboard");
+    assert.equal(dashboardResponse.status, 200);
+    const dashboard = (await dashboardResponse.json()) as {
+      periods: Array<{
+        key: string;
+        available: boolean;
+        counts: Record<string, number>;
+      }>;
+    };
+    const period = (key: string) => {
+      const value = dashboard.periods.find((entry) => entry.key === key);
+      assert.ok(value);
+      assert.equal(value.available, true);
+      return value;
+    };
+    const fixtureCounts = (key: string) => {
+      const baseline = baselineDashboard.periods.find((entry) => entry.key === key);
+      assert.ok(baseline);
+      return Object.fromEntries(
+        Object.entries(period(key).counts).map(([name, value]) => [name, value - (baseline.counts[name] ?? 0)]),
+      );
+    };
+    assert.deepEqual(fixtureCounts("this_schedule"), {
+      newBrands: 1,
+      priceReductions: 1,
+      delistings: 1,
+      formularyChanges: 1,
+      amendedListings: 1,
+      upcomingReductions: 3,
+      artgNotPbsListed: 1,
+    });
+    assert.deepEqual(fixtureCounts("three_months"), {
+      newBrands: 2,
+      priceReductions: 1,
+      delistings: 1,
+      formularyChanges: 1,
+      amendedListings: 1,
+      upcomingReductions: 2,
+      artgNotPbsListed: 2,
+    });
+    assert.deepEqual(fixtureCounts("twelve_months"), {
+      newBrands: 3,
+      priceReductions: 1,
+      delistings: 2,
+      formularyChanges: 1,
+      amendedListings: 1,
+      upcomingReductions: 3,
+      artgNotPbsListed: 3,
+    });
+
+    const priceTile = await request(
+      userA,
+      `/schedule-changes?scheduleCode=${scheduleCode}&changeType=price_change&direction=decrease`,
+    );
+    assert.equal(priceTile.status, 200);
+    const priceChanges = (await priceTile.json()) as Array<{ liItemId: string | null; newValue: { determined_price?: number } }>;
+    assert.equal(priceChanges.length, 1);
+    assert.equal(priceChanges[0]?.liItemId, `${token}_LI_VISIBLE_PRICE_DOWN`);
+    assert.equal(priceChanges[0]?.newValue.determined_price, 90);
+
+    const boundaryTile = await request(
+      userA,
+      `/schedule-changes?from=${threeMonthsAgo}&to=${threeMonthsAgo}&changeType=new_brand`,
+    );
+    assert.equal(boundaryTile.status, 200);
+    const boundaryChanges = (await boundaryTile.json()) as Array<{ liItemId: string | null }>;
+    assert.deepEqual(boundaryChanges.map((change) => change.liItemId), [`${token}_LI_THREE_MONTHS`]);
+
+    const artgTile = await request(
+      userA,
+      `/artg-entries?from=${threeMonthsAgo}&to=${threeMonthsAgo}&pbs=unlisted`,
+    );
+    assert.equal(artgTile.status, 200);
+    const artgEntries = (await artgTile.json()) as Array<{ artgId: string; pbsListed: boolean }>;
+    assert.deepEqual(
+      artgEntries.map((entry) => ({ artgId: entry.artgId, pbsListed: entry.pbsListed })),
+      [{ artgId: artgIds[1], pbsListed: false }],
+    );
+  } finally {
+    await cleanupFixture(itemCodes, drugIds, artgIds, runIds);
+  }
 });
 
 test("list, update, and delete operations stay scoped to the signed-in Clerk user", async () => {

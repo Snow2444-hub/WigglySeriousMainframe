@@ -94,7 +94,6 @@ export const GetPharmacyBrandPreferencesResponse = zod.object({
 export const setPharmacyBrandPreferenceBodyBrandNameMax = 255;
 
 
-
 export const SetPharmacyBrandPreferenceBody = zod.object({
   "drugId": zod.int().min(1),
   "brandName": zod.string().min(1).max(setPharmacyBrandPreferenceBodyBrandNameMax),
@@ -120,8 +119,6 @@ export const SetPharmacyBrandPreferenceResponse = zod.object({
  */
 
 export const setPharmacyBrandPreferencesBodyPreferencesItemBrandNameMax = 255;
-
-
 
 
 export const SetPharmacyBrandPreferencesBody = zod.object({
@@ -157,7 +154,6 @@ export const ClearPharmacyBrandPreferencesResponse = zod.void()
  */
 export const listDrugsQueryLimitDefault = 50;
 export const listDrugsQueryLimitMax = 100;
-
 
 
 export const ListDrugsQueryParams = zod.object({
@@ -272,7 +268,6 @@ export const ListMedicineBrandsResponse = zod.array(ListMedicineBrandsResponseIt
  */
 
 
-
 export const ListMedicineBrandItemsParams = zod.object({
   "id": zod.coerce.number().int(),
   "brandName": zod.coerce.string().min(1)
@@ -380,7 +375,6 @@ export const ListUpcomingPredictedReductionsResponse = zod.array(ListUpcomingPre
  */
 export const listPbsItemsQueryLimitDefault = 50;
 export const listPbsItemsQueryLimitMax = 100;
-
 
 
 export const ListPbsItemsQueryParams = zod.object({
@@ -588,7 +582,6 @@ export const listScheduleChangesQueryLimitDefault = 200;
 export const listScheduleChangesQueryLimitMax = 500;
 
 
-
 export const ListScheduleChangesQueryParams = zod.object({
   "drugId": zod.coerce.number().int().min(1).optional(),
   "scheduleCode": zod.coerce.number().int().min(listScheduleChangesQueryScheduleCodeMin).optional(),
@@ -764,7 +757,6 @@ export const createStockBodyPurchasePriceMin = 0;
 export const createStockBodyInvoiceReferenceMax = 120;
 
 
-
 export const CreateStockBody = zod.object({
   "itemCode": zod.string().min(1),
   "quantity": zod.int().min(createStockBodyQuantityMin),
@@ -804,7 +796,6 @@ export const updateStockBodyQuantityMin = 0;
 export const updateStockBodyPurchasePriceMin = 0;
 
 export const updateStockBodyInvoiceReferenceMax = 120;
-
 
 
 export const UpdateStockBody = zod.object({
@@ -867,7 +858,6 @@ export const ListAdminIngestionRunsResponse = zod.array(ListAdminIngestionRunsRe
  */
 export const triggerAdminIngestionBodyModeDefault = `current`;
 export const triggerAdminIngestionBodyMaxPagesMax = 10000;
-
 
 
 export const TriggerAdminIngestionBody = zod.object({
@@ -1050,7 +1040,6 @@ export const UpdatePbsWatchlistEntryParams = zod.object({
 export const updatePbsWatchlistEntryBodyFilterValueMax = 120;
 
 
-
 export const UpdatePbsWatchlistEntryBody = zod.object({
   "filterType": zod.enum(['brand_name', 'drug_name', 'pbs_code', 'formulary', 'program_code', 'atc_code']).optional(),
   "filterValue": zod.string().min(1).max(updatePbsWatchlistEntryBodyFilterValueMax).optional(),
@@ -1101,7 +1090,6 @@ export const updateScheduleChangeSettingsBodyFirstNewBrandReductionPercentageExc
 export const updateScheduleChangeSettingsBodyFirstNewBrandReductionPercentageMax = 100;
 
 
-
 export const UpdateScheduleChangeSettingsBody = zod.object({
   "mediumReductionPercentage": zod.number().gt(updateScheduleChangeSettingsBodyMediumReductionPercentageExclusiveMin).max(updateScheduleChangeSettingsBodyMediumReductionPercentageMax),
   "highReductionPercentage": zod.number().gt(updateScheduleChangeSettingsBodyHighReductionPercentageExclusiveMin).max(updateScheduleChangeSettingsBodyHighReductionPercentageMax),
@@ -1115,5 +1103,3 @@ export const UpdateScheduleChangeSettingsResponse = zod.object({
   "firstNewBrandHighSignificance": zod.boolean(),
   "firstNewBrandReductionPercentage": zod.number()
 })
-
-

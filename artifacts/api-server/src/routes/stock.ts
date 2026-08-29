@@ -263,6 +263,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
       .select({
         drugId: predictedReductionsTable.drugId,
         predictedDate: predictedReductionsTable.predictedDate,
+        brandName: pbsItemsTable.brandName,
         currentPrice: pbsItemsTable.currentAemp,
         predictedNewPrice: predictedReductionsTable.predictedNewPrice,
         predictedPercentage: predictedReductionsTable.predictedPercentage,
@@ -324,11 +325,13 @@ async function getDashboardSummary(database: typeof db, userId: string) {
         )
       : [];
     const predictions = available
-      ? predictionRows.filter((row) => {
-        if (period.key === "this_schedule") return row.predictedDate >= today;
-        const futureTo = dateMonthsAgo(today, period.key === "three_months" ? -3 : -12);
-        return row.predictedDate >= today && row.predictedDate <= futureTo;
-      })
+      ? predictionRows
+        .filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName))
+        .filter((row) => {
+          if (period.key === "this_schedule") return row.predictedDate >= today;
+          const futureTo = dateMonthsAgo(today, period.key === "three_months" ? -3 : -12);
+          return row.predictedDate >= today && row.predictedDate <= futureTo;
+        })
       : [];
     const predictionEvents = new Set(predictions.map(upcomingEventKey));
     const nextUpcomingReductionDate = predictions

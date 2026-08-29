@@ -52,9 +52,14 @@ import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
 import { pbsBrandMatchesArtgProduct } from "../lib/artg-import";
 import { requireAuth } from "../middlewares/requireAuth";
 
-const router: IRouter = Router();
+export function createReferenceRouter(
+  database: typeof db = db,
+  authMiddleware: typeof requireAuth = requireAuth,
+): IRouter {
+  const router: IRouter = Router();
+  const db = database;
 
-router.use(requireAuth);
+  router.use(authMiddleware);
 
 router.get("/drugs", async (req, res): Promise<void> => {
   const parsed = ListDrugsQueryParams.safeParse(req.query);
@@ -191,6 +196,11 @@ function dateOnly(value: string): string {
 function queryDateOnly(value: string | Date | undefined): string | undefined {
   if (!value) return undefined;
   return value instanceof Date ? value.toISOString().slice(0, 10) : value;
+}
+
+function parseDateQueryValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return new Date(`${value}T00:00:00Z`);
 }
 
 function jsonNumber(value: unknown): number | null {
@@ -948,7 +958,11 @@ router.get("/pbs-items/:itemCode/schedule-changes", async (req, res): Promise<vo
 });
 
 router.get("/schedule-changes", async (req, res): Promise<void> => {
-  const parsed = ListScheduleChangesQueryParams.safeParse(req.query);
+  const parsed = ListScheduleChangesQueryParams.safeParse({
+    ...req.query,
+    from: parseDateQueryValue(req.query.from),
+    to: parseDateQueryValue(req.query.to),
+  });
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -993,7 +1007,11 @@ router.get("/drugs/:id/schedule-timeline", async (req, res): Promise<void> => {
 });
 
 router.get("/artg-entries", async (req, res): Promise<void> => {
-  const parsed = ListArtgEntriesQueryParams.safeParse(req.query);
+  const parsed = ListArtgEntriesQueryParams.safeParse({
+    ...req.query,
+    from: parseDateQueryValue(req.query.from),
+    to: parseDateQueryValue(req.query.to),
+  });
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -1080,4 +1098,7 @@ router.get("/artg-import-status", async (_req, res): Promise<void> => {
   }));
 });
 
-export default router;
+  return router;
+}
+
+export default createReferenceRouter();

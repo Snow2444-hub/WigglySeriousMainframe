@@ -924,7 +924,7 @@ export function ChangesPage() {
     direction: direction || undefined,
     significance: significance || undefined,
     limit: 500
-  }), [drugId, changeType, significance]);
+  }), [drugId, scheduleCode, from, to, changeType, direction, significance]);
 
   const query = useListScheduleChanges(params, {
     query: { queryKey: getListScheduleChangesQueryKey(params) }
