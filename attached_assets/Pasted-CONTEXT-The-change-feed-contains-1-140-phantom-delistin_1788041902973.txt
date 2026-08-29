@@ -1,0 +1,73 @@
+CONTEXT
+The change feed contains ~1,140 phantom delisting rows dated 01 Jan 2092 with a
+fake 10-digit schedule code. Root cause (already diagnosed): the full-snapshot
+migration's unscoped change-detection pass promoted stale TEST/FIXTURE staging
+data into an authoritative snapshot, so leaked fixture rows were compared and
+emitted as real delistings. The absurd date and code are what made the
+contamination visible. Do NOT trust "date = 2092" alone as the cleanup key —
+derive the true signature of the phantom set and confirm it.
+
+Work in two phases. Complete PHASE 1 fully and STOP. Do not modify application
+code or database data in Phase 1. Do not proceed to Phase 2 until I reply
+"approved".
+
+=== PHASE 1 — INVESTIGATE + SAFE PREP (read-only, except writing the export file) ===
+
+1. CHARACTERISE THE PHANTOM SET
+   - Group all delisting / change-feed delisting rows by (event date, schedule
+     code). Show the distribution.
+   - Identify the exact predicate that isolates the phantom rows (e.g. the
+     combination of the 2092 date AND the malformed code, or whatever the data
+     actually shows). Report that predicate and the exact count it selects.
+     Confirm whether it equals 1,140.
+
+2. RECONCILE THE REMAINDER
+   - The full delisting count was ~1,204. List every delisting row that does NOT
+     match the phantom predicate (the ~64 remainder), with enough fields to judge
+     each. I need to see these before anything is deleted — after the delete I
+     lose the ability to tell real delistings from a second, smaller problem.
+
+3. TRACE PROVENANCE
+   - Determine where the staged/fixture snapshot entered from: which test,
+     fixture file, or run inserted it, and by what path it reached a table the
+     change-detection pass reads. If you cannot determine this with confidence,
+     say so explicitly — do not guess.
+
+4. MAP DOWNSTREAM CONSUMERS
+   - Find everything derived from these change-feed rows: price-reduction
+     predictions, stock-exposure warnings, dashboard counts, upcoming-changes
+     view, change feed. List what consumed phantom rows and would need
+     recomputing (not just source-row deletion) after cleanup.
+
+5. EXPORT
+   - Write the exact phantom rows (the set from step 1) to a file (CSV or JSON)
+     so they're recoverable. Report the path and row count.
+
+6. PREPARE THE DELETE (dry run only)
+   - State the final delete predicate explicitly.
+   - Run it as SELECT COUNT(*) and confirm it returns exactly the phantom count
+     and includes NONE of the ~64 remainder rows from step 2.
+   - Do NOT execute the delete.
+
+STOP HERE. Report: the phantom predicate + count, the ~64 remainder rows, the
+provenance finding, the downstream-consumer list, the export path, and the
+confirmed dry-run count. Then wait for "approved".
+
+=== PHASE 2 — REPAIR (only after I reply "approved") ===
+
+7. Execute the delete using the confirmed predicate.
+8. Recompute / refresh every downstream derived value identified in step 4.
+9. ROOT-CAUSE ISOLATION: make it impossible for tests to write staging rows into
+   tables the ingestion / change-detection pass reads. Use a real isolation
+   mechanism — separate test database or schema, transaction rollback per test,
+   or a hard refusal to write staging rows when running under test — not just
+   value validation.
+10. DEFENCE IN DEPTH: additionally require that a staged snapshot has canonical
+    four-digit schedule codes and trusted matching schedule metadata (ideally
+    same ingestion provenance) before it may participate in delisting
+    comparison.
+11. Add a regression test that reproduces the contamination scenario (fixture
+    staging present) and asserts it produces zero phantom delistings.
+
+Throughout: if any step can't be completed or determined, report that plainly
+rather than fabricating or working around it.
