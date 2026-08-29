@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, date, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const ingestionRunsTable = pgTable("ingestion_runs", {
@@ -11,6 +11,9 @@ export const ingestionRunsTable = pgTable("ingestion_runs", {
   pagesFetched: integer("pages_fetched").notNull().default(0),
   requestUrls: jsonb("request_urls").$type<string[]>().notNull().default([]),
   errorMessage: text("error_message"),
+  scheduleCode: integer("schedule_code"),
+  scheduleEffectiveDate: date("schedule_effective_date", { mode: "string" }),
+  snapshotComplete: boolean("snapshot_complete").notNull().default(false),
 });
 
 export const insertIngestionRunSchema = createInsertSchema(ingestionRunsTable).omit({ id: true });

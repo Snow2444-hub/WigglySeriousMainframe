@@ -674,7 +674,60 @@ export type DashboardSummaryFormularyBreakdown = {
   F2: number;
 };
 
+export type DashboardPeriodSummaryKey = typeof DashboardPeriodSummaryKey[keyof typeof DashboardPeriodSummaryKey];
+
+
+export const DashboardPeriodSummaryKey = {
+  this_schedule: 'this_schedule',
+  three_months: 'three_months',
+  twelve_months: 'twelve_months',
+} as const;
+
+export type DashboardPeriodSummaryCounts = {
+  newBrands: number;
+  priceReductions: number;
+  delistings: number;
+  formularyChanges: number;
+  amendedListings: number;
+  upcomingReductions: number;
+  artgNotPbsListed: number;
+};
+
+export interface DashboardPeriodSummary {
+  key: DashboardPeriodSummaryKey;
+  label: string;
+  /** @nullable */
+  from: string | null;
+  /** @nullable */
+  to: string | null;
+  available: boolean;
+  counts: DashboardPeriodSummaryCounts;
+  /** @nullable */
+  nextUpcomingReductionDate: string | null;
+}
+
+export type DashboardScheduleSnapshotStatus = typeof DashboardScheduleSnapshotStatus[keyof typeof DashboardScheduleSnapshotStatus];
+
+
+export const DashboardScheduleSnapshotStatus = {
+  available: 'available',
+  unavailable: 'unavailable',
+  in_progress: 'in_progress',
+} as const;
+
+export interface DashboardScheduleSnapshot {
+  status: DashboardScheduleSnapshotStatus;
+  /** @nullable */
+  scheduleCode: number | null;
+  /** @nullable */
+  effectiveDate: string | null;
+  /** @nullable */
+  lastSuccessfulIngestionAt: string | null;
+}
+
 export interface DashboardSummary {
+  periods: DashboardPeriodSummary[];
+  currentSchedule: DashboardScheduleSnapshot;
   totalStockUnits: number;
   stockLineCount: number;
   trackedItems: number;
@@ -926,7 +979,14 @@ export type ListScheduleChangesParams = {
  * @minimum 1
  */
 drugId?: number;
+/**
+ * @minimum 0
+ */
+scheduleCode?: number;
+from?: string;
+to?: string;
 changeType?: ListScheduleChangesChangeType;
+direction?: ListScheduleChangesDirection;
 significance?: ListScheduleChangesSignificance;
 /**
  * @minimum 1
@@ -950,6 +1010,13 @@ export const ListScheduleChangesChangeType = {
   premium_removed: 'premium_removed',
 } as const;
 
+export type ListScheduleChangesDirection = typeof ListScheduleChangesDirection[keyof typeof ListScheduleChangesDirection];
+
+
+export const ListScheduleChangesDirection = {
+  decrease: 'decrease',
+} as const;
+
 export type ListScheduleChangesSignificance = typeof ListScheduleChangesSignificance[keyof typeof ListScheduleChangesSignificance];
 
 
@@ -965,5 +1032,17 @@ export type ListArtgEntriesParams = {
  */
 search?: string;
 status?: string;
+pbs?: ListArtgEntriesPbs;
+from?: string;
+to?: string;
 };
+
+export type ListArtgEntriesPbs = typeof ListArtgEntriesPbs[keyof typeof ListArtgEntriesPbs];
+
+
+export const ListArtgEntriesPbs = {
+  all: 'all',
+  listed: 'listed',
+  unlisted: 'unlisted',
+} as const;
 

@@ -12,8 +12,8 @@ import {
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
 import { drugDisplayName } from '@/lib/drug-label';
-import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, ChevronDown } from 'lucide-react';
-import { Link } from 'wouter';
+import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, CalendarDays, ChevronDown } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
 
 const money = (value: unknown) => {
   if (typeof value !== 'number') return '—';
@@ -889,9 +889,25 @@ function ChangeDetails({ change }: { change: ScheduleChange }) {
 }
 
 export function ChangesPage() {
-  const [drugId, setDrugId] = useState<number | ''>('');
-  const [category, setCategory] = useState<ChangeCategory>('all');
-  const [changeType, setChangeType] = useState<ListScheduleChangesChangeType | ''>('');
+  const [location] = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.split('?')[1] ?? ''), [location]);
+  const initialChangeType = initialParams.get('changeType') as ListScheduleChangesChangeType | null;
+  const initialCategory: ChangeCategory = initialChangeType === 'new_brand' || initialChangeType === 'new_item'
+    ? 'new'
+    : initialChangeType === 'delisted'
+      ? 'deleted'
+      : initialChangeType === 'price_change'
+        ? 'price'
+        : initialChangeType === 'formulary_change' || initialChangeType === 'listing_amendment'
+          ? 'amended'
+          : 'all';
+  const [drugId, setDrugId] = useState<number | ''>(() => initialParams.get('drugId') ? Number(initialParams.get('drugId')) : '');
+  const [category, setCategory] = useState<ChangeCategory>(initialCategory);
+  const [changeType, setChangeType] = useState<ListScheduleChangesChangeType | ''>(() => initialChangeType ?? '');
+  const [scheduleCode, setScheduleCode] = useState<number | ''>(() => initialParams.get('scheduleCode') ? Number(initialParams.get('scheduleCode')) : '');
+  const [from, setFrom] = useState(() => initialParams.get('from') ?? '');
+  const [to, setTo] = useState(() => initialParams.get('to') ?? '');
+  const [direction] = useState<'decrease' | ''>(() => initialParams.get('direction') === 'decrease' ? 'decrease' : '');
   const [significance, setSignificance] = useState<ListScheduleChangesSignificance | ''>('');
   
   const [timelineDrugId, setTimelineDrugId] = useState<number | null>(null);
@@ -901,7 +917,11 @@ export function ChangesPage() {
 
   const params = useMemo(() => ({
     drugId: drugId || undefined,
+    scheduleCode: scheduleCode || undefined,
+    from: from || undefined,
+    to: to || undefined,
     changeType: changeType || undefined,
+    direction: direction || undefined,
     significance: significance || undefined,
     limit: 500
   }), [drugId, changeType, significance]);
@@ -964,6 +984,21 @@ export function ChangesPage() {
               <option key={drug.id} value={drug.id}>{drug.name}</option>
             ))}
           </select>
+        </label>
+
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground">
+          <CalendarDays className="h-4 w-4 text-info" /><span className="hidden xl:inline">From</span>
+          <input value={from} onChange={(e) => setFrom(e.target.value)} type="date" className="min-w-0 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-changes-from" />
+        </label>
+
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground">
+          <CalendarDays className="h-4 w-4 text-info" /><span className="hidden xl:inline">To</span>
+          <input value={to} onChange={(e) => setTo(e.target.value)} type="date" className="min-w-0 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-changes-to" />
+        </label>
+
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground">
+          <span className="font-mono text-[10px] font-bold uppercase">Schedule</span>
+          <input value={scheduleCode} onChange={(e) => setScheduleCode(e.target.value ? Number(e.target.value) : '')} type="number" min="0" placeholder="Any" className="w-20 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-changes-schedule" />
         </label>
         
         <label className="flex h-11 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">

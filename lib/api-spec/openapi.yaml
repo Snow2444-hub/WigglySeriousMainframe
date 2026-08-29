@@ -405,11 +405,31 @@ paths:
           schema:
             type: integer
             minimum: 1
+        - name: scheduleCode
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
         - name: changeType
           in: query
           schema:
             type: string
             enum: [new_item, new_brand, delisted, price_change, formulary_change, listing_amendment, premium_added, premium_changed, premium_removed]
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [decrease]
         - name: significance
           in: query
           schema:
@@ -462,6 +482,21 @@ paths:
           in: query
           schema:
             type: string
+        - name: pbs
+          in: query
+          schema:
+            type: string
+            enum: [all, listed, unlisted]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: ARTG records
@@ -1822,6 +1857,12 @@ components:
     DashboardSummary:
       type: object
       properties:
+        periods:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardPeriodSummary"
+        currentSchedule:
+          $ref: "#/components/schemas/DashboardScheduleSnapshot"
         totalStockUnits:
           type: integer
         stockLineCount:
@@ -1840,7 +1881,60 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PharmacyStock"
-      required: [totalStockUnits, stockLineCount, trackedItems, formularyBreakdown, recentStock]
+      required: [periods, currentSchedule, totalStockUnits, stockLineCount, trackedItems, formularyBreakdown, recentStock]
+    DashboardPeriodSummary:
+      type: object
+      properties:
+        key:
+          type: string
+          enum: [this_schedule, three_months, twelve_months]
+        label:
+          type: string
+        from:
+          type: ["string", "null"]
+          format: date
+        to:
+          type: ["string", "null"]
+          format: date
+        available:
+          type: boolean
+        counts:
+          type: object
+          properties:
+            newBrands:
+              type: integer
+            priceReductions:
+              type: integer
+            delistings:
+              type: integer
+            formularyChanges:
+              type: integer
+            amendedListings:
+              type: integer
+            upcomingReductions:
+              type: integer
+            artgNotPbsListed:
+              type: integer
+          required: [newBrands, priceReductions, delistings, formularyChanges, amendedListings, upcomingReductions, artgNotPbsListed]
+        nextUpcomingReductionDate:
+          type: ["string", "null"]
+          format: date
+      required: [key, label, from, to, available, counts, nextUpcomingReductionDate]
+    DashboardScheduleSnapshot:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [available, unavailable, in_progress]
+        scheduleCode:
+          type: ["integer", "null"]
+        effectiveDate:
+          type: ["string", "null"]
+          format: date
+        lastSuccessfulIngestionAt:
+          type: ["string", "null"]
+          format: date-time
+      required: [status, scheduleCode, effectiveDate, lastSuccessfulIngestionAt]
     AdminIngestionRun:
       type: object
       properties:

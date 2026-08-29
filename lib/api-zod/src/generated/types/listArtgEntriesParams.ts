@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ListArtgEntriesPbs } from './listArtgEntriesPbs';
 
 export type ListArtgEntriesParams = {
 /**
@@ -12,4 +13,7 @@ export type ListArtgEntriesParams = {
  */
 search?: string;
 status?: string;
+pbs?: ListArtgEntriesPbs;
+from?: Date;
+to?: Date;
 };

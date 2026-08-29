@@ -193,6 +193,26 @@ function queryDateOnly(value: string | Date | undefined): string | undefined {
   return value instanceof Date ? value.toISOString().slice(0, 10) : value;
 }
 
+function jsonNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+function isPriceReduction(change: { oldValue: unknown; newValue: unknown }): boolean {
+  const oldPrice = jsonNumber(
+    typeof change.oldValue === "object" && change.oldValue !== null
+      ? (change.oldValue as Record<string, unknown>).determined_price
+      : undefined,
+  );
+  const newPrice = jsonNumber(
+    typeof change.newValue === "object" && change.newValue !== null
+      ? (change.newValue as Record<string, unknown>).determined_price
+      : undefined,
+  );
+  return oldPrice !== null && newPrice !== null && newPrice < oldPrice;
+}
+
 function strengthSortValue(strength: string | null): number {
   const value = strength?.match(/\d+(?:\.\d+)?/)?.[0];
   return value ? Number(value) : Number.POSITIVE_INFINITY;
@@ -933,7 +953,7 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { drugId, changeType, significance, limit = 200 } = parsed.data;
+  const { drugId, scheduleCode, from, to, changeType, direction, significance, limit = 200 } = parsed.data;
   const rows = await db
     .select(scheduleChangeSelect)
     .from(scheduleChangesTable)
@@ -941,6 +961,9 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     .where(
       and(
         drugId ? eq(scheduleChangesTable.drugId, drugId) : undefined,
+        scheduleCode !== undefined ? eq(scheduleChangesTable.scheduleCode, scheduleCode) : undefined,
+        from ? gte(scheduleChangesTable.effectiveDate, queryDateOnly(from)!) : undefined,
+        to ? lte(scheduleChangesTable.effectiveDate, queryDateOnly(to)!) : undefined,
         changeType ? eq(scheduleChangesTable.changeType, changeType) : undefined,
         significance ? eq(scheduleChangesTable.significance, significance) : undefined,
       ),
@@ -948,7 +971,9 @@ router.get("/schedule-changes", async (req, res): Promise<void> => {
     .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id))
     .limit(limit);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);
-  const visibleRows = rows.filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName));
+  const visibleRows = rows
+    .filter((row) => !isBrandHidden(hiddenBrandKeys, row.drugId, row.brandName))
+    .filter((row) => direction !== "decrease" || row.changeType !== "price_change" || isPriceReduction(row));
   res.json(ListScheduleChangesResponse.parse(await enrichScheduleChangeRows(visibleRows)));
 });
 
@@ -973,7 +998,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { search, status } = parsed.data;
+  const { search, status, pbs, from, to } = parsed.data;
   const [rows, pbsItems] = await Promise.all([
     db
       .select()
@@ -981,6 +1006,8 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
       .where(
         and(
           status ? ilike(artgEntriesTable.status, status) : undefined,
+          from ? gte(artgEntriesTable.registrationDate, queryDateOnly(from)!) : undefined,
+          to ? lte(artgEntriesTable.registrationDate, queryDateOnly(to)!) : undefined,
           search
             ? or(
                 ilike(artgEntriesTable.artgId, `%${search}%`),
@@ -1021,7 +1048,9 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
       daysSinceRegistration,
     };
   });
-  res.json(ListArtgEntriesResponse.parse(entries));
+  res.json(ListArtgEntriesResponse.parse(entries.filter((entry) =>
+    !pbs || pbs === "all" || (pbs === "listed" ? entry.pbsListed : !entry.pbsListed),
+  )));
 });
 
 router.get("/artg-import-status", async (_req, res): Promise<void> => {

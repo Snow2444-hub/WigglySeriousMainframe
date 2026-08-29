@@ -1,11 +1,14 @@
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
+  artgEntriesTable,
   drugsTable,
+  ingestionRunsTable,
   pharmacyStockTable,
   pbsItemsTable,
   predictedReductionsTable,
+  scheduleChangesTable,
 } from "@workspace/db";
 import {
   CreateStockBody,
@@ -19,6 +22,21 @@ import {
   UpdateStockResponse,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
+import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
+import { pbsBrandMatchesArtgProduct } from "../lib/artg-import";
+
+export function dashboardPriceReduction(oldValue: unknown, newValue: unknown): boolean {
+  const readPrice = (value: unknown) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const price = (value as Record<string, unknown>).determined_price;
+    if (typeof price === "number" && Number.isFinite(price)) return price;
+    if (typeof price === "string" && price.trim() && Number.isFinite(Number(price))) return Number(price);
+    return null;
+  };
+  const oldPrice = readPrice(oldValue);
+  const newPrice = readPrice(newValue);
+  return oldPrice !== null && newPrice !== null && newPrice < oldPrice;
+}
 
 export function createStockRouter(
   database: typeof db = db,
@@ -148,6 +166,195 @@ async function getUserExposure(userId: string) {
   return { rows: exposureRows, summary };
 }
 
+type DashboardChange = {
+  scheduleCode: number;
+  effectiveDate: string;
+  changeType: string;
+  drugId: number;
+  brandName: string | null;
+  oldValue: unknown;
+  newValue: unknown;
+  affectedItems: Array<{ brandName: string }> | null;
+};
+
+type DashboardPeriodKey = "this_schedule" | "three_months" | "twelve_months";
+
+function dateMonthsAgo(dateValue: string, months: number): string {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const result = new Date(Date.UTC(year, month - 1 - months, day));
+  return result.toISOString().slice(0, 10);
+}
+
+function isPriceReduction(change: DashboardChange): boolean {
+  return dashboardPriceReduction(change.oldValue, change.newValue);
+}
+
+function isVisibleDashboardChange(change: DashboardChange, hiddenBrandKeys: Set<string>): boolean {
+  if (change.brandName && !isBrandHidden(hiddenBrandKeys, change.drugId, change.brandName)) return true;
+  if (change.affectedItems?.length) {
+    return change.affectedItems.some((item) => !isBrandHidden(hiddenBrandKeys, change.drugId, item.brandName));
+  }
+  return !change.brandName;
+}
+
+function upcomingEventKey(row: { drugId: number; predictedDate: string; currentPrice: number; predictedNewPrice: number; predictedPercentage: number }): string {
+  return [
+    row.drugId,
+    row.predictedDate.slice(0, 10),
+    row.currentPrice,
+    row.predictedNewPrice,
+    row.predictedPercentage,
+  ].join(":");
+}
+
+async function getDashboardSummary(database: typeof db, userId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const twelveMonthsAgo = dateMonthsAgo(today, 12);
+  const [currentRun, activeRun] = await Promise.all([
+    database
+      .select({
+        scheduleCode: ingestionRunsTable.scheduleCode,
+        effectiveDate: ingestionRunsTable.scheduleEffectiveDate,
+        finishedAt: ingestionRunsTable.finishedAt,
+      })
+      .from(ingestionRunsTable)
+      .where(
+        and(
+          eq(ingestionRunsTable.status, "completed"),
+          eq(ingestionRunsTable.snapshotComplete, true),
+          isNotNull(ingestionRunsTable.scheduleCode),
+          isNotNull(ingestionRunsTable.scheduleEffectiveDate),
+        ),
+      )
+      .orderBy(desc(ingestionRunsTable.finishedAt))
+      .limit(1),
+    database
+      .select({ id: ingestionRunsTable.id })
+      .from(ingestionRunsTable)
+      .where(inArray(ingestionRunsTable.status, ["queued", "running"]))
+      .limit(1),
+  ]);
+  const completed = currentRun[0];
+  const scheduleAvailable = completed?.scheduleCode !== null
+    && completed?.scheduleCode !== undefined
+    && Boolean(completed.effectiveDate);
+  const currentSchedule = {
+    status: activeRun.length && !completed ? "in_progress" : scheduleAvailable ? "available" : activeRun.length ? "in_progress" : "unavailable",
+    scheduleCode: completed?.scheduleCode ?? null,
+    effectiveDate: completed?.effectiveDate ?? null,
+    lastSuccessfulIngestionAt: completed?.finishedAt ?? null,
+  } as const;
+
+  const [changeRows, predictionRows, artgRows, pbsBrands] = await Promise.all([
+    database
+      .select({
+        scheduleCode: scheduleChangesTable.scheduleCode,
+        effectiveDate: scheduleChangesTable.effectiveDate,
+        changeType: scheduleChangesTable.changeType,
+        drugId: scheduleChangesTable.drugId,
+        brandName: scheduleChangesTable.brandName,
+        oldValue: scheduleChangesTable.oldValue,
+        newValue: scheduleChangesTable.newValue,
+        affectedItems: scheduleChangesTable.affectedItems,
+      })
+      .from(scheduleChangesTable)
+      .where(gte(scheduleChangesTable.effectiveDate, twelveMonthsAgo)),
+    database
+      .select({
+        drugId: predictedReductionsTable.drugId,
+        predictedDate: predictedReductionsTable.predictedDate,
+        currentPrice: pbsItemsTable.currentAemp,
+        predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+        predictedPercentage: predictedReductionsTable.predictedPercentage,
+      })
+      .from(predictedReductionsTable)
+      .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
+      .where(
+        and(
+          gte(predictedReductionsTable.predictedDate, today),
+          lte(predictedReductionsTable.predictedDate, dateMonthsAgo(today, -12)),
+        ),
+      ),
+    database
+      .select({
+        matchedDrugId: artgEntriesTable.matchedDrugId,
+        registrationDate: artgEntriesTable.registrationDate,
+        productName: artgEntriesTable.productName,
+        status: artgEntriesTable.status,
+      })
+      .from(artgEntriesTable)
+      .where(
+        and(
+          gte(artgEntriesTable.registrationDate, twelveMonthsAgo),
+          lte(artgEntriesTable.registrationDate, today),
+        ),
+      ),
+    database
+      .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
+      .from(pbsItemsTable),
+  ]);
+  const hiddenBrandKeys = await getHiddenBrandKeys(userId);
+  const visibleChanges = (changeRows as DashboardChange[]).filter((change) =>
+    isVisibleDashboardChange(change, hiddenBrandKeys),
+  );
+  const brandsByDrug = new Map<number, string[]>();
+  for (const item of pbsBrands) {
+    brandsByDrug.set(item.drugId, [...(brandsByDrug.get(item.drugId) ?? []), item.brandName]);
+  }
+  const unlistedArtgCount = (from: string, to: string | null) => artgRows.filter((entry) => {
+    const status = entry.status.trim().toLocaleUpperCase();
+    if (!status.includes("REGISTER")) return false;
+    if (entry.registrationDate < from || (to && entry.registrationDate > to)) return false;
+    const candidateBrands = entry.matchedDrugId ? brandsByDrug.get(entry.matchedDrugId) ?? [] : [];
+    return !candidateBrands.some((brand) => pbsBrandMatchesArtgProduct(entry.productName, brand));
+  }).length;
+
+  const periodDefinitions: Array<{ key: DashboardPeriodKey; label: string; from: string | null; to: string | null }> = [
+    { key: "this_schedule", label: "This schedule", from: completed?.effectiveDate ?? null, to: null },
+    { key: "three_months", label: "3 months", from: dateMonthsAgo(today, 3), to: today },
+    { key: "twelve_months", label: "12 months", from: twelveMonthsAgo, to: today },
+  ];
+  const periods = periodDefinitions.map((period) => {
+    const available = scheduleAvailable;
+    const changes = available
+      ? visibleChanges.filter((change) =>
+          period.key === "this_schedule"
+            ? change.scheduleCode === completed?.scheduleCode
+            : change.effectiveDate >= (period.from ?? twelveMonthsAgo) && change.effectiveDate <= (period.to ?? today),
+        )
+      : [];
+    const predictions = available
+      ? predictionRows.filter((row) => {
+        if (period.key === "this_schedule") return row.predictedDate >= today;
+        const futureTo = dateMonthsAgo(today, period.key === "three_months" ? -3 : -12);
+        return row.predictedDate >= today && row.predictedDate <= futureTo;
+      })
+      : [];
+    const predictionEvents = new Set(predictions.map(upcomingEventKey));
+    const nextUpcomingReductionDate = predictions
+      .map((row) => row.predictedDate.slice(0, 10))
+      .sort()[0] ?? null;
+    return {
+      key: period.key,
+      label: period.label,
+      from: period.from,
+      to: period.to,
+      available,
+      counts: {
+        newBrands: changes.filter((change) => change.changeType === "new_brand").length,
+        priceReductions: changes.filter((change) => change.changeType === "price_change" && isPriceReduction(change)).length,
+        delistings: changes.filter((change) => change.changeType === "delisted").length,
+        formularyChanges: changes.filter((change) => change.changeType === "formulary_change").length,
+        amendedListings: changes.filter((change) => change.changeType === "listing_amendment").length,
+        upcomingReductions: predictionEvents.size,
+        artgNotPbsListed: unlistedArtgCount(period.from ?? twelveMonthsAgo, period.to),
+      },
+      nextUpcomingReductionDate,
+    };
+  });
+  return { periods, currentSchedule };
+}
+
 router.get("/dashboard", authMiddleware, async (req, res): Promise<void> => {
   const userId = req.userId!;
   const rows = await getUserStock(userId);
@@ -165,7 +372,9 @@ router.get("/dashboard", authMiddleware, async (req, res): Promise<void> => {
     },
     { F1: 0, F2: 0 },
   );
+  const referenceSummary = await getDashboardSummary(database, userId);
   const summary = {
+    ...referenceSummary,
     totalStockUnits: rows.reduce((total, row) => total + row.quantity, 0),
     stockLineCount: rows.length,
     trackedItems: itemCodes.size,

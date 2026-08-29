@@ -5,7 +5,7 @@ import {
   type UpcomingPredictedReductionGroup,
   useListUpcomingPredictedReductions,
 } from '@workspace/api-client-react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { CalendarDays, ChevronDown, Filter, Layers3 } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
@@ -42,8 +42,10 @@ function ListingRows({ brand }: { brand: UpcomingPredictedBrandReductionGroup })
 }
 
 export function UpcomingChangesPage() {
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [location] = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.split('?')[1] ?? ''), [location]);
+  const [from, setFrom] = useState(() => initialParams.get('from') ?? '');
+  const [to, setTo] = useState(() => initialParams.get('to') ?? '');
   const [confidence, setConfidence] = useState<ConfidenceFilter>('');
   const [openEvents, setOpenEvents] = useState<string[]>([]);
   const [openBrands, setOpenBrands] = useState<string[]>([]);

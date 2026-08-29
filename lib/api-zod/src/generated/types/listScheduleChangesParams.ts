@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListScheduleChangesChangeType } from './listScheduleChangesChangeType';
+import type { ListScheduleChangesDirection } from './listScheduleChangesDirection';
 import type { ListScheduleChangesSignificance } from './listScheduleChangesSignificance';
 
 export type ListScheduleChangesParams = {
@@ -13,7 +14,14 @@ export type ListScheduleChangesParams = {
  * @minimum 1
  */
 drugId?: number;
+/**
+ * @minimum 0
+ */
+scheduleCode?: number;
+from?: Date;
+to?: Date;
 changeType?: ListScheduleChangesChangeType;
+direction?: ListScheduleChangesDirection;
 significance?: ListScheduleChangesSignificance;
 /**
  * @minimum 1

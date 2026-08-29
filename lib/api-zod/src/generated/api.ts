@@ -21,6 +21,29 @@ export const HealthCheckResponse = zod.object({
  * @summary Get pharmacy dashboard summary
  */
 export const GetDashboardResponse = zod.object({
+  "periods": zod.array(zod.object({
+  "key": zod.enum(['this_schedule', 'three_months', 'twelve_months']),
+  "label": zod.string(),
+  "from": zod.coerce.date().nullable(),
+  "to": zod.coerce.date().nullable(),
+  "available": zod.boolean(),
+  "counts": zod.object({
+  "newBrands": zod.int(),
+  "priceReductions": zod.int(),
+  "delistings": zod.int(),
+  "formularyChanges": zod.int(),
+  "amendedListings": zod.int(),
+  "upcomingReductions": zod.int(),
+  "artgNotPbsListed": zod.int()
+}),
+  "nextUpcomingReductionDate": zod.coerce.date().nullable()
+})),
+  "currentSchedule": zod.object({
+  "status": zod.enum(['available', 'unavailable', 'in_progress']),
+  "scheduleCode": zod.int().nullable(),
+  "effectiveDate": zod.coerce.date().nullable(),
+  "lastSuccessfulIngestionAt": zod.coerce.date().nullable()
+}),
   "totalStockUnits": zod.int(),
   "stockLineCount": zod.int(),
   "trackedItems": zod.int(),
@@ -559,6 +582,8 @@ export const ListItemScheduleChangesResponse = zod.array(ListItemScheduleChanges
  * @summary List PBS schedule changes
  */
 
+export const listScheduleChangesQueryScheduleCodeMin = 0;
+
 export const listScheduleChangesQueryLimitDefault = 200;
 export const listScheduleChangesQueryLimitMax = 500;
 
@@ -566,7 +591,11 @@ export const listScheduleChangesQueryLimitMax = 500;
 
 export const ListScheduleChangesQueryParams = zod.object({
   "drugId": zod.coerce.number().int().min(1).optional(),
+  "scheduleCode": zod.coerce.number().int().min(listScheduleChangesQueryScheduleCodeMin).optional(),
+  "from": zod.date().optional(),
+  "to": zod.date().optional(),
   "changeType": zod.enum(['new_item', 'new_brand', 'delisted', 'price_change', 'formulary_change', 'listing_amendment', 'premium_added', 'premium_changed', 'premium_removed']).optional(),
+  "direction": zod.enum(['decrease']).optional(),
   "significance": zod.enum(['normal', 'medium', 'high']).optional(),
   "limit": zod.coerce.number().int().min(1).max(listScheduleChangesQueryLimitMax).default(listScheduleChangesQueryLimitDefault)
 })
@@ -645,7 +674,10 @@ export const GetDrugScheduleTimelineResponse = zod.array(GetDrugScheduleTimeline
  */
 export const ListArtgEntriesQueryParams = zod.object({
   "search": zod.coerce.string().optional().describe('Search by ARTG ID, active ingredient, sponsor, or product name'),
-  "status": zod.coerce.string().optional()
+  "status": zod.coerce.string().optional(),
+  "pbs": zod.enum(['all', 'listed', 'unlisted']).optional(),
+  "from": zod.date().optional(),
+  "to": zod.date().optional()
 })
 
 export const ListArtgEntriesResponseItem = zod.object({

@@ -51,7 +51,7 @@ export async function executeCurrentIngestionRun(
   try {
     await db
       .update(ingestionRunsTable)
-      .set({ status: "running" })
+      .set({ status: "running", snapshotComplete: false })
       .where(eq(ingestionRunsTable.id, runId));
 
     const enabledWatchlist = await db
@@ -215,11 +215,14 @@ export async function executeCurrentIngestionRun(
     await db
       .update(ingestionRunsTable)
       .set({
+        scheduleCode,
+        scheduleEffectiveDate,
         status: "completed",
         finishedAt: new Date(),
         recordsProcessed,
         pagesFetched: pages.length,
         requestUrls: [...requestUrls],
+        snapshotComplete: !pageCapReached,
       })
       .where(eq(ingestionRunsTable.id, runId));
 

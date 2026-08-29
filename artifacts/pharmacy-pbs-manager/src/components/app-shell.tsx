@@ -23,7 +23,8 @@ import { useCurrentRole } from '@/components/admin-guard';
 import {
   useGetPharmacyBrandPreferences,
   useClearPharmacyBrandPreferences,
-  getGetPharmacyBrandPreferencesQueryKey
+  getGetPharmacyBrandPreferencesQueryKey,
+  useGetDashboard,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -60,6 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { signOut } = useClerk();
   const { user } = useUser();
   const roleQuery = useCurrentRole();
+  const dashboardQuery = useGetDashboard();
   const initials = (user?.firstName?.[0] ?? user?.emailAddresses?.[0]?.emailAddress?.[0] ?? 'P').toUpperCase();
   const visibleNavItems = roleQuery.data?.role === 'admin'
     ? [...navItems, { href: '/admin', label: 'Data updates', icon: Settings2 }]
@@ -150,7 +152,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             )}
-            <span className="hidden rounded-full border border-border bg-card px-3 py-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:inline-flex">Live reference data</span>
+            <div className="hidden max-w-[390px] items-center gap-2 rounded-xl border border-border bg-card px-3 py-1.5 text-[10px] sm:flex" data-testid="schedule-metadata">
+              {dashboardQuery.isLoading ? <span className="font-mono font-bold uppercase tracking-[0.12em] text-muted-foreground">Checking schedule…</span> :
+               dashboardQuery.isError || !dashboardQuery.data ? <span className="font-mono font-bold uppercase tracking-[0.12em] text-warning">Schedule unavailable</span> :
+               dashboardQuery.data.currentSchedule.status === 'in_progress' ? <span className="font-mono font-bold uppercase tracking-[0.12em] text-warning">PBS ingestion in progress</span> :
+               dashboardQuery.data.currentSchedule.status === 'available' ? <span className="truncate font-mono font-bold uppercase tracking-[0.1em] text-muted-foreground" title={`Schedule ${dashboardQuery.data.currentSchedule.scheduleCode} · effective ${dashboardQuery.data.currentSchedule.effectiveDate ?? 'date unavailable'} · last successful ingestion ${dashboardQuery.data.currentSchedule.lastSuccessfulIngestionAt ?? 'unavailable'}`}>Schedule {dashboardQuery.data.currentSchedule.scheduleCode} · {dashboardQuery.data.currentSchedule.effectiveDate} · ingested {dashboardQuery.data.currentSchedule.lastSuccessfulIngestionAt ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(dashboardQuery.data.currentSchedule.lastSuccessfulIngestionAt)) : '—'}</span> :
+               <span className="font-mono font-bold uppercase tracking-[0.12em] text-warning">Schedule metadata unavailable</span>}
+            </div>
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted font-mono text-xs font-bold text-muted-foreground md:hidden">{initials}</span>
           </div>
         </header>

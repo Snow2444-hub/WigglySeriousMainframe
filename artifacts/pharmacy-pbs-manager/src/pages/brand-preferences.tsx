@@ -70,7 +70,7 @@ function applyLocalPreferences(
 export function BrandPreferencesPage() {
   const { data, isLoading, isError, refetch } = useGetPharmacyBrandPreferences();
   const [search, setSearch] = useState("");
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<number, boolean>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<number, boolean>>({});
   const [mutationError, setMutationError] = useState("");
   const queryClient = useQueryClient();
   const preferenceQueryKey = getGetPharmacyBrandPreferencesQueryKey();
@@ -152,7 +152,7 @@ export function BrandPreferencesPage() {
   const showEverything = () => updateVisibility(allBrands, false);
 
   const toggleGroup = (drugId: number) => {
-    setCollapsedGroups((current) => ({ ...current, [drugId]: !current[drugId] }));
+    setExpandedGroups((current) => ({ ...current, [drugId]: !current[drugId] }));
   };
 
   return (
@@ -228,12 +228,12 @@ export function BrandPreferencesPage() {
               const groupVisibleCount = group.brands.filter((brand) => !brand.hidden).length;
               const groupAllVisible = groupVisibleCount === group.brands.length;
               const groupAllHidden = groupVisibleCount === 0;
-              const isCollapsed = collapsedGroups[group.drugId] ?? false;
+               const isExpanded = expandedGroups[group.drugId] ?? false;
               return (
                 <section key={group.drugId} data-testid={`group-brand-${group.drugId}`}>
                   <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                    <button type="button" onClick={() => toggleGroup(group.drugId)} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-expanded={!isCollapsed} aria-controls={`brands-for-drug-${group.drugId}`} data-testid={`button-toggle-brand-group-${group.drugId}`}>
-                      {isCollapsed ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                     <button type="button" onClick={() => toggleGroup(group.drugId)} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-expanded={isExpanded} aria-controls={`brands-for-drug-${group.drugId}`} data-testid={`button-toggle-brand-group-${group.drugId}`}>
+                       {isExpanded ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}
                       <span className="min-w-0">
                         <span className="block truncate text-sm font-bold text-foreground">{group.drugName}</span>
                         <span className="mt-1 block text-xs text-muted-foreground"><span className="font-mono">{groupVisibleCount}</span> visible / <span className="font-mono">{group.brands.length - groupVisibleCount}</span> hidden · <span className="font-mono">{group.brands.length}</span> brands</span>
@@ -241,10 +241,9 @@ export function BrandPreferencesPage() {
                     </button>
                     <div className="flex shrink-0 items-center gap-2 pl-7 sm:pl-0">
                       <button type="button" onClick={() => updateVisibility(group.brands, true)} disabled={groupAllHidden || setPreferences.isPending} className="rounded-lg border border-border bg-background px-2.5 py-2 text-[11px] font-bold text-muted-foreground hover:border-warning/40 hover:text-warning disabled:cursor-not-allowed disabled:opacity-45" data-testid={`button-hide-all-brand-group-${group.drugId}`}>Hide all</button>
-                      <button type="button" onClick={() => updateVisibility(group.brands, false)} disabled={groupAllVisible || setPreferences.isPending} className="rounded-lg border border-border bg-background px-2.5 py-2 text-[11px] font-bold text-muted-foreground hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-45" data-testid={`button-show-all-brand-group-${group.drugId}`}>Show all</button>
                     </div>
                   </div>
-                  {!isCollapsed && <ul id={`brands-for-drug-${group.drugId}`} className="border-t border-border/70 divide-y divide-border/70">
+                   {isExpanded && <ul id={`brands-for-drug-${group.drugId}`} className="border-t border-border/70 divide-y divide-border/70">
                     {group.brands.map((brand) => (
                       <BrandRow key={`${brand.drugId}-${brand.brandName}`} brand={brand} disabled={setPreferences.isPending} onToggle={() => updateVisibility([brand], !brand.hidden)} />
                     ))}

@@ -11,10 +11,10 @@ import {
   getListPbsWatchlistEntriesQueryKey,
   getListPbsItemsQueryKey,
   getListStockQueryKey,
-  getHealthCheckQueryKey,
   type AdminIngestionRun,
   type ArtgEntry,
   type ArtgImportRun,
+  type DashboardPeriodSummary,
   type PbsItem,
   type PbsWatchlistEntry,
   type PharmacyStock,
@@ -29,7 +29,6 @@ import {
   useGetArtgImportStatus,
   useGetScheduleChangeSettings,
   useGetDashboard,
-  useHealthCheck,
   useListAdminIngestionRuns,
   useListAdminArtgImportRuns,
   useListArtgEntries,
@@ -42,8 +41,8 @@ import {
   useUpdateScheduleChangeSettings,
   useUpdateStock,
 } from '@workspace/api-client-react';
-import { Link } from 'wouter';
-import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
+import { ArrowRight, BarChart3, Bell, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -164,31 +163,95 @@ function StatCard({ label, value, detail, icon: Icon, tone = 'neutral', href }: 
     : <div className={className} data-testid={testId}>{content}</div>;
 }
 
+function dashboardDate(value: string | null) {
+  return value
+    ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00Z`))
+    : 'date unavailable';
+}
+
+function dashboardFutureDate(period: DashboardPeriodSummary) {
+  if (period.key === 'this_schedule') return undefined;
+  const value = new Date();
+  value.setUTCMonth(value.getUTCMonth() + (period.key === 'three_months' ? 3 : 12));
+  return value.toISOString().slice(0, 10);
+}
+
+function dashboardHref(
+  period: DashboardPeriodSummary,
+  kind: 'new' | 'price' | 'delisted' | 'formulary' | 'amended' | 'upcoming' | 'artg',
+  scheduleCode: number | null,
+) {
+  const params = new URLSearchParams();
+  if (kind === 'upcoming') {
+    params.set('from', new Date().toISOString().slice(0, 10));
+    const to = dashboardFutureDate(period);
+    if (to) params.set('to', to);
+    return `/upcoming?${params.toString()}`;
+  }
+  if (kind === 'artg') {
+    if (period.from) params.set('from', period.from);
+    if (period.to) params.set('to', period.to);
+    params.set('pbs', 'unlisted');
+    return `/artg?${params.toString()}`;
+  }
+  if (period.key === 'this_schedule' && scheduleCode !== null) params.set('scheduleCode', String(scheduleCode));
+  else {
+    if (period.from) params.set('from', period.from);
+    if (period.to) params.set('to', period.to);
+  }
+  params.set('changeType', kind === 'new' ? 'new_brand' : kind === 'price' ? 'price_change' : kind === 'delisted' ? 'delisted' : kind === 'formulary' ? 'formulary_change' : 'listing_amendment');
+  if (kind === 'price') params.set('direction', 'decrease');
+  return `/changes?${params.toString()}`;
+}
+
 function Dashboard() {
   const dashboard = useGetDashboard();
-  const health = useHealthCheck({ query: { queryKey: getHealthCheckQueryKey() } });
-  if (dashboard.isLoading) return <AppShell><PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." /><QueryState kind="loading" /></AppShell>;
-  if (dashboard.isError || !dashboard.data) return <AppShell><PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." /><QueryState kind="error" onRetry={() => dashboard.refetch()} /></AppShell>;
+  const [periodKey, setPeriodKey] = useState<DashboardPeriodSummary['key']>('this_schedule');
+  if (dashboard.isLoading) return <AppShell><PageHeading eyebrow="Workspace overview" title="Checking the current schedule…" description="Loading PBS movements, upcoming reductions, and ARTG registration context." /><QueryState kind="loading" /></AppShell>;
+  if (dashboard.isError || !dashboard.data) return <AppShell><PageHeading eyebrow="Workspace overview" title="Schedule monitor unavailable" description="The dashboard could not confirm the current PBS reference snapshot." /><QueryState kind="error" onRetry={() => dashboard.refetch()} /></AppShell>;
   const summary = dashboard.data;
+  const period = summary.periods.find((entry) => entry.key === periodKey) ?? summary.periods[0];
+  const scheduleCode = summary.currentSchedule.scheduleCode;
+  const totalChanges = period.counts.newBrands + period.counts.priceReductions + period.counts.delistings + period.counts.formularyChanges + period.counts.amendedListings;
+  const title = !period.available
+    ? summary.currentSchedule.status === 'in_progress' ? 'PBS update in progress' : 'PBS schedule data unavailable'
+    : period.nextUpcomingReductionDate
+      ? `Next reduction ${dashboardDate(period.nextUpcomingReductionDate)}`
+      : `${totalChanges} changes in ${period.label.toLocaleLowerCase()}`;
+  const description = !period.available
+    ? 'Headline counts will appear after a complete current PBS reference snapshot is available.'
+    : `Monitoring ${period.label.toLocaleLowerCase()} across PBS movements, predicted reductions, and ARTG registrations.`;
+  const tiles = [
+    { label: 'New brands', key: 'newBrands', detail: 'PBS additions', icon: PackagePlus, tone: 'success', kind: 'new' },
+    { label: 'Price reductions', key: 'priceReductions', detail: 'downward changes', icon: TrendingDown, tone: 'info', kind: 'price' },
+    { label: 'Delistings', key: 'delistings', detail: 'removed listings', icon: XCircle, tone: 'danger', kind: 'delisted' },
+    { label: 'Formulary changes', key: 'formularyChanges', detail: 'access updates', icon: Filter, tone: 'warning', kind: 'formulary' },
+    { label: 'Amended listings', key: 'amendedListings', detail: 'listing updates', icon: Pencil, tone: 'neutral', kind: 'amended' },
+    { label: 'Upcoming reductions', key: 'upcomingReductions', detail: 'predicted events', icon: CalendarDays, tone: 'info', kind: 'upcoming' },
+    { label: 'ARTG not PBS-listed', key: 'artgNotPbsListed', detail: 'registered products', icon: DatabaseZap, tone: 'warning', kind: 'artg' },
+  ] as const;
   return <AppShell>
-    <PageHeading eyebrow="Workspace overview" title="Good morning." description="A quick read on the stock and reference data your team uses most." action={<Link href="/stock" className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-add-stock"><Plus className="h-4 w-4" /> Add stock record</Link>} />
+    <PageHeading eyebrow="Workspace overview" title={title} description={description} action={<Link href="/changes" className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-sm hover:-translate-y-0.5 hover:shadow-md" data-testid="link-view-pbs-updates"><Bell className="h-4 w-4" /> View PBS updates</Link>} />
+    <div className="mb-6 flex flex-col gap-4 rounded-2xl border border-border bg-card p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
+      <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Reporting period</p><p className="mt-1 text-sm font-semibold text-foreground">{period.available ? `${period.label} · ${totalChanges} PBS change${totalChanges === 1 ? '' : 's'}` : 'Reference snapshot unavailable'}</p></div>
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Reporting period">
+        {summary.periods.map((entry) => <button key={entry.key} type="button" onClick={() => setPeriodKey(entry.key)} className={`rounded-xl px-3.5 py-2 text-xs font-bold transition-colors ${entry.key === period.key ? 'bg-primary text-primary-foreground' : 'border border-border bg-background text-muted-foreground hover:bg-muted'}`} data-testid={`button-dashboard-period-${entry.key}`}>{entry.label}</button>)}
+      </div>
+    </div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard label="Stock units" value={summary.totalStockUnits} detail="on hand" icon={Boxes} href="/stock" />
-      <StatCard label="Stock lines" value={summary.stockLineCount} detail="records" icon={PackagePlus} tone="info" href="/stock" />
-      <StatCard label="Tracked items" value={summary.trackedItems} detail="PBS items" icon={BookOpen} tone="info" href="/pbs" />
-      <StatCard label="PBS mix" value={`${summary.formularyBreakdown.F1}/${summary.formularyBreakdown.F2}`} detail="F1 / F2" icon={BarChart3} tone="info" href="/pbs" />
+      {tiles.map((tile) => <StatCard key={tile.label} label={tile.label} value={period.available ? period.counts[tile.key] : '—'} detail={period.available ? tile.detail : 'unavailable'} icon={tile.icon} tone={tile.tone} href={period.available ? dashboardHref(period, tile.kind, scheduleCode) : undefined} />)}
     </div>
     <div className="mt-6 grid gap-6 xl:grid-cols-[1.35fr_.65fr]">
       <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-recent-stock">
         <div className="flex items-center justify-between border-b border-border px-5 py-4"><div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Private workspace</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Recent stock records</h2></div><Link href="/stock" className="flex items-center gap-1 text-xs font-bold text-info hover:gap-2" data-testid="link-view-all-stock">View all <ArrowRight className="h-3.5 w-3.5" /></Link></div>
         {summary.recentStock?.length ? <div className="divide-y divide-border">{summary.recentStock.slice(0, 5).map((item, index) => <div key={item.id} className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-muted/45" data-testid={`row-recent-stock-${item.id}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-secondary font-mono text-xs font-bold text-secondary-foreground">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{[item.brandName, item.strength, item.packSize ? `pack ${item.packSize}` : null].filter(Boolean).join(' · ')}</p><p className="mt-0.5 text-[11px] text-muted-foreground" title={`Internal listing ID: ${item.itemCode}`}>PBS {item.pbsCode ?? 'code not supplied'} · added {date(item.purchaseDate)}</p></div><div className="text-right"><p className="font-mono text-sm font-bold">{item.quantity} units</p><p className="mt-0.5 text-xs text-muted-foreground">{money(item.purchasePrice)} each</p></div></div>)}</div> : <div className="p-12"><QueryState kind="empty" /></div>}
       </section>
-      <section className="rounded-2xl border border-border bg-sidebar p-6 text-sidebar-foreground shadow-sm" data-testid="card-reference-note">
+       <section className="rounded-2xl border border-border bg-sidebar p-6 text-sidebar-foreground shadow-sm" data-testid="card-reference-note">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sidebar-primary text-sidebar-primary-foreground"><ShieldCheck className="h-5 w-5" /></div>
-        <p className="mt-7 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Reference desk</p>
-        <h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">Know the number before you order.</h2>
-        <p className="mt-3 text-sm leading-relaxed text-sidebar-foreground/65">Search PBS listings, check current ex-manufacturer and wholesale prices, then trace how a price has moved over time.</p>
-        <p className="mt-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-sidebar-foreground/45"><span className={`h-1.5 w-1.5 rounded-full ${health.data?.status === 'ok' ? 'bg-success' : health.isError ? 'bg-destructive' : 'bg-sidebar-foreground/40'}`} />{health.data?.status === 'ok' ? 'Reference service online' : health.isError ? 'Reference service unavailable' : 'Checking reference service'}</p>
+        <p className="mt-7 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-sidebar-foreground/55">Snapshot context</p>
+        <h2 className="mt-2 text-2xl font-bold tracking-[-0.05em]">{summary.currentSchedule.status === 'available' ? `Schedule ${summary.currentSchedule.scheduleCode}` : 'Reference context pending'}</h2>
+        <p className="mt-3 text-sm leading-relaxed text-sidebar-foreground/65">{summary.currentSchedule.effectiveDate ? `Effective ${dashboardDate(summary.currentSchedule.effectiveDate)}. Counts are filtered to the period above.` : 'A complete PBS schedule snapshot is required before headline counts can be trusted.'}</p>
+        <p className="mt-4 flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-sidebar-foreground/45"><span className={`h-1.5 w-1.5 rounded-full ${summary.currentSchedule.status === 'available' ? 'bg-success' : summary.currentSchedule.status === 'in_progress' ? 'bg-warning' : 'bg-destructive'}`} />{summary.currentSchedule.status === 'available' ? 'Complete snapshot' : summary.currentSchedule.status === 'in_progress' ? 'Ingestion in progress' : 'Snapshot unavailable'}</p>
         <Link href="/pbs" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-sidebar-primary px-4 py-3 text-sm font-bold text-sidebar-primary-foreground hover:-translate-y-0.5" data-testid="link-reference-desk"><Search className="h-4 w-4" /> Open PBS directory</Link>
       </section>
     </div>
@@ -274,10 +337,17 @@ function ArtgUploadControl() {
 }
 
 function ArtgDirectory() {
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('');
-  const [pbsState, setPbsState] = useState<'all' | 'listed' | 'unlisted'>('all');
-  const params = useMemo(() => ({ search: search || undefined, status: status || undefined }), [search, status]);
+  const [location] = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.split('?')[1] ?? ''), [location]);
+  const [search, setSearch] = useState(() => initialParams.get('search') ?? '');
+  const [status, setStatus] = useState(() => initialParams.get('status') ?? '');
+  const [from, setFrom] = useState(() => initialParams.get('from') ?? '');
+  const [to, setTo] = useState(() => initialParams.get('to') ?? '');
+  const [pbsState, setPbsState] = useState<'all' | 'listed' | 'unlisted'>(() => {
+    const value = initialParams.get('pbs');
+    return value === 'listed' || value === 'unlisted' ? value : 'all';
+  });
+  const params = useMemo(() => ({ search: search || undefined, status: status || undefined, from: from || undefined, to: to || undefined, pbs: pbsState }), [search, status, from, to, pbsState]);
   const query = useListArtgEntries(params);
   const importStatus = useGetArtgImportStatus({
     query: {
@@ -292,7 +362,7 @@ function ArtgDirectory() {
   return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Review registered products against current PBS brand listings. Data is maintained through reviewed TGA CSV or Excel uploads." />
     {importStatus.data?.isStale && importStatus.data.lastSuccessfulImportAt && <div className="mb-5 flex items-start gap-3 rounded-2xl border-2 border-warning/40 bg-warning/10 px-5 py-4 text-warning shadow-sm" role="alert" data-testid="warning-artg-stale"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><div><h2 className="text-sm font-bold">ARTG data may be out of date</h2><p className="mt-1 text-xs font-medium leading-relaxed">The last successful import was <strong>{formatDateTime(importStatus.data.lastSuccessfulImportAt)}</strong>, more than 45 days ago. Import a current TGA export before relying on registration results.</p></div></div>}
     <ArtgUploadControl />
-    <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="REGISTERED">Registered</option><option value="CANCELLED">Cancelled</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><select value={pbsState} onChange={(e) => setPbsState(e.target.value as typeof pbsState)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-pbs-status"><option value="all">All PBS matches</option><option value="unlisted">Not PBS-listed</option><option value="listed">PBS-listed</option></select></label></div>
+    <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="REGISTERED">Registered</option><option value="CANCELLED">Cancelled</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><select value={pbsState} onChange={(e) => setPbsState(e.target.value as typeof pbsState)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-pbs-status"><option value="all">All PBS matches</option><option value="unlisted">Not PBS-listed</option><option value="listed">PBS-listed</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground"><CalendarDays className="h-4 w-4 text-info" /><span className="hidden lg:inline">From</span><input value={from} onChange={(e) => setFrom(e.target.value)} type="date" className="min-w-0 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-artg-from" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground"><CalendarDays className="h-4 w-4 text-info" /><span className="hidden lg:inline">To</span><input value={to} onChange={(e) => setTo(e.target.value)} type="date" className="min-w-0 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-artg-to" /></label></div>
      {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !productGroups.length ? (
       importStatus.isLoading ? <QueryState kind="loading" /> : importStatus.isError ? <div className="rounded-2xl border border-dashed border-border p-10 text-center" data-testid="empty-artg-status-error"><h2 className="text-lg font-bold">ARTG data status is unavailable</h2><p className="mt-2 text-sm text-muted-foreground">We could not confirm whether an ARTG export has been imported.</p><button type="button" onClick={() => importStatus.refetch()} className="mt-4 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-bold hover:bg-muted">Try again</button></div> : !importStatus.data?.hasSuccessfulImport ? <div className="rounded-2xl border border-dashed border-info/30 bg-info/5 p-10 text-center" data-testid="empty-artg-no-import"><DatabaseZap className="mx-auto h-9 w-9 text-info" /><h2 className="mt-4 text-lg font-bold">No ARTG import has succeeded yet</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">The ARTG register is empty because no data-bearing TGA export has been imported. Use the upload control above to add the first reviewed register snapshot.</p><Link href="/admin" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-info/25 bg-background px-4 py-2.5 text-sm font-bold text-info hover:bg-info/5" data-testid="link-artg-upload-screen">Open Data updates <ArrowRight className="h-4 w-4" /></Link></div> : <QueryState kind="empty" />
      ) : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.95fr_1.35fr_1fr_1fr_.95fr_.8fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground lg:grid"><span>Product</span><span>Strengths / ARTG IDs</span><span>Ingredient</span><span>Sponsor</span><span>Registration / PBS</span><span>Status</span></div><div className="divide-y divide-border">{productGroups.map((group) => <div key={group.groupKey} className={`grid gap-4 px-5 py-5 transition-colors hover:bg-secondary/30 lg:grid-cols-[.95fr_1.35fr_1fr_1fr_.95fr_.8fr] lg:items-start lg:gap-5 ${group.needsPbsReview ? 'border-l-4 border-l-warning pl-4' : ''}`} data-testid={`group-artg-${group.brandName.toLocaleLowerCase().replaceAll(' ', '-')}`}><div className="min-w-0"><p className="text-base font-bold tracking-[-0.02em]">{group.brandName}</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{artgProductDescription(group.primary.productName, group.brandName)}</p><p className="mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{group.entries.length} registered strength{group.entries.length === 1 ? '' : 's'}</p></div><div className="flex flex-wrap gap-2">{group.strengths.map(({ entry, label }) => <div key={entry.artgId} className="rounded-lg border border-border bg-background px-2.5 py-2" data-testid={`row-artg-${entry.artgId}`}><p className="font-mono text-xs font-bold text-info">{label}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">ARTG {entry.artgId}</p></div>)}</div><div className="min-w-0"><p className="text-sm font-semibold">{artgBaseIngredient(group.primary.activeIngredient)}</p></div><p className="min-w-0 text-xs text-muted-foreground lg:text-sm">{group.primary.sponsor}</p><div>{group.needsPbsReview ? <span className="status-badge status-warning">NOT PBS-LISTED</span> : group.pbsListed ? <span className="status-badge status-success">PBS-LISTED</span> : <span className="status-badge status-neutral">NO PBS MATCH</span>}<p className="mt-2 text-xs text-muted-foreground">Registered {date(group.primary.registrationDate)} · {daysSinceLabel(group.primary.daysSinceRegistration)}</p>{group.pbsListed && group.pbsBrandNames.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">{group.pbsBrandNames.join(', ')}</p>}</div><div className="flex flex-wrap gap-2">{group.statuses.map((statusLabel) => <span key={statusLabel} className={`status-badge ${artgStatusClass(statusLabel)}`}>{statusLabel}</span>)}</div></div>)}</div></div>}

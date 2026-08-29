@@ -5,7 +5,7 @@ import express from "express";
 import { inArray } from "drizzle-orm";
 import { db, drugsTable, pharmacyStockTable, pbsItemsTable, pool, predictedReductionsTable } from "@workspace/db";
 import { requireAuth } from "../middlewares/requireAuth";
-import { createStockRouter } from "./stock";
+import { createStockRouter, dashboardPriceReduction } from "./stock";
 
 const userA = "clerk_test_pharmacy_a";
 const userB = "clerk_test_pharmacy_b";
@@ -21,6 +21,12 @@ const testAuth = ((req, _res, next) => {
   req.userId = userId;
   next();
 }) as typeof requireAuth;
+
+test("dashboard price reductions only include a strictly lower determined price", () => {
+  assert.equal(dashboardPriceReduction({ determined_price: 100 }, { determined_price: 99 }), true);
+  assert.equal(dashboardPriceReduction({ determined_price: 100 }, { determined_price: 100 }), false);
+  assert.equal(dashboardPriceReduction({ determined_price: 99 }, { determined_price: 100 }), false);
+});
 
 function newFixtureToken() {
   fixtureNumber += 1;

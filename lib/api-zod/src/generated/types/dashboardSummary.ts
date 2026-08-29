@@ -5,10 +5,14 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { DashboardPeriodSummary } from './dashboardPeriodSummary';
+import type { DashboardScheduleSnapshot } from './dashboardScheduleSnapshot';
 import type { DashboardSummaryFormularyBreakdown } from './dashboardSummaryFormularyBreakdown';
 import type { PharmacyStock } from './pharmacyStock';
 
 export interface DashboardSummary {
+  periods: DashboardPeriodSummary[];
+  currentSchedule: DashboardScheduleSnapshot;
   totalStockUnits: number;
   stockLineCount: number;
   trackedItems: number;
