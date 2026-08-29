@@ -129,6 +129,8 @@ async function executeBackfillIngestionRun(
       .set({
         status: "running",
         mode: "backfill",
+        scheduleDate,
+        maxPages: maxPages ?? null,
         totalSchedules: null,
         schedulesProcessed: 0,
       })
@@ -171,6 +173,8 @@ async function executeBackfillIngestionRun(
       maxPages,
       latestScheduleOnly: false,
       filters: [{ requestKey: `backfill-schedules:${runId}`, params: {} }],
+        stagingRunId: runId,
+        resumeFromStaging: true,
       onPage: async (page) => {
         pagesFetched += 1;
         requestUrls.add(page.url);
@@ -253,6 +257,8 @@ async function executeBackfillIngestionRun(
         latestScheduleOnly: false,
         maxPages: remainingPages,
         filters: scheduleFilters,
+        stagingRunId: runId,
+        resumeFromStaging: true,
         onPage: handlePage,
         onPayload: handlePayload,
       });
@@ -268,6 +274,7 @@ async function executeBackfillIngestionRun(
               filters: [{ requestKey: `items-snapshot:schedule-${schedule.scheduleCode}`, params: {} }],
               coverageScope: "schedule",
               stagingRunId: runId,
+              resumeFromStaging: true,
               onPage: async (page) => {
                 pagesFetched += 1;
                 requestUrls.add(page.url);
@@ -288,6 +295,8 @@ async function executeBackfillIngestionRun(
           latestScheduleOnly: false,
           maxPages: pagesLeft,
           filters: relatedFilters,
+           stagingRunId: runId,
+           resumeFromStaging: true,
           onPage: handlePage,
           onPayload: handlePayload,
         })
@@ -308,6 +317,8 @@ async function executeBackfillIngestionRun(
           latestScheduleOnly: false,
           maxPages: pagesLeftForPremiums,
           filters: premiumFilters,
+          stagingRunId: runId,
+          resumeFromStaging: true,
           onPage: handlePage,
           onPayload: handlePayload,
         });
@@ -604,7 +615,13 @@ router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<voi
     return;
   }
 
-  const acquisition = await acquireIngestionRun({ mode: parsedBody.data.mode ?? "current" });
+  const scheduleDate = currentScheduleDate();
+  const mode = parsedBody.data.mode ?? "current";
+  const acquisition = await acquireIngestionRun({
+    mode,
+    scheduleDate,
+    maxPages: parsedBody.data.maxPages,
+  });
 
   if ("activeRun" in acquisition) {
     res.status(409).json({ error: "An ingestion run is already in progress" });
@@ -612,12 +629,11 @@ router.post("/admin/ingestion-runs", requireAdmin, async (req, res): Promise<voi
   }
 
   const { run } = acquisition;
-  const scheduleDate = currentScheduleDate();
   void executeIngestionRun(
     run.id,
     scheduleDate,
-    parsedBody.data.maxPages,
-    parsedBody.data.mode ?? "current",
+    run.maxPages ?? undefined,
+    run.mode === "backfill" ? "backfill" : "current",
   );
   res.status(202).json(TriggerAdminIngestionResponse.parse(run));
 });

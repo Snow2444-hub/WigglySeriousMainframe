@@ -20,3 +20,4 @@
 - [Deployment startup database termination](deployment-startup-db.md) — A successful image build can still fail autoscale promotion when pre-listen DB work hits PostgreSQL SQLSTATE 57P01.
 - [Dashboard boundary fixtures](dashboard-boundary-fixtures.md) — Compare authenticated dashboard fixture deltas against a seeded baseline when shared reference data may already exist.
 - [Orval generated-output cleanup](orval-generated-output-cleanup.md) — Pre-clean generated trees before Orval; its clean option can leave stale shared-schema declarations.
+- [Ingestion restart resume](ingestion-restart-resume.md) — Requeue interrupted runs, replay run-scoped staged pages, and trust schedule changes only after complete coverage.

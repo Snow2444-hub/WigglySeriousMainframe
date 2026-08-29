@@ -8,6 +8,8 @@ import {
   recalculatePriceChangeSignificance,
 } from "./lib/schedule-changes";
 import { recoverInterruptedIngestionRuns } from "./lib/ingestion-run-control";
+import { resumeIngestionRun } from "./lib/scheduled-ingestion";
+import { executeIngestionRun } from "./routes/admin";
 
 const rawPort = process.env["PORT"];
 
@@ -24,7 +26,7 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 async function start(): Promise<void> {
-  await recoverInterruptedIngestionRuns();
+  const interruptedRuns = await recoverInterruptedIngestionRuns();
   await ensureDefaultReductionSettings();
   await ensureDefaultScheduleChangeSettings();
   await recalculatePriceChangeSignificance();
@@ -39,6 +41,19 @@ async function start(): Promise<void> {
     }
 
     logger.info({ port }, "Server listening");
+    if (interruptedRuns.length > 0) {
+      setImmediate(() => {
+        void (async () => {
+          for (const run of interruptedRuns) {
+            try {
+              await resumeIngestionRun(run, executeIngestionRun);
+            } catch (error) {
+              logger.error({ err: error, runId: run.id }, "Failed to resume interrupted PBS ingestion run");
+            }
+          }
+        })();
+      });
+    }
   });
 }
 

@@ -12,6 +12,8 @@ export const ingestionRunsTable = pgTable("ingestion_runs", {
   requestUrls: jsonb("request_urls").$type<string[]>().notNull().default([]),
   errorMessage: text("error_message"),
   mode: text("mode").notNull().default("current"),
+  scheduleDate: date("schedule_date", { mode: "string" }),
+  maxPages: integer("max_pages"),
   totalSchedules: integer("total_schedules"),
   schedulesProcessed: integer("schedules_processed").notNull().default(0),
   scheduleCode: integer("schedule_code"),

@@ -1,4 +1,4 @@
-import { db, ingestionRunsTable } from "@workspace/db";
+import { db, ingestionRunsTable, type IngestionRun } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { executeCurrentIngestionRun } from "./pbs-current-ingestion";
 import {
@@ -11,6 +11,7 @@ type IngestionExecutor = (
   runId: number,
   scheduleDate: string,
   maxPages?: number,
+  mode?: "current" | "backfill",
 ) => Promise<void>;
 
 type ScheduledIngestionOptions = {
@@ -49,6 +50,7 @@ async function prepareScheduledIngestion(
   options: ScheduledIngestionOptions = {},
 ): Promise<PreparedScheduledIngestion> {
   const now = options.now ?? new Date();
+  const scheduleDate = options.scheduleDate ?? currentScheduleDate();
   const staleRunMinutes = options.staleRunMinutes ?? DEFAULT_STALE_RUN_MINUTES;
   if (!Number.isInteger(staleRunMinutes) || staleRunMinutes <= 0) {
     throw new Error("staleRunMinutes must be a positive integer");
@@ -56,6 +58,8 @@ async function prepareScheduledIngestion(
 
   const acquisition = await acquireIngestionRun({
     recoverStaleBefore: new Date(now.getTime() - staleRunMinutes * 60_000),
+    mode: "current",
+    scheduleDate,
   });
   if ("activeRun" in acquisition) {
     const activeRun = acquisition.activeRun;
@@ -75,9 +79,21 @@ async function prepareScheduledIngestion(
     status: "accepted",
     runId: acquisition.run.id,
     recoveredRunIds: acquisition.recoveredRunIds,
-    scheduleDate: options.scheduleDate ?? currentScheduleDate(),
+    scheduleDate,
     execute: options.execute ?? executeCurrentIngestionRun,
   };
+}
+
+export async function resumeIngestionRun(
+  run: IngestionRun,
+  execute: IngestionExecutor,
+): Promise<void> {
+  await execute(
+    run.id,
+    run.scheduleDate ?? run.startedAt.toISOString().slice(0, 10),
+    run.maxPages ?? undefined,
+    run.mode === "backfill" ? "backfill" : "current",
+  );
 }
 
 async function completeScheduledIngestion(

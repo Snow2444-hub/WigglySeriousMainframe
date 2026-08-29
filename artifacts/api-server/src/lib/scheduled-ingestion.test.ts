@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { db, ingestionRunsTable, pool } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
-import { acquireIngestionRun } from "./ingestion-run-control";
-import { runScheduledIngestion, startScheduledIngestion } from "./scheduled-ingestion";
+import { acquireIngestionRun, recoverInterruptedIngestionRuns } from "./ingestion-run-control";
+import { resumeIngestionRun, runScheduledIngestion, startScheduledIngestion } from "./scheduled-ingestion";
 
 let fixtureNumber = 0;
 
@@ -185,6 +185,48 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
     );
   } finally {
     await deleteRuns([staleRunId, ...(failedRunId ? [failedRunId] : [])]);
+  }
+});
+
+test("API restart requeues and resumes an interrupted run with its original configuration", async () => {
+  const runId = fixtureId();
+  const scheduleDate = "2026-08-28";
+  let resumed: { runId: number; scheduleDate: string; maxPages: number | undefined; mode: string | undefined } | undefined;
+
+  try {
+    await db.insert(ingestionRunsTable).values({
+      id: runId,
+      status: "running",
+      mode: "backfill",
+      scheduleDate,
+      maxPages: 17,
+      recordsProcessed: 42,
+      pagesFetched: 5,
+    });
+
+    const recoveredRuns = await recoverInterruptedIngestionRuns([runId]);
+    const recoveredRun = recoveredRuns.find((candidate) => candidate.id === runId);
+    assert.ok(recoveredRun);
+    assert.equal(recoveredRun.status, "queued");
+    assert.equal(recoveredRun.scheduleDate, scheduleDate);
+    assert.equal(recoveredRun.maxPages, 17);
+
+    await resumeIngestionRun(recoveredRun, async (recoveredRunId, recoveredScheduleDate, maxPages, mode) => {
+      resumed = { runId: recoveredRunId, scheduleDate: recoveredScheduleDate, maxPages, mode };
+      await db
+        .update(ingestionRunsTable)
+        .set({ status: "completed", finishedAt: new Date(), scheduleDate: recoveredScheduleDate })
+        .where(eq(ingestionRunsTable.id, recoveredRunId));
+    });
+
+    assert.deepEqual(resumed, { runId, scheduleDate, maxPages: 17, mode: "backfill" });
+    const [run] = await db
+      .select({ status: ingestionRunsTable.status })
+      .from(ingestionRunsTable)
+      .where(eq(ingestionRunsTable.id, runId));
+    assert.deepEqual(run, { status: "completed" });
+  } finally {
+    await deleteRuns([runId]);
   }
 });
 

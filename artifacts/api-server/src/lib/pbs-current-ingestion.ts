@@ -54,6 +54,8 @@ export async function executeCurrentIngestionRun(
       .set({
         status: "running",
         mode: "current",
+        scheduleDate,
+        maxPages: maxPages ?? null,
         totalSchedules: null,
         schedulesProcessed: 0,
         snapshotComplete: false,
@@ -129,6 +131,8 @@ export async function executeCurrentIngestionRun(
       limit: 100,
       maxPages: 1,
       filters: [{ requestKey: `schedule-metadata:${runId}`, params: {} }],
+      stagingRunId: runId,
+      resumeFromStaging: true,
       onPage: handlePage,
       onPayload: handlePayload,
     });
@@ -147,6 +151,8 @@ export async function executeCurrentIngestionRun(
       scheduleDate,
       maxPages: pagesAvailableAfterSchedule,
       filters,
+      stagingRunId: runId,
+      resumeFromStaging: true,
       onPage: handlePage,
       onPayload: handlePayload,
     });
@@ -160,6 +166,8 @@ export async function executeCurrentIngestionRun(
           scheduleDate,
           maxPages: remainingPages,
           filters: itemIdFilters,
+          stagingRunId: runId,
+          resumeFromStaging: true,
           onPage: handlePage,
           onPayload: handlePayload,
         })
@@ -177,6 +185,8 @@ export async function executeCurrentIngestionRun(
           scheduleDate,
           maxPages: pagesAvailableForPremiums,
           filters: premiumFilters,
+          stagingRunId: runId,
+          resumeFromStaging: true,
           onPage: handlePage,
           onPayload: handlePayload,
         })
@@ -195,6 +205,7 @@ export async function executeCurrentIngestionRun(
             filters: [{ requestKey: `items-snapshot:schedule-${scheduleCode}`, params: {} }],
             coverageScope: "schedule",
             stagingRunId: runId,
+            resumeFromStaging: true,
             onPage: async (page) => {
               requestUrls.add(page.url);
               pagesFetched += 1;

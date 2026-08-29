@@ -8,7 +8,7 @@ import {
   scheduleChangesTable,
   scheduleChangeSettingsTable,
 } from "@workspace/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
@@ -395,20 +395,8 @@ function snapshotKey(scheduleCode: number, effectiveDate: string): string {
   return `${scheduleCode}:${effectiveDate}`;
 }
 
-async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
-  const [pages, schedulePages, premiumRows] = await Promise.all([
-    db
-      .select({
-        id: rawScheduleStagingTable.id,
-        endpoint: rawScheduleStagingTable.endpoint,
-        requestKey: rawScheduleStagingTable.requestKey,
-        coverageScope: rawScheduleStagingTable.coverageScope,
-        coverageComplete: rawScheduleStagingTable.coverageComplete,
-        payload: rawScheduleStagingTable.payload,
-      })
-      .from(rawScheduleStagingTable)
-      .where(eq(rawScheduleStagingTable.endpoint, "items"))
-      .orderBy(asc(rawScheduleStagingTable.id)),
+async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<ScheduleSnapshot[]> {
+  const [schedulePages, premiumRows] = await Promise.all([
     db
       .select({
         endpoint: rawScheduleStagingTable.endpoint,
@@ -442,98 +430,126 @@ async function loadStagedSnapshots(): Promise<ScheduleSnapshot[]> {
 
   const snapshots = new Map<string, ScheduleSnapshot>();
   const coverage = new Map<string, { valid: boolean }>();
-  for (const page of pages) {
-    if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
+  const snapshotSources = new Map<string, { source: string; runId: number }>();
+  let lastPageId = 0;
+  while (true) {
+    const pages = await db
+      .select({
+        id: rawScheduleStagingTable.id,
+        requestKey: rawScheduleStagingTable.requestKey,
+        coverageScope: rawScheduleStagingTable.coverageScope,
+        coverageComplete: rawScheduleStagingTable.coverageComplete,
+        payload: rawScheduleStagingTable.payload,
+      })
+      .from(rawScheduleStagingTable)
+      .where(
+        and(
+          eq(rawScheduleStagingTable.endpoint, "items"),
+          gt(rawScheduleStagingTable.id, lastPageId),
+        ),
+      )
+      .orderBy(asc(rawScheduleStagingTable.id))
+      .limit(25);
+    if (pages.length === 0) break;
+    lastPageId = pages[pages.length - 1]?.id ?? lastPageId;
 
-    const rawRecords = collectionValues(page.payload);
-    const records = recordsFromPayload(page.payload);
-    const firstRecord = records[0];
-    const requestScheduleCode = scheduleCodeFromRequestKey(page.requestKey);
-    const scheduleCode =
-      requestScheduleCode ?? (firstRecord && numberField(firstRecord, "schedule_code"));
-    const effectiveDate =
-      (firstRecord && stringField(firstRecord, "effective_date")) ??
-      (scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode));
-    if (
-      scheduleCode === undefined ||
-      !effectiveDate ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
-    ) {
-      continue;
-    }
+    for (const page of pages) {
+      if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
 
-    const key = snapshotKey(scheduleCode, effectiveDate);
-    const current = coverage.get(key) ?? { valid: true };
-    if (!isCollectionPayload(page.payload) || rawRecords?.some((record) => !isRecord(record))) {
-      current.valid = false;
-    }
-    for (const record of records) {
-      const recordScheduleCode: number | undefined = numberField(record, "schedule_code") ?? scheduleCode;
-      const recordEffectiveDate =
-        stringField(record, "effective_date") ??
-        (recordScheduleCode === undefined ? undefined : effectiveDates.get(recordScheduleCode));
-      if (
-        recordScheduleCode !== scheduleCode ||
-        recordEffectiveDate !== effectiveDate ||
-        !stringField(record, "li_item_id") ||
-        !stringField(record, "active_ingredient", "li_drug_name", "drug_name")
-      ) {
-        current.valid = false;
-      }
-    }
-    coverage.set(key, current);
-  }
-
-  for (const page of pages) {
-    if (page.coverageScope !== "schedule" || !page.coverageComplete) continue;
-    for (const record of recordsFromPayload(page.payload)) {
+      const rawRecords = collectionValues(page.payload);
+      const records = recordsFromPayload(page.payload);
+      const firstRecord = records[0];
+      const requestScheduleCode = scheduleCodeFromRequestKey(page.requestKey);
       const scheduleCode =
-        numberField(record, "schedule_code") ?? scheduleCodeFromRequestKey(page.requestKey);
+        requestScheduleCode ?? (firstRecord && numberField(firstRecord, "schedule_code"));
       const effectiveDate =
-        stringField(record, "effective_date") ??
+        (firstRecord && stringField(firstRecord, "effective_date")) ??
         (scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode));
-      const liItemId = stringField(record, "li_item_id");
-      const drugName = stringField(record, "active_ingredient", "li_drug_name", "drug_name");
       if (
         scheduleCode === undefined ||
         !effectiveDate ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) ||
-        !liItemId ||
-        !drugName
+        !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)
       ) {
         continue;
       }
 
       const key = snapshotKey(scheduleCode, effectiveDate);
-      if (!coverage.get(key)?.valid) continue;
-      const snapshot = snapshots.get(key) ?? {
-        scheduleCode,
-        effectiveDate,
-        drugs: new Map<string, Map<string, SnapshotItem>>(),
-      };
-      const drugKey = normalized(drugName);
-      const items = snapshot.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
-      items.set(liItemId, {
-        liItemId,
-        pbsCode: stringField(record, "pbs_code") ?? null,
-        drugKey,
-        brandName: stringField(record, "brand_name") ?? drugName,
-        strength: stringField(record, "strength", "li_strength") ?? null,
-        determinedPrice: numberField(record, "determined_price", "aemp", "current_aemp") ?? null,
-        formulary:
-          stringField(record, "formulary") === "F1" || stringField(record, "formulary") === "F2"
-            ? (stringField(record, "formulary") as "F1" | "F2")
-            : null,
-        listingFields: listingFieldValues(record),
-        premiumRules: [],
-      });
-      snapshot.drugs.set(drugKey, items);
-      snapshots.set(key, snapshot);
+      const sourceRunId = Number.parseInt(/:run-(\d+)$/.exec(page.requestKey)?.[1] ?? "0", 10);
+      const previousSource = snapshotSources.get(key);
+      if (previousSource && sourceRunId < previousSource.runId) continue;
+      if (previousSource && page.requestKey !== previousSource.source && sourceRunId > previousSource.runId) {
+        snapshots.delete(key);
+        coverage.delete(key);
+      }
+      snapshotSources.set(key, { source: page.requestKey, runId: sourceRunId });
+
+      const current = coverage.get(key) ?? { valid: true };
+      if (!isCollectionPayload(page.payload) || rawRecords?.some((record) => !isRecord(record))) {
+        current.valid = false;
+      }
+      for (const record of records) {
+        const recordScheduleCode: number | undefined = numberField(record, "schedule_code") ?? scheduleCode;
+        const recordEffectiveDate =
+          stringField(record, "effective_date") ??
+          (recordScheduleCode === undefined ? undefined : effectiveDates.get(recordScheduleCode));
+        if (
+          recordScheduleCode !== scheduleCode ||
+          recordEffectiveDate !== effectiveDate ||
+          !stringField(record, "li_item_id") ||
+          !stringField(record, "active_ingredient", "li_drug_name", "drug_name")
+        ) {
+          current.valid = false;
+        }
+      }
+      coverage.set(key, current);
+
+      for (const record of records) {
+        const liItemId = stringField(record, "li_item_id");
+        const drugName = stringField(record, "active_ingredient", "li_drug_name", "drug_name");
+        const drugKey = drugName ? normalized(drugName) : "";
+        if (
+          !current.valid ||
+          !liItemId ||
+          !drugName ||
+          !trackedDrugKeys.has(drugKey)
+        ) {
+          continue;
+        }
+
+        const snapshot = snapshots.get(key) ?? {
+          scheduleCode,
+          effectiveDate,
+          drugs: new Map<string, Map<string, SnapshotItem>>(),
+        };
+        const items = snapshot.drugs.get(drugKey) ?? new Map<string, SnapshotItem>();
+        items.set(liItemId, {
+          liItemId,
+          pbsCode: stringField(record, "pbs_code") ?? null,
+          drugKey,
+          brandName: stringField(record, "brand_name") ?? drugName,
+          strength: stringField(record, "strength", "li_strength") ?? null,
+          determinedPrice: numberField(record, "determined_price", "aemp", "current_aemp") ?? null,
+          formulary:
+            stringField(record, "formulary") === "F1" || stringField(record, "formulary") === "F2"
+              ? (stringField(record, "formulary") as "F1" | "F2")
+              : null,
+          listingFields: listingFieldValues(record),
+          premiumRules: [],
+        });
+        snapshot.drugs.set(drugKey, items);
+        snapshots.set(key, snapshot);
+      }
     }
+
+    if (pages.length < 25) break;
   }
 
   for (const [key, status] of coverage) {
-    if (!status.valid || snapshots.has(key)) continue;
+    if (!status.valid) {
+      snapshots.delete(key);
+      continue;
+    }
+    if (snapshots.has(key)) continue;
     const separator = key.indexOf(":");
     const scheduleCode = Number(key.slice(0, separator));
     const effectiveDate = key.slice(separator + 1);
@@ -910,11 +926,11 @@ export function compareScheduleSnapshots(
 }
 
 export async function syncScheduleChangesFromStagedData(): Promise<number> {
-  const [drugs, snapshots, thresholds] = await Promise.all([
+  const [drugs, thresholds] = await Promise.all([
     db.select({ id: drugsTable.id, activeIngredient: drugsTable.activeIngredient }).from(drugsTable),
-    loadStagedSnapshots(),
     getPriceChangeThresholds(),
   ]);
+  const snapshots = await loadStagedSnapshots(new Set(drugs.map((drug) => normalized(drug.activeIngredient))));
   if (snapshots.length < 2) return 0;
 
   const drugIds = new Map(drugs.map((drug) => [normalized(drug.activeIngredient), drug.id]));

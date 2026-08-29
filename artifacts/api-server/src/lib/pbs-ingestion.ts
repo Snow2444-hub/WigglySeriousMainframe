@@ -27,6 +27,7 @@ export interface FetchScheduleOptions {
   filters?: PbsRequestFilter[];
   coverageScope?: "filtered" | "schedule";
   stagingRunId?: number;
+  resumeFromStaging?: boolean;
   latestScheduleOnly?: boolean;
   request?: RequestLike;
   sleep?: Sleep;
@@ -290,6 +291,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     filters = [{ requestKey: "unfiltered", params: {} }],
     coverageScope = "filtered",
     stagingRunId,
+    resumeFromStaging = false,
     latestScheduleOnly = true,
     request = fetch,
     sleep = defaultSleep,
@@ -331,7 +333,9 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
       const stagingRequestKey =
         stagingRunId === undefined
           ? filter.requestKey
-          : `${filter.requestKey}:run-${stagingRunId}`;
+          : filter.requestKey.endsWith(`:run-${stagingRunId}`)
+            ? filter.requestKey
+            : `${filter.requestKey}:run-${stagingRunId}`;
       let pageNumber = 1;
       let nextUrl: URL | undefined;
 
@@ -345,7 +349,23 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
           { endpoint, requestKey: stagingRequestKey, pageNumber, url: url.toString() },
           "Requesting PBS schedule page",
         );
-        const payload = await fetchPage(url, apiKey, sharedRequestPolicy, maxRetries, request, sleep);
+        const stagedPage = resumeFromStaging && stagingRunId !== undefined
+          ? (await db
+              .select({ payload: rawScheduleStagingTable.payload })
+              .from(rawScheduleStagingTable)
+              .where(
+                and(
+                  eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+                  eq(rawScheduleStagingTable.endpoint, endpoint),
+                  eq(rawScheduleStagingTable.requestKey, stagingRequestKey),
+                  eq(rawScheduleStagingTable.pageNumber, pageNumber),
+                ),
+              )
+              .limit(1))[0]
+          : undefined;
+        const payload: JsonValue = stagedPage
+          ? stagedPage.payload as JsonValue
+          : await fetchPage(url, apiKey, sharedRequestPolicy, maxRetries, request, sleep);
 
         // Persist the untouched API page before interpreting its records.
         await db
