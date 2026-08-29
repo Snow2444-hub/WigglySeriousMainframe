@@ -40,3 +40,10 @@ the current run by most recent `finishedAt`, not highest run ID. This is
 currently harmless while completion order follows run order and only one
 complete current run exists; it matters if runs finish out of order or are
 manually resumed.
+
+### Published FNB uses a schedule-code sentinel
+
+The published-FNB importer stores `scheduleCode: 0` as a sentinel for “no
+schedule code.” The UI now translates that value to “FNB register,” but the
+proper fix is to make the schedule code nullable rather than using `0`.
+This remains deferred with no production-path change for now.
