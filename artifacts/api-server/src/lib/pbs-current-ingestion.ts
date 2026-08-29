@@ -89,7 +89,6 @@ export async function executeCurrentIngestionRun(
         itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
       }
       if (page.endpoint === "items") {
-        itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
         for (const [itemId, metadata] of itemScheduleMetadataFromPayload(page.payload)) {
           itemMetadata.set(itemId, metadata);
         }

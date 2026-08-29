@@ -61,10 +61,12 @@ function buildPbsItemRelationshipFilters(
   const validIds = [...new Set(itemIds)].filter((itemId) => /^[A-Za-z0-9_-]{1,214}$/.test(itemId));
   const filters: PbsRequestFilter[] = [];
 
-  for (let start = 0; start < validIds.length; start += 50) {
-    const ids = validIds.slice(start, start + 50);
+  // Keep these OData item-id filters below the gateway's URL limit. Batches of
+  // 50 can be rejected by the PBS gateway with a misleading 404.
+  for (let start = 0; start < validIds.length; start += 25) {
+    const ids = validIds.slice(start, start + 25);
     filters.push({
-      requestKey: `${requestKeyPrefix}:${start / 50 + 1}`,
+      requestKey: `${requestKeyPrefix}:${start / 25 + 1}`,
       endpoint,
       params: {
         filter: ids.map((itemId) => `li_item_id eq '${itemId}'`).join(" or "),
