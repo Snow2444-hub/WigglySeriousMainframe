@@ -59,6 +59,26 @@ test("parses a valid XLSX ARTG export", () => {
   assert.equal(result.records[0]?.registrationDate, "2024-03-01");
 });
 
+test("converts Excel serial dates and ignores composite/footer rows without counting them invalid", () => {
+  const worksheet = XLSX.utils.aoa_to_sheet([
+    ["ARTG Number", "Generic Name", "Sponsor", "Date of Registration", "Product Name", "ARTG Status", "Product Type"],
+    ["401238", "Rosuvastatin calcium", "Generic Health", 46245, "Rosuvastatin tablets", "Registered", "Single Medicine Product"],
+    ["523373", "", "GlaxoSmithKline Australia Pty Ltd", 46245, "AREXVY vaccine", "Registered", "Composite Pack"],
+    ["Applied filters: Approval Area is Prescription or Over-the-Counter", "", "", "", "", "", ""],
+  ]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "ARTG export");
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+  const result = parseArtgExport(buffer, "tga-artg-export.xlsx", trackedDrugs);
+  assert.equal(result.recordsAccepted, 1);
+  assert.equal(result.recordsRejected, 0);
+  assert.equal(result.recordsSkipped, 1);
+  assert.equal(result.records[0]?.registrationDate, "2026-08-11");
+  assert.match(result.warnings[0] ?? "", /composite pack/);
+  assert.ok(result.warnings.every((warning) => !warning.includes("could not be imported")));
+});
+
 test("matches PBS brands conservatively and never clears legacy data on zero accepted records", () => {
   assert.equal(pbsBrandMatchesArtgProduct("ACTAVANZ 10 mg tablets", "Actavanz"), true);
   assert.equal(pbsBrandMatchesArtgProduct("Rivaroxaban Example tablets", "Xarelto"), false);

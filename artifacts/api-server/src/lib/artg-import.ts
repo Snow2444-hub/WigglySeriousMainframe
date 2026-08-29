@@ -38,6 +38,7 @@ const HEADER_ALIASES = {
   registrationDate: ["start date", "registration date", "artg start date", "date of registration"],
   productName: ["product name", "good name", "trade name", "medicine name"],
   status: ["status", "artg status", "entry status", "registration status"],
+  productType: ["product type"],
 } as const;
 
 const SALT_WORDS = new Set([
@@ -77,6 +78,13 @@ function findHeader(headers: Map<string, string>, aliases: readonly string[]): s
 function dateString(value: unknown): string | null {
   const text = cleanText(value);
   if (!text) return null;
+  if (/^\d{5,}(?:\.\d+)?$/.test(text)) {
+    const serial = Number(text);
+    if (Number.isFinite(serial) && serial >= 1 && serial <= 2_958_465) {
+      const date = new Date(Date.UTC(1899, 11, 30) + Math.round(serial * 86_400_000));
+      if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+    }
+  }
   const australianDate = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
   if (australianDate) {
     const day = Number(australianDate[1]);
@@ -140,6 +148,7 @@ export function parseArtgExport(buffer: Buffer, fileName: string, drugs: Tracked
   const registrationDateHeader = findHeader(headers, HEADER_ALIASES.registrationDate);
   const productNameHeader = findHeader(headers, HEADER_ALIASES.productName);
   const statusHeader = findHeader(headers, HEADER_ALIASES.status);
+  const productTypeHeader = findHeader(headers, HEADER_ALIASES.productType);
   const missing = [
     !artgIdHeader && "ARTG ID",
     !ingredientHeader && "Active ingredient",
@@ -158,20 +167,53 @@ export function parseArtgExport(buffer: Buffer, fileName: string, drugs: Tracked
   const records = new Map<string, ParsedArtgRecord>();
   let rejected = 0;
   let skipped = 0;
+  let compositeSkipped = 0;
+  let unmatchedSkipped = 0;
   for (const [index, row] of rows.entries()) {
     const artgId = cleanText(row[artgIdHeader]);
     const activeIngredient = cleanText(row[ingredientHeader]);
     const sponsor = cleanText(row[sponsorHeader]);
     const productName = cleanText(row[productNameHeader]);
     const registrationDate = dateString(row[registrationDateHeader]);
+    const productType = productTypeHeader ? cleanText(row[productTypeHeader]) : "";
+    const hasNumericArtgId = /^\d+$/.test(artgId);
+    const hasRecordContent = Boolean(activeIngredient || sponsor || productName || registrationDate);
+    if (!hasNumericArtgId && !hasRecordContent) {
+      continue;
+    }
+    if (
+      normaliseHeader(productType) === "composite pack" &&
+      hasNumericArtgId &&
+      !activeIngredient &&
+      sponsor &&
+      productName &&
+      registrationDate
+    ) {
+      skipped += 1;
+      compositeSkipped += 1;
+      if (warnings.length < 20) {
+        warnings.push(`Row ${index + 2} was skipped deliberately: composite pack has no active ingredient on this row.`);
+      }
+      continue;
+    }
     if (!artgId || !activeIngredient || !sponsor || !productName || !registrationDate) {
       rejected += 1;
-      if (warnings.length < 20) warnings.push(`Row ${index + 2} was skipped because a required ARTG value was blank or invalid.`);
+      const missingFields = [
+        !artgId && "ARTG ID",
+        !activeIngredient && "Active ingredient",
+        !sponsor && "Sponsor",
+        !productName && "Product name",
+        !registrationDate && "Start/registration date",
+      ].filter(Boolean);
+      if (warnings.length < 20) {
+        warnings.push(`Row ${index + 2} was skipped because required ARTG field${missingFields.length === 1 ? "" : "s"} ${missingFields.join(", ")} ${missingFields.length === 1 ? "was" : "were"} blank or invalid.`);
+      }
       continue;
     }
     const drug = matchedDrug(activeIngredient, drugs);
     if (!drug) {
       skipped += 1;
+      unmatchedSkipped += 1;
       continue;
     }
     records.set(artgId, {
@@ -186,7 +228,12 @@ export function parseArtgExport(buffer: Buffer, fileName: string, drugs: Tracked
     });
   }
   if (rejected) warnings.push(`${rejected} row${rejected === 1 ? "" : "s"} could not be imported because required ARTG values were missing or invalid.`);
-  if (skipped) warnings.push(`${skipped} row${skipped === 1 ? "" : "s"} did not match an active tracked ingredient and were not added.`);
+  if (compositeSkipped) {
+    warnings.push(`${compositeSkipped} composite-pack row${compositeSkipped === 1 ? "" : "s"} were skipped deliberately because the active ingredient is listed on component rows.`);
+  }
+  if (unmatchedSkipped) {
+    warnings.push(`${unmatchedSkipped} row${unmatchedSkipped === 1 ? "" : "s"} did not match an active tracked ingredient and were not added.`);
+  }
   return {
     rowsRead: rows.length,
     recordsAccepted: records.size,
