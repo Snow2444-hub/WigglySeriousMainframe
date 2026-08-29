@@ -19,6 +19,7 @@ type ScheduledIngestionOptions = {
   scheduleDate?: string;
   staleRunMinutes?: number;
   execute?: IngestionExecutor;
+  excludeActiveRunIds?: number[];
 };
 
 export type ScheduledIngestionResult =
@@ -60,6 +61,7 @@ async function prepareScheduledIngestion(
     recoverStaleBefore: new Date(now.getTime() - staleRunMinutes * 60_000),
     mode: "current",
     scheduleDate,
+    excludeActiveRunIds: options.excludeActiveRunIds,
   });
   if ("activeRun" in acquisition) {
     const activeRun = acquisition.activeRun;

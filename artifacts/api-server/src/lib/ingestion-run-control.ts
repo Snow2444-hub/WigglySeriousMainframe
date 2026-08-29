@@ -1,5 +1,5 @@
 import { db, ingestionRunsTable, rawScheduleStagingTable, type IngestionRun } from "@workspace/db";
-import { and, asc, desc, eq, inArray, like, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, lt, not, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
@@ -19,6 +19,7 @@ type IngestionRunOptions = {
   mode?: IngestionMode;
   scheduleDate?: string;
   maxPages?: number;
+  excludeActiveRunIds?: number[];
 };
 
 /**
@@ -51,10 +52,16 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
       }
     }
 
+    const activeRunPredicate = options.excludeActiveRunIds?.length
+      ? and(
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          not(inArray(ingestionRunsTable.id, options.excludeActiveRunIds)),
+        )
+      : inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES);
     const [activeRun] = await tx
       .select()
       .from(ingestionRunsTable)
-      .where(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES))
+      .where(activeRunPredicate)
       .orderBy(desc(ingestionRunsTable.startedAt))
       .limit(1);
 

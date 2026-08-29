@@ -211,13 +211,13 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
     { coverage: "filtered", expectedChanges: 0 },
     { coverage: "capped", expectedChanges: 0 },
   ];
-  const fixtureBase = 1_600_000_000 + ((Date.now() + process.pid) % 100_000) * 10;
+  const fixtureBase = 1_500_000_000 + ((Date.now() + process.pid) % 100_000_000);
 
   for (const [scenarioIndex, scenario] of scenarios.entries()) {
     const previousScheduleCode = fixtureBase + scenarioIndex * 2;
     const currentScheduleCode = previousScheduleCode + 1;
     const drugId = fixtureBase + scenarioIndex;
-    const scheduleDate = `2090-0${scenarioIndex + 1}-01`;
+    const scheduleDate = `${2090 + ((Date.now() + process.pid) % 1000)}-0${scenarioIndex + 1}-01`;
     const effectiveDates = [`2091-0${scenarioIndex + 1}-01`, `2091-0${scenarioIndex + 1}-02`];
 
     try {
@@ -243,7 +243,9 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
         coverage: scenario.coverage,
       });
 
-      await syncScheduleChangesFromStagedData();
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, currentScheduleCode],
+      });
       const changes = await db
         .select({
           changeType: scheduleChangesTable.changeType,
@@ -277,10 +279,10 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
 });
 
 test("interrupted schedule-wide staging stays incomplete when a later run uses the same schedule", async () => {
-  const previousScheduleCode = 1_950_000_001 + ((Date.now() + process.pid) % 100_000) * 2;
+  const previousScheduleCode = 1_900_000_001 + ((Date.now() + process.pid) % 100_000_000);
   const currentScheduleCode = previousScheduleCode + 1;
   const drugId = previousScheduleCode;
-  const scheduleDate = "2092-01-01";
+  const scheduleDate = `${2092 + ((Date.now() + process.pid) % 1000)}-01-01`;
   const effectiveDates = ["2092-01-01", "2092-02-01"];
   const interruptedRunId = previousScheduleCode + 10;
   const laterRunId = interruptedRunId + 1;
@@ -347,7 +349,12 @@ test("interrupted schedule-wide staging stays incomplete when a later run uses t
         },
       ],
     );
-    assert.equal(await syncScheduleChangesFromStagedData(), 0);
+    assert.equal(
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, currentScheduleCode],
+      }),
+      0,
+    );
     const changes = await db
       .select({ changeType: scheduleChangesTable.changeType })
       .from(scheduleChangesTable)

@@ -18,14 +18,24 @@ async function deleteRuns(runIds: number[]): Promise<void> {
   }
 }
 
+async function activeRunIds(): Promise<number[]> {
+  const runs = await db
+    .select({ id: ingestionRunsTable.id })
+    .from(ingestionRunsTable)
+    .where(inArray(ingestionRunsTable.status, ["queued", "running"]));
+  return runs.map((run) => run.id);
+}
+
 test("scheduled ingestion creates and completes an auditable run", async () => {
   const now = new Date("2026-08-28T02:00:00.000Z");
+  const excludeActiveRunIds = await activeRunIds();
   let runId: number | undefined;
 
   try {
     const result = await runScheduledIngestion({
       now,
       scheduleDate: "2026-08-28",
+      excludeActiveRunIds,
       execute: async (createdRunId) => {
         runId = createdRunId;
         await db
@@ -48,7 +58,8 @@ test("scheduled ingestion creates and completes an auditable run", async () => {
 });
 
 test("scheduled ingestion skips an active manual or scheduled run", async () => {
-  const acquired = await acquireIngestionRun();
+  const excludeActiveRunIds = await activeRunIds();
+  const acquired = await acquireIngestionRun({ excludeActiveRunIds });
   if (!("run" in acquired) || !acquired.run) throw new Error("Expected the fixture run to be created");
   const activeRunId = acquired.run.id;
 
@@ -56,6 +67,7 @@ test("scheduled ingestion skips an active manual or scheduled run", async () => 
     let executorCalled = false;
     const result = await runScheduledIngestion({
       now: new Date("2026-08-28T02:00:00.000Z"),
+      excludeActiveRunIds,
       execute: async () => {
         executorCalled = true;
       },
@@ -73,6 +85,7 @@ test("scheduled ingestion skips an active manual or scheduled run", async () => 
 });
 
 test("background scheduled ingestion preserves the active-run guard", async () => {
+  const excludeActiveRunIds = await activeRunIds();
   let releaseExecution!: () => void;
   const executionStarted = new Promise<void>((resolve) => {
     releaseExecution = resolve;
@@ -92,6 +105,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
     const firstResult = await startScheduledIngestion({
       now: new Date("2026-08-28T02:00:00.000Z"),
       scheduleDate: "2026-08-28",
+      excludeActiveRunIds,
       execute: async (runId) => {
         firstRunId = runId;
         signalExecutionStarted();
@@ -109,6 +123,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
 
     const secondResult = await startScheduledIngestion({
       now: new Date("2026-08-28T02:00:01.000Z"),
+      excludeActiveRunIds,
       execute: async () => {
         secondExecutorCalled = true;
       },
@@ -137,6 +152,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
 test("scheduled ingestion recovers stale work and marks uncaught failures", async () => {
   const staleRunId = fixtureId();
   const now = new Date("2026-08-28T02:00:00.000Z");
+  const excludeActiveRunIds = await activeRunIds();
   const staleStartedAt = new Date("2026-08-27T20:00:00.000Z");
   await db.insert(ingestionRunsTable).values({
     id: staleRunId,
@@ -149,6 +165,7 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
     const result = await runScheduledIngestion({
       now,
       staleRunMinutes: 180,
+      excludeActiveRunIds,
       execute: async (runId) => {
         failedRunId = runId;
         throw new Error("simulated scheduled failure");

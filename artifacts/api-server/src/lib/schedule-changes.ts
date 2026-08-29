@@ -8,7 +8,7 @@ import {
   scheduleChangesTable,
   scheduleChangeSettingsTable,
 } from "@workspace/db";
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, like, or } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
 type JsonRecord = Record<string, unknown>;
@@ -395,7 +395,19 @@ function snapshotKey(scheduleCode: number, effectiveDate: string): string {
   return `${scheduleCode}:${effectiveDate}`;
 }
 
-async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<ScheduleSnapshot[]> {
+async function loadStagedSnapshots(
+  trackedDrugKeys: Set<string>,
+  scheduleCodes?: ReadonlySet<number>,
+): Promise<ScheduleSnapshot[]> {
+  if (scheduleCodes?.size === 0) return [];
+  const scheduleRequestKeyFilter = scheduleCodes
+    ? or(
+        ...[...scheduleCodes].flatMap((scheduleCode) => [
+          eq(rawScheduleStagingTable.requestKey, `schedule-metadata:${scheduleCode}`),
+          like(rawScheduleStagingTable.requestKey, `%schedule-${scheduleCode}%`),
+        ]),
+      )
+    : undefined;
   const [schedulePages, premiumRows] = await Promise.all([
     db
       .select({
@@ -403,7 +415,11 @@ async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<Schedu
         payload: rawScheduleStagingTable.payload,
       })
       .from(rawScheduleStagingTable)
-      .where(eq(rawScheduleStagingTable.endpoint, "schedules"))
+      .where(
+        scheduleRequestKeyFilter
+          ? and(eq(rawScheduleStagingTable.endpoint, "schedules"), scheduleRequestKeyFilter)
+          : eq(rawScheduleStagingTable.endpoint, "schedules"),
+      )
       .orderBy(asc(rawScheduleStagingTable.id)),
     db
       .select()
@@ -423,7 +439,9 @@ async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<Schedu
         scheduleCode !== undefined &&
         /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate ?? "")
       ) {
-        effectiveDates.set(scheduleCode, effectiveDate as string);
+        if (!scheduleCodes || scheduleCodes.has(scheduleCode)) {
+          effectiveDates.set(scheduleCode, effectiveDate as string);
+        }
       }
     }
   }
@@ -443,10 +461,16 @@ async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<Schedu
       })
       .from(rawScheduleStagingTable)
       .where(
-        and(
-          eq(rawScheduleStagingTable.endpoint, "items"),
-          gt(rawScheduleStagingTable.id, lastPageId),
-        ),
+        scheduleRequestKeyFilter
+          ? and(
+              eq(rawScheduleStagingTable.endpoint, "items"),
+              gt(rawScheduleStagingTable.id, lastPageId),
+              scheduleRequestKeyFilter,
+            )
+          : and(
+              eq(rawScheduleStagingTable.endpoint, "items"),
+              gt(rawScheduleStagingTable.id, lastPageId),
+            ),
       )
       .orderBy(asc(rawScheduleStagingTable.id))
       .limit(25);
@@ -462,6 +486,9 @@ async function loadStagedSnapshots(trackedDrugKeys: Set<string>): Promise<Schedu
       const requestScheduleCode = scheduleCodeFromRequestKey(page.requestKey);
       const scheduleCode =
         requestScheduleCode ?? (firstRecord && numberField(firstRecord, "schedule_code"));
+      if (scheduleCode !== undefined && scheduleCodes && !scheduleCodes.has(scheduleCode)) {
+        continue;
+      }
       const effectiveDate =
         (firstRecord && stringField(firstRecord, "effective_date")) ??
         (scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode));
@@ -925,12 +952,16 @@ export function compareScheduleSnapshots(
   return changes;
 }
 
-export async function syncScheduleChangesFromStagedData(): Promise<number> {
+export async function syncScheduleChangesFromStagedData(options: { scheduleCodes?: number[] } = {}): Promise<number> {
   const [drugs, thresholds] = await Promise.all([
     db.select({ id: drugsTable.id, activeIngredient: drugsTable.activeIngredient }).from(drugsTable),
     getPriceChangeThresholds(),
   ]);
-  const snapshots = await loadStagedSnapshots(new Set(drugs.map((drug) => normalized(drug.activeIngredient))));
+  const scheduleCodes = options.scheduleCodes ? new Set(options.scheduleCodes) : undefined;
+  const snapshots = await loadStagedSnapshots(
+    new Set(drugs.map((drug) => normalized(drug.activeIngredient))),
+    scheduleCodes,
+  );
   if (snapshots.length < 2) return 0;
 
   const drugIds = new Map(drugs.map((drug) => [normalized(drug.activeIngredient), drug.id]));
