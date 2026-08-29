@@ -44,9 +44,10 @@ import {
 import { Link, useLocation } from 'wouter';
 import { ArrowRight, BarChart3, Bell, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
+import { formatDateOnly, formatDateTime, formatDateValue } from '@/lib/date-format';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
-const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
+const date = (value: string | null | undefined) => formatDateValue(value, { day: '2-digit', month: 'short', year: 'numeric' });
 
 function daysSinceLabel(days: number) {
   if (days < 31) return `${days} days ago`;
@@ -164,9 +165,7 @@ function StatCard({ label, value, detail, icon: Icon, tone = 'neutral', href }: 
 }
 
 function dashboardDate(value: string | null) {
-  return value
-    ? new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00Z`))
-    : 'date unavailable';
+  return formatDateOnly(value);
 }
 
 function dashboardFutureDate(period: DashboardPeriodSummary) {
@@ -703,20 +702,6 @@ function StockPage() {
      {dialog && <StockDialog initial={dialog === 'new' ? undefined : dialog} existingRows={rows} onClose={() => setDialog(null)} onSaved={saved} />}
     {deleteCandidate && <DeleteStockDialog row={deleteCandidate} pending={remove.isPending} error={deleteError} onClose={() => { if (!remove.isPending) { setDeleteCandidate(null); setDeleteError(''); } }} onConfirm={confirmDelete} />}
   </AppShell>;
-}
-
-function formatDateTime(value: string | null): string {
-  if (!value) return '—';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime())
-    ? '—'
-    : new Intl.DateTimeFormat('en-AU', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(parsed);
 }
 
 function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {

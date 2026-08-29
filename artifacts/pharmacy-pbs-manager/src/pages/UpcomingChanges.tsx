@@ -10,9 +10,10 @@ import { CalendarDays, ChevronDown, Filter, Layers3 } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
 import { drugDisplayName } from '@/lib/drug-label';
+import { formatDateValue } from '@/lib/date-format';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
-const date = (value: string) => new Intl.DateTimeFormat('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+const date = (value: string | null | undefined) => formatDateValue(value, { day: 'numeric', month: 'short', year: 'numeric' });
 const percentage = (value: number) => `${Math.abs(value).toFixed(1).replace(/\.0$/, '')}%`;
 type ConfidenceFilter = '' | 'high' | 'conditional' | 'indicative' | 'confirmed';
 

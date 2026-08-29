@@ -12,6 +12,7 @@ import {
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { reductionBadgeClass, reductionBorderClass, reductionTextClass } from '@/lib/percentage-significance';
 import { drugDisplayName } from '@/lib/drug-label';
+import { formatDateValue } from '@/lib/date-format';
 import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, CalendarDays, ChevronDown } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 
@@ -20,10 +21,7 @@ const money = (value: unknown) => {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 };
 
-const date = (value: string) => {
-  if (!value) return '—';
-  return new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value));
-};
+const date = (value: string | null | undefined) => formatDateValue(value, { day: '2-digit', month: 'short', year: 'numeric' });
 
 const typeLabels: Record<string, string> = {
   new_item: 'New item',
