@@ -42,3 +42,31 @@ mtime_ms = 1787820353780
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/ffff15a2-eb06-4cb8-aa78-3764e45afaed/54674ddd-6c54-4404-af05-0275f3487c03"
 storage_version_token = "1787820354545685"
 content_type = "text/html"
+
+[[outputs]]
+id = "WScCspAceTqa_qIfn7neK"
+uri = "file://exports/phantom-pbs-delistings-schedule-1983062564-2092-01-01.csv"
+type = "table"
+title = "Phantom PBS delistings export"
+description = "All 1,140 rows isolated by delisted + schedule 1983062564 + effective date 2092-01-01, exported before any cleanup."
+logical_id = "98581a96-c197-4a8c-9460-02b9e48d583b"
+content_hash = "sha256:3f67ce765a8622c64906844d92dcde2309e0a0929aacb11e886eb032431425e5"
+size = 412899
+mtime_ms = 1788042005797
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/98581a96-c197-4a8c-9460-02b9e48d583b/02004a5b-f3f9-4028-8cbc-fd0c7dd11f70"
+storage_version_token = "1788042037191698"
+content_type = "text/csv"
+
+[[outputs]]
+id = "w6k_6TwDcP3tNdJQTCcg3"
+uri = "file://exports/non-phantom-pbs-delistings-review.csv"
+type = "table"
+title = "Non-phantom delistings review"
+description = "The complete 64-row remainder, including IDs, real schedule codes, dates, item/PBS codes, drug, brand, prices, notes, and timestamps."
+logical_id = "ebbcc0c7-b243-4f14-a173-906c69f39462"
+content_hash = "sha256:4ace741d2ccf3d78d40b4874608c94da808729cb80d87d105d5a97a2d06c983e"
+size = 22027
+mtime_ms = 1788042006165
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/ebbcc0c7-b243-4f14-a173-906c69f39462/85179c5f-6b2f-448b-9b15-3eeaf0a1481a"
+storage_version_token = "1788042037749182"
+content_type = "text/csv"
