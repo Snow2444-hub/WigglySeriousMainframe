@@ -1,0 +1,48 @@
+Two items on the PBS updates feed. First is read-only investigation, second is a
+small display change. Report findings before changing anything on item 1.
+
+=== 1. INCONSISTENT (!) ICON ON EVENT BADGES — investigate, don't fix yet ===
+
+Some event badges render a small "(!)" warning icon inside the chip and some
+don't, and the rule looks inconsistent. Examples from the current feed:
+  - Ferric carboxymaltose MULTIPLE CHANGES (−25%): HAS the icon
+  - Rivaroxaban MULTIPLE CHANGES (−25.7%): HAS the icon
+  - Guanfacine MULTIPLE CHANGES (−50.01%): does NOT appear to have it
+  - Adalimumab 1 Jan MULTIPLE CHANGES: does NOT have it
+  - AMENDED LISTINGS and PRICE CHANGES rows also show it in places
+
+Find the exact condition that renders that icon:
+1. Locate the component/logic that decides whether the (!) icon appears on an
+   event badge.
+2. State the exact rule — what field or threshold drives it (significance level?
+   presence of a price reduction? event type? magnitude?).
+3. Check it against the live data for the rows above. Specifically: if the rule
+   is "has a price movement" or "high significance," why does Guanfacine
+   (−50.01%, which should be high) NOT show it while smaller reductions do?
+4. Report whether this is (a) working as intended and I'm misreading it, (b) a
+   condition that doesn't match its intent, or (c) a data issue where the driving
+   field is wrong for some rows.
+
+Do NOT change the icon logic yet — I want to know what the rule is and why it's
+uneven before deciding.
+
+=== 2. FNB ENTRY ROW — empty details column ===
+
+The FNB ENTRY row (Guanfacine) has an almost-empty details column — just "1
+item" — while every other row shows price movements or listing counts. This
+makes the row collapse shorter than its neighbours so its badge looks
+vertically misaligned, and the empty column reads as unfinished.
+
+Fix by giving the row meaningful detail, which also resolves the alignment as a
+side effect:
+- Populate the details column for FNB entries with what actually happened —
+  e.g. the formulary/black-triangle context, the ATC or program the entry
+  relates to, or the item name that entered the FNB. Use whatever the FNB event
+  payload actually carries; report what fields are available.
+- If the payload genuinely carries nothing beyond "1 item," say so — then at
+  minimum add a short static descriptor (e.g. "Formulary listing") so the column
+  isn't empty and the row matches the height/weight of its neighbours.
+- Do NOT fabricate detail that isn't in the data.
+
+Report: for item 1, the icon rule + why it's uneven; for item 2, what FNB fields
+were available and what you populated.

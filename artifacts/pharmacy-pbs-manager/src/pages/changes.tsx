@@ -255,6 +255,7 @@ function EventDetails({ group }: { group: ScheduleEventGroup }) {
   const formularyChange = group.changes.find((change) => change.changeType === 'formulary_change');
   const amendmentChange = group.changes.find((change) => change.changeType === 'listing_amendment');
   const newBrandChange = group.changes.find((change) => change.changeType === 'new_brand');
+  const fnbChange = group.changes.find((change) => change.changeType === 'published_fnb_new');
 
   if (priceChange) {
     return (
@@ -275,6 +276,22 @@ function EventDetails({ group }: { group: ScheduleEventGroup }) {
         <span className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${neutralBadgeClass}`}>
           {group.itemLabels.length || group.changes.length} listing{(group.itemLabels.length || group.changes.length) === 1 ? '' : 's'}
         </span>
+      </div>
+    );
+  }
+  if (fnbChange) {
+    const payload = objectValue(fnbChange.newValue);
+    const manner = textValue(payload.manner_of_administration);
+    const effectDate = textValue(payload.date_of_effect);
+    const matchedItemCount = Array.isArray(payload.matched_item_codes)
+      ? payload.matched_item_codes.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).length
+      : 0;
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs font-semibold">
+        <span className="text-foreground">FNB register entry</span>
+        {manner && <span className="text-muted-foreground">{manner}</span>}
+        {matchedItemCount > 0 && <span className="text-muted-foreground">{matchedItemCount} matched PBS items</span>}
+        {effectDate && <span className="font-mono text-[10px] text-muted-foreground">effective {date(effectDate)}</span>}
       </div>
     );
   }
