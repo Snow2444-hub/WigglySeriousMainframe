@@ -43,7 +43,7 @@ import {
   useUpdateStock,
 } from '@workspace/api-client-react';
 import { Link } from 'wouter';
-import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
+import { ArrowRight, BarChart3, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
@@ -60,6 +60,84 @@ function artgStatusClass(status: string) {
   if (normalized.includes('CANCEL')) return 'status-error';
   if (normalized.includes('REGISTER') || normalized === 'ACTIVE') return 'status-success';
   return 'status-neutral';
+}
+
+type ArtgProductGroup = {
+  groupKey: string;
+  brandName: string;
+  primary: ArtgEntry;
+  entries: ArtgEntry[];
+  strengths: Array<{ entry: ArtgEntry; label: string }>;
+  pbsListed: boolean;
+  needsPbsReview: boolean;
+  pbsBrandNames: string[];
+  statuses: string[];
+};
+
+function artgBrandName(productName: string) {
+  return productName.trim().split(/\s+/)[0] || 'Unbranded product';
+}
+
+function artgStrengthLabel(entry: ArtgEntry) {
+  const strength = `${entry.activeIngredient} ${entry.productName}`.match(/\b(\d+(?:[.,]\d+)?)\s*mg\b/i)?.[1];
+  return strength ? `${strength.replace(',', '.')} mg` : 'Strength not supplied';
+}
+
+function artgBaseIngredient(activeIngredient: string) {
+  return activeIngredient.replace(/,\s*quantity:.*$/i, '').trim();
+}
+
+function artgProductDescription(productName: string, brandName: string) {
+  return productName.slice(brandName.length).replace(/\b\d+(?:[.,]\d+)?\s*mg\b/gi, '').replace(/\s+/g, ' ').trim();
+}
+
+function groupArtgEntries(entries: ArtgEntry[]): ArtgProductGroup[] {
+  const groups = new Map<string, ArtgProductGroup>();
+  for (const entry of entries) {
+    const brandName = artgBrandName(entry.productName);
+    const groupKey = [
+      brandName.toLocaleLowerCase(),
+      entry.matchedDrugId ?? 'unmatched',
+      entry.sponsor.trim().toLocaleLowerCase(),
+      entry.registrationDate,
+    ].join('|');
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.entries.push(entry);
+      existing.strengths.push({ entry, label: artgStrengthLabel(entry) });
+      continue;
+    }
+    groups.set(groupKey, {
+      groupKey,
+      brandName,
+      primary: entry,
+      entries: [entry],
+      strengths: [{ entry, label: artgStrengthLabel(entry) }],
+      pbsListed: entry.pbsListed,
+      needsPbsReview: entry.status.toLocaleUpperCase().includes('REGISTER') && !entry.pbsListed,
+      pbsBrandNames: [...entry.pbsBrandNames],
+      statuses: [entry.status],
+    });
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      strengths: [...group.strengths].sort((left, right) =>
+        left.label.localeCompare(right.label, undefined, { numeric: true })
+        || left.entry.artgId.localeCompare(right.entry.artgId),
+      ),
+      pbsListed: group.entries.every((entry) => entry.pbsListed),
+      needsPbsReview: group.entries.some((entry) =>
+        entry.status.toLocaleUpperCase().includes('REGISTER') && !entry.pbsListed,
+      ),
+      pbsBrandNames: [...new Set(group.entries.flatMap((entry) => entry.pbsBrandNames))],
+      statuses: [...new Set(group.entries.map((entry) => entry.status))],
+    }))
+    .sort((left, right) =>
+      Number(right.needsPbsReview) - Number(left.needsPbsReview)
+      || left.brandName.localeCompare(right.brandName),
+    );
 }
 
 function benefitTypeLabel(code: string | null) {
@@ -210,17 +288,14 @@ function ArtgDirectory() {
   const entries = (query.data ?? []).filter((entry) =>
     pbsState === 'all' || (pbsState === 'listed' ? entry.pbsListed : !entry.pbsListed),
   );
+  const productGroups = useMemo(() => groupArtgEntries(entries), [entries]);
   return <AppShell><PageHeading eyebrow="Reference library / ARTG" title="ARTG register" description="Review registered products against current PBS brand listings. Data is maintained through reviewed TGA CSV or Excel uploads." />
     {importStatus.data?.isStale && importStatus.data.lastSuccessfulImportAt && <div className="mb-5 flex items-start gap-3 rounded-2xl border-2 border-warning/40 bg-warning/10 px-5 py-4 text-warning shadow-sm" role="alert" data-testid="warning-artg-stale"><Clock3 className="mt-0.5 h-5 w-5 shrink-0" /><div><h2 className="text-sm font-bold">ARTG data may be out of date</h2><p className="mt-1 text-xs font-medium leading-relaxed">The last successful import was <strong>{formatDateTime(importStatus.data.lastSuccessfulImportAt)}</strong>, more than 45 days ago. Import a current TGA export before relying on registration results.</p></div></div>}
     <ArtgUploadControl />
     <div className="control-row mb-5"><label className="flex h-11 flex-1 items-center gap-3 rounded-xl bg-muted/60 px-3 text-muted-foreground focus-within:ring-2 focus-within:ring-primary/15"><Search className="h-4 w-4" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/70" placeholder="Search ARTG ID, ingredient, sponsor or product" data-testid="input-artg-search" /></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><Filter className="h-4 w-4 text-info" /><select value={status} onChange={(e) => setStatus(e.target.value)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-status"><option value="">All statuses</option><option value="REGISTERED">Registered</option><option value="CANCELLED">Cancelled</option></select></label><label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:ring-2 focus-within:ring-primary/15"><select value={pbsState} onChange={(e) => setPbsState(e.target.value as typeof pbsState)} className="h-full bg-transparent pr-5 text-sm font-semibold outline-none" data-testid="select-artg-pbs-status"><option value="all">All PBS matches</option><option value="unlisted">Not PBS-listed</option><option value="listed">PBS-listed</option></select></label></div>
-    {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !entries.length ? (
+     {query.isLoading ? <QueryState kind="loading" /> : query.isError ? <QueryState kind="error" onRetry={() => query.refetch()} /> : !productGroups.length ? (
       importStatus.isLoading ? <QueryState kind="loading" /> : importStatus.isError ? <div className="rounded-2xl border border-dashed border-border p-10 text-center" data-testid="empty-artg-status-error"><h2 className="text-lg font-bold">ARTG data status is unavailable</h2><p className="mt-2 text-sm text-muted-foreground">We could not confirm whether an ARTG export has been imported.</p><button type="button" onClick={() => importStatus.refetch()} className="mt-4 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-bold hover:bg-muted">Try again</button></div> : !importStatus.data?.hasSuccessfulImport ? <div className="rounded-2xl border border-dashed border-info/30 bg-info/5 p-10 text-center" data-testid="empty-artg-no-import"><DatabaseZap className="mx-auto h-9 w-9 text-info" /><h2 className="mt-4 text-lg font-bold">No ARTG import has succeeded yet</h2><p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">The ARTG register is empty because no data-bearing TGA export has been imported. Use the upload control above to add the first reviewed register snapshot.</p><Link href="/admin" className="mt-5 inline-flex items-center gap-2 rounded-xl border border-info/25 bg-background px-4 py-2.5 text-sm font-bold text-info hover:bg-info/5" data-testid="link-artg-upload-screen">Open Data updates <ArrowRight className="h-4 w-4" /></Link></div> : <QueryState kind="empty" />
-    ) : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.6fr_1.25fr_1fr_1fr_.85fr_1fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground lg:grid"><span>ARTG ID</span><span>Product</span><span>Ingredient</span><span>Sponsor</span><span>Registration / PBS</span><span>Status</span></div><div className="divide-y divide-border">{entries.map((entry: ArtgEntry) => {
-      const isRegistered = entry.status.toLocaleUpperCase().includes('REGISTER');
-      const needsPbsReview = isRegistered && !entry.pbsListed;
-      return <div key={entry.artgId} className={`grid gap-2 px-5 py-4 transition-colors hover:bg-secondary/30 lg:grid-cols-[.6fr_1.25fr_1fr_1fr_.85fr_1fr] lg:items-center lg:gap-4 ${needsPbsReview ? 'bg-warning/5' : ''}`} data-testid={`row-artg-${entry.artgId}`}><div className="font-mono text-xs font-bold text-info">{entry.artgId}</div><div><p className="text-sm font-bold">{entry.productName}</p><p className="mt-0.5 text-xs text-muted-foreground">Registered {date(entry.registrationDate)} · {daysSinceLabel(entry.daysSinceRegistration)}</p></div><p className="text-xs text-muted-foreground lg:text-sm">{entry.activeIngredient}</p><p className="text-xs text-muted-foreground lg:text-sm">{entry.sponsor}</p><div>{entry.pbsListed ? <><span className="status-badge status-success">PBS-listed</span><p className="mt-1 text-[11px] text-muted-foreground">{entry.pbsBrandNames.join(', ')}</p></> : <><span className={`status-badge ${needsPbsReview ? 'status-warning' : 'status-neutral'}`}>{needsPbsReview ? 'Not PBS-listed' : 'No PBS match'}</span><p className="mt-1 text-[11px] text-muted-foreground">{needsPbsReview ? `${daysSinceLabel(entry.daysSinceRegistration)} since registration` : 'Not flagged for cancelled entries'}</p></>}</div><span className={`status-badge ${artgStatusClass(entry.status)}`}>{entry.status}</span></div>;
-    })}</div></div>}
+     ) : <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs"><div className="hidden grid-cols-[.95fr_1.35fr_1fr_1fr_.95fr_.8fr] gap-4 border-b border-border bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground lg:grid"><span>Product</span><span>Strengths / ARTG IDs</span><span>Ingredient</span><span>Sponsor</span><span>Registration / PBS</span><span>Status</span></div><div className="divide-y divide-border">{productGroups.map((group) => <div key={group.groupKey} className={`grid gap-4 px-5 py-5 transition-colors hover:bg-secondary/30 lg:grid-cols-[.95fr_1.35fr_1fr_1fr_.95fr_.8fr] lg:items-start lg:gap-5 ${group.needsPbsReview ? 'border-l-4 border-l-warning pl-4' : ''}`} data-testid={`group-artg-${group.brandName.toLocaleLowerCase().replaceAll(' ', '-')}`}><div className="min-w-0"><p className="text-base font-bold tracking-[-0.02em]">{group.brandName}</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">{artgProductDescription(group.primary.productName, group.brandName)}</p><p className="mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{group.entries.length} registered strength{group.entries.length === 1 ? '' : 's'}</p></div><div className="flex flex-wrap gap-2">{group.strengths.map(({ entry, label }) => <div key={entry.artgId} className="rounded-lg border border-border bg-background px-2.5 py-2" data-testid={`row-artg-${entry.artgId}`}><p className="font-mono text-xs font-bold text-info">{label}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">ARTG {entry.artgId}</p></div>)}</div><div className="min-w-0"><p className="text-sm font-semibold">{artgBaseIngredient(group.primary.activeIngredient)}</p></div><p className="min-w-0 text-xs text-muted-foreground lg:text-sm">{group.primary.sponsor}</p><div>{group.needsPbsReview ? <span className="status-badge status-warning">NOT PBS-LISTED</span> : group.pbsListed ? <span className="status-badge status-success">PBS-LISTED</span> : <span className="status-badge status-neutral">NO PBS MATCH</span>}<p className="mt-2 text-xs text-muted-foreground">Registered {date(group.primary.registrationDate)} · {daysSinceLabel(group.primary.daysSinceRegistration)}</p>{group.pbsListed && group.pbsBrandNames.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">{group.pbsBrandNames.join(', ')}</p>}</div><div className="flex flex-wrap gap-2">{group.statuses.map((statusLabel) => <span key={statusLabel} className={`status-badge ${artgStatusClass(statusLabel)}`}>{statusLabel}</span>)}</div></div>)}</div></div>}
   </AppShell>;
 }
 
@@ -581,6 +656,7 @@ function AdminPage() {
   const [artgFile, setArtgFile] = useState<File | null>(null);
   const [artgNotice, setArtgNotice] = useState('');
   const [artgError, setArtgError] = useState('');
+  const [showAllArtgImports, setShowAllArtgImports] = useState(false);
   const runs = useListAdminIngestionRuns({
     query: {
       queryKey: getListAdminIngestionRunsQueryKey(),
@@ -620,6 +696,9 @@ function AdminPage() {
   });
   const updateSignificanceSettings = useUpdateScheduleChangeSettings();
   const activeRun = current.data?.currentRun;
+  const artgImportRows = artgImports.data ?? [];
+  const visibleArtgImports = showAllArtgImports ? artgImportRows : artgImportRows.slice(0, 3);
+  const hiddenArtgImportCount = Math.max(0, artgImportRows.length - visibleArtgImports.length);
 
   useEffect(() => {
     if (!significanceSettings.data) return;
@@ -835,7 +914,6 @@ function AdminPage() {
           <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">ARTG registrations</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Upload a CSV or Excel export from the TGA ARTG search. The file must include ARTG ID, active ingredient, sponsor, start date, and product or good name. A failed upload never clears the last successful ARTG data.</p>
         </div>
-        <span className="status-badge status-warning">Manual source</span>
       </div>
       <div className="border-b border-border bg-muted/20 p-5">
         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -849,8 +927,8 @@ function AdminPage() {
         {(artgError || uploadArtg.isError) && <p className="mt-3 flex items-start gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-xs font-semibold text-destructive" role="alert" data-testid="status-artg-import-error"><CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />{artgError || mutationError(uploadArtg.error, 'The ARTG import failed. Existing ARTG records were retained.')}</p>}
       </div>
       <div>
-        <div className="flex items-center justify-between border-b border-border px-5 py-3"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Recent ARTG imports</p><button type="button" onClick={() => artgImports.refetch()} disabled={artgImports.isFetching} className="text-xs font-bold text-info hover:text-primary disabled:opacity-50">Refresh</button></div>
-        {artgImports.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : artgImports.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => artgImports.refetch()} /></div> : !artgImports.data?.length ? <p className="p-5 text-sm text-muted-foreground">No ARTG import has been recorded. The directory will remain empty until a valid TGA export is uploaded.</p> : <div className="divide-y divide-border">{artgImports.data.map((run: ArtgImportRun) => <div key={run.id} className="grid gap-2 px-5 py-3 text-xs sm:grid-cols-[1.15fr_.65fr_.75fr_1fr] sm:items-center sm:gap-4" data-testid={`row-artg-import-${run.id}`}><div className="min-w-0"><p className="truncate font-bold">{run.sourceFileName}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Run #{run.id} · {formatDateTime(run.startedAt)}</p></div><span className={`status-badge ${run.status === 'completed' ? 'status-success' : run.status === 'failed' ? 'status-error' : 'status-info'}`}>{run.status}</span><span className="font-mono font-bold">{run.recordsAccepted.toLocaleString('en-AU')} saved</span><div className={run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{run.errorMessage ? <span className="inline-flex items-start gap-1.5"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{run.errorMessage}</span> : <span>{run.recordsRejected ? `${run.recordsRejected} invalid` : run.recordsSkipped ? `${run.recordsSkipped} not tracked` : `${run.pbsUnlistedRecords} not PBS-listed`}{run.warnings[0] ? ` · ${run.warnings[0]}` : ''}</span>}</div></div>)}</div>}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3"><p className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Recent ARTG imports</p><div className="flex items-center gap-4"><button type="button" onClick={() => artgImports.refetch()} disabled={artgImports.isFetching} className="text-xs font-bold text-info hover:text-primary disabled:opacity-50">Refresh</button>{artgImportRows.length > 3 && <button type="button" onClick={() => setShowAllArtgImports((current) => !current)} className="inline-flex items-center gap-1 text-xs font-bold text-info hover:text-primary" aria-expanded={showAllArtgImports} data-testid="button-toggle-artg-import-history">{showAllArtgImports ? 'Show fewer' : `Show all ${artgImportRows.length}`} {showAllArtgImports ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</button>}</div></div>
+        {artgImports.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : artgImports.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => artgImports.refetch()} /></div> : !artgImportRows.length ? <p className="p-5 text-sm text-muted-foreground">No ARTG import has been recorded. The directory will remain empty until a valid TGA export is uploaded.</p> : <><div className="divide-y divide-border">{visibleArtgImports.map((run: ArtgImportRun) => <div key={run.id} className="grid gap-2 px-5 py-3 text-xs sm:grid-cols-[1.15fr_.65fr_.75fr_1fr] sm:items-center sm:gap-4" data-testid={`row-artg-import-${run.id}`}><div className="min-w-0"><p className="truncate font-bold">{run.sourceFileName}</p><p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Run #{run.id} · {formatDateTime(run.startedAt)}</p></div><span className={`status-badge ${run.status === 'completed' ? 'status-success' : run.status === 'failed' ? 'status-error' : 'status-info'}`}>{run.status}</span><span className="font-mono font-bold">{run.recordsAccepted.toLocaleString('en-AU')} saved</span><div className={run.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{run.errorMessage ? <span className="inline-flex items-start gap-1.5"><XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />{run.errorMessage}</span> : <span>{run.recordsRejected ? `${run.recordsRejected} invalid` : run.recordsSkipped ? `${run.recordsSkipped} not tracked` : `${run.pbsUnlistedRecords} not PBS-listed`}{run.warnings[0] ? ` · ${run.warnings[0]}` : ''}</span>}</div></div>)}</div>{hiddenArtgImportCount > 0 && <p className="border-t border-border px-5 py-2.5 text-[11px] text-muted-foreground">{hiddenArtgImportCount} older import{hiddenArtgImportCount === 1 ? '' : 's'} hidden</p>}</>}
       </div>
     </section>
 
