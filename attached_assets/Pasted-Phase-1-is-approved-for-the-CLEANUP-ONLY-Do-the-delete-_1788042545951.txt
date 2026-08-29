@@ -1,0 +1,73 @@
+Phase 1 is approved for the CLEANUP ONLY. Do the delete and the post-delete
+verification below, then STOP again. Do NOT start the isolation refactor,
+validation guard, or regression test yet — those come in a separate approved
+step after I've reviewed the verification output.
+
+=== PHASE 2A — CLEANUP + VERIFY (do now, then stop) ===
+
+1. DELETE
+   Execute exactly the confirmed predicate — all three conditions, not date
+   alone:
+     DELETE FROM schedule_changes
+     WHERE change_type = 'delisted'
+       AND schedule_code = 1983062564
+       AND effective_date = DATE '2092-01-01';
+   Report rows affected. If it is not exactly 1,140, STOP and report — do not
+   continue.
+
+2. VERIFY THE FEED IS CLEAN
+   - Confirm zero rows remain with schedule_code = 1983062564 or
+     effective_date = 2092-01-01 anywhere in schedule_changes.
+   - Confirm the PBS Updates feed, per-item evidence histories, and per-drug
+     schedule timelines no longer surface any 2092 event.
+
+3. VERIFY NOTHING DOWNSTREAM MOVED
+   The Phase 1 analysis predicted no recomputation is needed (predictions gate
+   on high-significance new_brand events; these were normal-significance
+   delisted). Confirm that held:
+   - Count predictions before/after: the 136 existing predictions for the seven
+     affected drugs should be unchanged. Report the number.
+   - Dashboard / overview period counts: unchanged. Report them.
+   - Stock-exposure warnings and Upcoming Changes view: unchanged.
+   If ANY of these moved, something consumed the phantom rows that the analysis
+   missed — report exactly what changed rather than proceeding.
+
+4. CHECK THE 64-ROW REMAINDER (read-only — report, do not act)
+   The 64 Abrilada delistings (drug 2100003000, schedules 4558 and 4580) were
+   correctly NOT deleted, but were never confirmed as real. Run the
+   authoritative check against source data, not against the delisting records:
+   does drug 2100003000 still appear in the latest real (non-fixture) schedule
+   snapshot?
+     - Absent from the current schedule  -> the delistings are plausibly real;
+       leave them.
+     - Present in the current schedule    -> the 64 are false, and there is a
+       second, smaller contamination to investigate separately.
+   Report which case holds and the evidence. Do not modify these rows either way.
+
+STOP HERE. Report: rows deleted, feed-clean confirmation, the before/after
+prediction and dashboard counts, and the remainder finding. Wait for my next
+instruction before any Phase 2B work.
+
+=== PHASE 2B — ISOLATION (do NOT start until I approve after 2A) ===
+
+Noting this now so you can plan, but do not implement until approved:
+
+- The root cause is that a test calls the real fetchSchedule(), which writes
+  into the shared raw_schedule_staging table that the ingestion /
+  change-detection pass reads. The fix must make it STRUCTURALLY IMPOSSIBLE for
+  a test to write into any table ingestion reads — a separate test schema or
+  database, or a per-test transaction that rolls back. 
+- Do NOT fix this by hardening the fixture's teardown/cleanup. Phase 1 could not
+  determine why the existing cleanup failed, so more-reliable cleanup leaves the
+  shared-table write path intact and only makes the leak rarer. Structural
+  isolation only.
+- The four-digit-schedule-code validation is defence in depth, NOT the fix, and
+  is secondary to the isolation. A realistic-looking fixture code would pass it
+  with no 2092 date to expose the leak.
+- Plan to include a regression test that reproduces the contamination scenario
+  (fixture staging present in the shared table) and asserts the change-detection
+  pass emits zero phantom delistings.
+
+When you reach 2B I'll likely want to review it as a diff rather than have it
+applied unattended, so present the plan and the changes for approval rather than
+landing them in one pass.
