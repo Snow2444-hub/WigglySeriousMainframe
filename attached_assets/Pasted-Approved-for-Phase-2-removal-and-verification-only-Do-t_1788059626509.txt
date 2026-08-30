@@ -1,0 +1,39 @@
+Approved for Phase 2 — removal and verification only. Do the deletes and the
+post-delete checks below, then STOP. Do NOT start Phase 3 guards; present those
+as a plan for approval after I see clean verification.
+
+1. Delete the 5 fixture staging rows (raw_schedule_staging IDs 1532, 1533, 1534,
+   1535, 1537) using the confirmed set. Report rows affected — must be 5.
+
+2. Delete the 1,216 phantom schedule_changes rows using the confirmed predicate
+   (schedule_code 1983062564 AND effective_date 2092-01-01 AND change_type
+   delisted). Report rows affected — must be 1,216. If either count differs,
+   STOP and report before continuing.
+
+3. VERIFY CLEAN:
+   - Zero rows remain in raw_schedule_staging matching the fixture signature
+     (schedule codes 1983062564/1983062565, run-1983062574/1983062575, 2092
+     dates).
+   - Zero rows remain in schedule_changes with schedule_code 1983062564 or
+     effective_date 2092-01-01.
+   - PBS updates feed, per-item timelines, and per-drug timelines show no 2092
+     events.
+
+4. VERIFY NOTHING DOWNSTREAM MOVED (same checks as the earlier cleanup):
+   - Predictions count unchanged (was 136 for the affected drugs).
+   - Overview / dashboard period counts unchanged.
+   - Stock-exposure and Upcoming Changes unchanged.
+   Report before/after numbers.
+
+5. CRITICAL — CONFIRM IT DOESN'T REGENERATE:
+   The whole point is that the generator is gone. Without triggering a real
+   scheduled ingestion, confirm that a change-detection pass over current
+   staging would NOT recreate the 2092 rows — i.e. loadStagedSnapshots no longer
+   finds a complete fixture snapshot for 1983062564. If you can safely invoke
+   change detection read-only or in a dry run to prove zero phantom delistings
+   are produced, do so and report. If you cannot do it safely without a real
+   run, say so rather than triggering ingestion.
+
+STOP after verification. Report all counts, then present the Phase 3 guard plan
+(read-path validity check, pruner fix, regression test) as diffs for my approval
+— do not implement them yet.
