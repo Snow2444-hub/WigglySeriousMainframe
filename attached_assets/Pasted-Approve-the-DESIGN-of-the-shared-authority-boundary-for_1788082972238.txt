@@ -1,0 +1,37 @@
+Approve the DESIGN of the shared authority boundary for #72 — not the build yet.
+The audit confirmed the exposure is real (tests share the dev DATABASE_URL, no
+rollback harness, failed assertions skip cleanup) and the risk ranking is right:
+predicted_reductions and schedule_changes first (a leaked row there is a WRONG
+PRICE shown to a user, not just a bad admin badge).
+
+Produce a design document (no production code) covering:
+
+1. The shared scope/provenance contract: how a production reader distinguishes
+   authoritative rows from test rows, applied uniformly so new readers can't
+   silently omit it (a shared predicate/helper, not per-query filters).
+
+2. The master-vs-derived distinction you identified:
+   - drugs / pbs_items (master): explicit data-scope tag.
+   - predicted_reductions / schedule_changes (derived): reference a scoped
+     authoritative ingestion run.
+   - ingestion_runs as the authority ROOT.
+   Show how derived rows prove lineage to a real run so a test row (no real run
+   ancestor) is structurally invisible.
+
+3. THE CRITICAL RISK — behavior against existing reads: a shared predicate every
+   production query must satisfy can hide LEGITIMATE rows if drawn wrong. Report
+   how you'll verify the boundary makes test rows invisible WITHOUT making any
+   real row invisible. Which existing endpoint tests exercise these five tables,
+   and how do you confirm they still return the right real data after the
+   boundary is added? This is the part I most want to see before any code.
+
+4. Migration/backfill for existing production rows (they need the authoritative
+   scope so they don't get filtered out as "not test but not marked authoritative
+   either").
+
+5. Sequencing: predicted_reductions + schedule_changes first (highest blast
+   radius), then drugs/pbs_items/ingestion_runs, with each landing behind the
+   failure-before-teardown test.
+
+Present the design for review. Do NOT build until I've seen how the boundary is
+drawn and how you prove real reads are unaffected.
