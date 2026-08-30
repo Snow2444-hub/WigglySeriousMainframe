@@ -251,7 +251,7 @@ export async function executeCurrentIngestionRun(
         logger.error({ err: error, runId }, "Failed to prune raw PBS schedule staging after ingestion");
       });
     }
-    const publishedFiles = await ingestPublishedFilesImpl();
+    const publishedFiles = await ingestPublishedFilesImpl(runId);
 
     await db
       .update(ingestionRunsTable)

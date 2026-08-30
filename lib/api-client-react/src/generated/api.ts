@@ -22,6 +22,7 @@ import type {
 import type {
   AdminIngestionInput,
   AdminIngestionRun,
+  AdminPbsSourceStatus,
   AdminPublishedFile,
   ArtgEntry,
   ArtgImportRun,
@@ -2612,6 +2613,83 @@ export function useListAdminPublishedFiles<TData = Awaited<ReturnType<typeof lis
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListAdminPublishedFilesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAdminPbsSourceStatusUrl = () => {
+
+
+
+
+  return `/api/admin/pbs-source-status`
+}
+
+/**
+ * @summary List freshness and failure status for every published PBS source
+ */
+export const listAdminPbsSourceStatus = async ( options?: Parameters<typeof customFetch>[1]): Promise<AdminPbsSourceStatus[]> => {
+
+  return customFetch<AdminPbsSourceStatus[]>(getListAdminPbsSourceStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAdminPbsSourceStatusQueryKey = () => {
+    return [
+    `/api/admin/pbs-source-status`
+    ] as const;
+    }
+
+
+export const getListAdminPbsSourceStatusQueryOptions = <TData = Awaited<ReturnType<typeof listAdminPbsSourceStatus>>, TError = ErrorType<Error>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPbsSourceStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAdminPbsSourceStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAdminPbsSourceStatus>>> = ({ signal }) => listAdminPbsSourceStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAdminPbsSourceStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAdminPbsSourceStatusQueryResult = NonNullable<Awaited<ReturnType<typeof listAdminPbsSourceStatus>>>
+export type ListAdminPbsSourceStatusQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List freshness and failure status for every published PBS source
+ */
+
+export function useListAdminPbsSourceStatus<TData = Awaited<ReturnType<typeof listAdminPbsSourceStatus>>, TError = ErrorType<Error>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAdminPbsSourceStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAdminPbsSourceStatusQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

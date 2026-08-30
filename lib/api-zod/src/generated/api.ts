@@ -1008,6 +1008,39 @@ export const ListAdminPublishedFilesResponse = zod.array(ListAdminPublishedFiles
 
 
 /**
+ * @summary List freshness and failure status for every published PBS source
+ */
+export const ListAdminPbsSourceStatusResponseItem = zod.object({
+  "sourceKey": zod.string(),
+  "label": zod.string(),
+  "sourceFamily": zod.string(),
+  "pageUrl": zod.url(),
+  "cadenceType": zod.enum(['annual_august', 'price_disclosure_cycle', 'unconfigured']),
+  "cadenceLabel": zod.string(),
+  "status": zod.enum(['OK', 'STALE', 'FAILED']),
+  "lastSuccessfulPullAt": zod.coerce.date().nullable(),
+  "lastSuccessfulParseAt": zod.coerce.date().nullable(),
+  "publicationDate": zod.coerce.date().nullable(),
+  "nextExpectedRefreshDate": zod.coerce.date().nullable(),
+  "staleAfterDate": zod.coerce.date().nullable(),
+  "latestAttemptAt": zod.coerce.date().nullable(),
+  "latestAttemptStatus": zod.string().nullable(),
+  "latestFailureStage": zod.string().nullable(),
+  "latestFailureMessage": zod.string().nullable(),
+  "latestFileName": zod.string().nullable(),
+  "latestFileUrl": zod.url().nullable(),
+  "latestFileSha256": zod.string().nullable(),
+  "lastSuccessfulFileName": zod.string().nullable(),
+  "lastSuccessfulFileSha256": zod.string().nullable(),
+  "parserVersion": zod.string().nullable(),
+  "totalRows": zod.int(),
+  "matchedRows": zod.int(),
+  "rejectedRows": zod.int()
+})
+export const ListAdminPbsSourceStatusResponse = zod.array(ListAdminPbsSourceStatusResponseItem)
+
+
+/**
  * @summary List PBS ingestion watchlist entries
  */
 export const ListPbsWatchlistEntriesResponseItem = zod.object({

@@ -848,6 +848,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/pbs-source-status:
+    get:
+      operationId: listAdminPbsSourceStatus
+      tags: [admin]
+      summary: List freshness and failure status for every published PBS source
+      responses:
+        "200":
+          description: Published PBS source freshness status
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminPbsSourceStatus"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/pbs-watchlist:
     get:
       operationId: listPbsWatchlistEntries
@@ -2029,6 +2055,70 @@ components:
           items:
             $ref: "#/components/schemas/PublishedFileMatchFailure"
       required: [id, sourceKey, pageUrl, fileUrl, fileName, contentType, fileSha256, retrievedAt, reportPublicationDate, effectiveDate, parserVersion, status, parseHealth, totalRows, matchedRows, rejectedRows, watchlistUnmatchedRows, errorMessage, watchlistFailures]
+    AdminPbsSourceStatus:
+      type: object
+      properties:
+        sourceKey:
+          type: string
+        label:
+          type: string
+        sourceFamily:
+          type: string
+        pageUrl:
+          type: string
+          format: uri
+        cadenceType:
+          type: string
+          enum: [annual_august, price_disclosure_cycle, unconfigured]
+        cadenceLabel:
+          type: string
+        status:
+          type: string
+          enum: [OK, STALE, FAILED]
+        lastSuccessfulPullAt:
+          type: ["string", "null"]
+          format: date-time
+        lastSuccessfulParseAt:
+          type: ["string", "null"]
+          format: date-time
+        publicationDate:
+          type: ["string", "null"]
+          format: date
+        nextExpectedRefreshDate:
+          type: ["string", "null"]
+          format: date
+        staleAfterDate:
+          type: ["string", "null"]
+          format: date
+        latestAttemptAt:
+          type: ["string", "null"]
+          format: date-time
+        latestAttemptStatus:
+          type: ["string", "null"]
+        latestFailureStage:
+          type: ["string", "null"]
+        latestFailureMessage:
+          type: ["string", "null"]
+        latestFileName:
+          type: ["string", "null"]
+        latestFileUrl:
+          type: ["string", "null"]
+          format: uri
+        latestFileSha256:
+          type: ["string", "null"]
+        lastSuccessfulFileName:
+          type: ["string", "null"]
+        lastSuccessfulFileSha256:
+          type: ["string", "null"]
+        parserVersion:
+          type: ["string", "null"]
+        totalRows:
+          type: integer
+        matchedRows:
+          type: integer
+        rejectedRows:
+          type: integer
+      required: [sourceKey, label, sourceFamily, pageUrl, cadenceType, cadenceLabel, status, lastSuccessfulPullAt, lastSuccessfulParseAt, publicationDate, nextExpectedRefreshDate, staleAfterDate, latestAttemptAt, latestAttemptStatus, latestFailureStage, latestFailureMessage, latestFileName, latestFileUrl, latestFileSha256, lastSuccessfulFileName, lastSuccessfulFileSha256, parserVersion, totalRows, matchedRows, rejectedRows]
     PublishedFileMatchFailure:
       type: object
       properties:

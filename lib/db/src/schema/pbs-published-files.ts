@@ -1,6 +1,7 @@
 import { createInsertSchema } from "drizzle-zod";
 import { boolean, date, index, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
+import { ingestionRunsTable } from "./ingestion-runs";
 
 export const pbsPublishedFilesTable = pgTable(
   "pbs_published_files",
@@ -14,6 +15,11 @@ export const pbsPublishedFilesTable = pgTable(
     fileSha256: text("file_sha256").notNull(),
     rawContentBase64: text("raw_content_base64").notNull(),
     retrievedAt: timestamp("retrieved_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    parsedAt: timestamp("parsed_at", { withTimezone: true, mode: "date" }),
+    fetchStatus: text("fetch_status").notNull().default("succeeded"),
+    parseStatus: text("parse_status").notNull().default("succeeded"),
+    failureStage: text("failure_stage"),
+    ingestionRunId: integer("ingestion_run_id").references(() => ingestionRunsTable.id),
     reportPublicationDate: date("report_publication_date", { mode: "string" }),
     effectiveDate: date("effective_date", { mode: "string" }),
     parserVersion: text("parser_version").notNull(),
@@ -28,7 +34,10 @@ export const pbsPublishedFilesTable = pgTable(
     isCurrent: boolean("is_current").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
-  (table) => [index("pbs_published_files_source_current_idx").on(table.sourceKey, table.isCurrent)],
+  (table) => [
+    index("pbs_published_files_source_current_idx").on(table.sourceKey, table.isCurrent),
+    index("pbs_published_files_source_attempt_idx").on(table.sourceKey, table.retrievedAt),
+  ],
 );
 
 export const insertPbsPublishedFileSchema = createInsertSchema(pbsPublishedFilesTable).omit({ id: true });

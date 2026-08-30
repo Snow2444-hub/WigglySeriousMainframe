@@ -16,6 +16,7 @@ import {
   DeletePbsWatchlistEntryParams,
   GetScheduleChangeSettingsResponse,
   GetCurrentAdminIngestionRunResponse,
+  ListAdminPbsSourceStatusResponse,
   ListAdminPublishedFilesResponse,
   ListPbsWatchlistEntriesResponse,
   ListAdminIngestionRunsResponse,
@@ -46,6 +47,7 @@ import {
   type PbsItemScheduleMetadata,
 } from "../lib/pbs-item-mapping";
 import { listLatestPublishedFiles } from "../lib/pbs-published-files";
+import { listPbsSourceStatuses } from "../lib/pbs-source-status";
 import { executeCurrentIngestionRun } from "../lib/pbs-current-ingestion";
 import {
   getPriceChangeThresholds,
@@ -549,6 +551,10 @@ router.post(
 
 router.get("/admin/published-files", requireAdmin, async (_req, res): Promise<void> => {
   res.json(ListAdminPublishedFilesResponse.parse(await listLatestPublishedFiles()));
+});
+
+router.get("/admin/pbs-source-status", requireAdmin, async (_req, res): Promise<void> => {
+  res.json(ListAdminPbsSourceStatusResponse.parse(await listPbsSourceStatuses()));
 });
 
 router.get("/admin/pbs-watchlist", requireAdmin, async (_req, res): Promise<void> => {

@@ -829,6 +829,67 @@ export interface AdminPublishedFile {
   watchlistFailures: PublishedFileMatchFailure[];
 }
 
+export type AdminPbsSourceStatusCadenceType = typeof AdminPbsSourceStatusCadenceType[keyof typeof AdminPbsSourceStatusCadenceType];
+
+
+export const AdminPbsSourceStatusCadenceType = {
+  annual_august: 'annual_august',
+  price_disclosure_cycle: 'price_disclosure_cycle',
+  unconfigured: 'unconfigured',
+} as const;
+
+export type AdminPbsSourceStatusStatus = typeof AdminPbsSourceStatusStatus[keyof typeof AdminPbsSourceStatusStatus];
+
+
+export const AdminPbsSourceStatusStatus = {
+  OK: 'OK',
+  STALE: 'STALE',
+  FAILED: 'FAILED',
+} as const;
+
+export interface AdminPbsSourceStatus {
+  sourceKey: string;
+  label: string;
+  sourceFamily: string;
+  pageUrl: string;
+  cadenceType: AdminPbsSourceStatusCadenceType;
+  cadenceLabel: string;
+  status: AdminPbsSourceStatusStatus;
+  /** @nullable */
+  lastSuccessfulPullAt: string | null;
+  /** @nullable */
+  lastSuccessfulParseAt: string | null;
+  /** @nullable */
+  publicationDate: string | null;
+  /** @nullable */
+  nextExpectedRefreshDate: string | null;
+  /** @nullable */
+  staleAfterDate: string | null;
+  /** @nullable */
+  latestAttemptAt: string | null;
+  /** @nullable */
+  latestAttemptStatus: string | null;
+  /** @nullable */
+  latestFailureStage: string | null;
+  /** @nullable */
+  latestFailureMessage: string | null;
+  /** @nullable */
+  latestFileName: string | null;
+  /** @nullable */
+  latestFileUrl: string | null;
+  /** @nullable */
+  latestFileSha256: string | null;
+  /** @nullable */
+  lastSuccessfulFileName: string | null;
+  /** @nullable */
+  lastSuccessfulFileSha256: string | null;
+  /** @nullable */
+  parserVersion: string | null;
+  totalRows: number;
+  matchedRows: number;
+  rejectedRows: number;
+}
+
 export interface CurrentAdminIngestionRun {
   currentRun: AdminIngestionRun | null;
 }

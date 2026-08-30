@@ -7,11 +7,13 @@ import {
   getGetDashboardQueryKey,
   getListAdminArtgImportRunsQueryKey,
   getListAdminIngestionRunsQueryKey,
+  getListAdminPbsSourceStatusQueryKey,
   getListArtgEntriesQueryKey,
   getListPbsWatchlistEntriesQueryKey,
   getListPbsItemsQueryKey,
   getListStockQueryKey,
   type AdminIngestionRun,
+  type AdminPbsSourceStatus,
   type ArtgEntry,
   type ArtgImportRun,
   type DashboardPeriodSummary,
@@ -30,6 +32,7 @@ import {
   useGetScheduleChangeSettings,
   useGetDashboard,
   useListAdminIngestionRuns,
+  useListAdminPbsSourceStatus,
   useListAdminArtgImportRuns,
   useListArtgEntries,
   useListPbsItems,
@@ -724,6 +727,86 @@ function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
   return <span className={`status-badge ${styles[status]}`}>{status}</span>;
 }
 
+function sourceHealthStatusClass(status: AdminPbsSourceStatus['status']) {
+  return status === 'OK' ? 'status-success' : status === 'STALE' ? 'status-warning' : 'status-error';
+}
+
+function sourceHealthIcon(status: AdminPbsSourceStatus['status']) {
+  return status === 'OK' ? CheckCircle2 : status === 'STALE' ? Clock3 : XCircle;
+}
+
+function sourceHealthDate(value: string | null | undefined) {
+  return value ? date(value) : 'Not recorded';
+}
+
+function sourceHealthFailure(row: AdminPbsSourceStatus) {
+  if (row.status === 'STALE') {
+    return row.nextExpectedRefreshDate
+      ? `No newer file after ${date(row.nextExpectedRefreshDate)}`
+      : 'No newer file has been recorded';
+  }
+  if (row.latestFailureMessage) {
+    return `${row.latestFailureStage ? `${row.latestFailureStage} failed · ` : ''}${row.latestFailureMessage}`;
+  }
+  if (!row.lastSuccessfulPullAt) return 'No successful observation has been recorded yet';
+  return row.cadenceType === 'unconfigured' ? 'Source is healthy; refresh cadence is not configured' : 'Source is healthy';
+}
+
+function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean }) {
+  const sourceStatuses = useListAdminPbsSourceStatus({
+    query: {
+      queryKey: getListAdminPbsSourceStatusQueryKey(),
+      refetchInterval: ingestionActive ? 15_000 : false,
+      refetchOnWindowFocus: true,
+    },
+  });
+  const rows = sourceStatuses.data ?? [];
+  const counts = {
+    OK: rows.filter((row) => row.status === 'OK').length,
+    STALE: rows.filter((row) => row.status === 'STALE').length,
+    FAILED: rows.filter((row) => row.status === 'FAILED').length,
+  };
+
+  return <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="section-pbs-source-health">
+    <div className="flex flex-col gap-3 border-b border-border px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Published PBS sources</p>
+        <h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Source health</h2>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">Freshness and parser health for every published file that can inform the workspace.</p>
+      </div>
+      {!sourceStatuses.isLoading && !sourceStatuses.isError && <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+        <span className="status-badge status-success">{counts.OK} OK</span>
+        <span className="status-badge status-warning">{counts.STALE} stale</span>
+        <span className="status-badge status-error">{counts.FAILED} failed</span>
+      </div>}
+    </div>
+    {sourceStatuses.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : sourceStatuses.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => sourceStatuses.refetch()} /></div> : !rows.length ? <div className="p-8 text-sm text-muted-foreground">No published PBS source definitions are available.</div> : <div className="divide-y divide-border">
+      <div className="hidden grid-cols-[1.2fr_.85fr_.8fr_.8fr_1.25fr] gap-4 bg-muted/45 px-5 py-3 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground lg:grid">
+        <span>Source</span><span>Last successful pull</span><span>Published</span><span>Next expected</span><span>Status / detail</span>
+      </div>
+      {rows.map((row) => {
+        const Icon = sourceHealthIcon(row.status);
+        return <div key={row.sourceKey} className="grid gap-3 px-5 py-4 transition-colors hover:bg-muted/25 lg:grid-cols-[1.2fr_.85fr_.8fr_.8fr_1.25fr] lg:items-center lg:gap-4" data-testid={`row-pbs-source-health-${row.sourceKey}`}>
+          <div className="min-w-0">
+            <div className="flex items-start gap-2">
+              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${row.status === 'OK' ? 'text-success' : row.status === 'STALE' ? 'text-warning' : 'text-destructive'}`} aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{row.label}</p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{row.sourceFamily} · {row.cadenceLabel}</p>
+              </div>
+            </div>
+            <p className="mt-2 truncate pl-6 font-mono text-[10px] text-muted-foreground" title={row.lastSuccessfulFileSha256 ?? row.latestFileSha256 ?? undefined}>{row.lastSuccessfulFileName ?? row.latestFileName ?? 'No file identity recorded'}</p>
+          </div>
+          <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Last successful pull</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.lastSuccessfulPullAt)}</p><p className="mt-0.5 text-[10px] text-muted-foreground">Parsed {sourceHealthDate(row.lastSuccessfulParseAt)}</p></div>
+          <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Published</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.publicationDate)}</p></div>
+          <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Next expected</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.nextExpectedRefreshDate)}</p>{row.staleAfterDate && <p className="mt-0.5 text-[10px] text-muted-foreground">Stale after {date(row.staleAfterDate)}</p>}</div>
+          <div className="pl-6 lg:pl-0"><span className={`status-badge ${sourceHealthStatusClass(row.status)}`}>{row.status}</span><p className={`mt-1 text-xs leading-relaxed ${row.status === 'FAILED' ? 'text-destructive' : row.status === 'STALE' ? 'text-warning' : 'text-muted-foreground'}`}>{sourceHealthFailure(row)}</p>{row.latestAttemptAt && <p className="mt-1 text-[10px] text-muted-foreground">Latest attempt {formatDateTime(row.latestAttemptAt)}</p>}</div>
+        </div>;
+      })}
+    </div>}
+  </section>;
+}
+
 function AdminPage() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState('');
@@ -794,7 +877,13 @@ function AdminPage() {
   }, [significanceSettings.data]);
 
   const refresh = () => {
-    void Promise.all([runs.refetch(), current.refetch(), watchlist.refetch(), artgImports.refetch()]);
+    void Promise.all([
+      runs.refetch(),
+      current.refetch(),
+      watchlist.refetch(),
+      artgImports.refetch(),
+      queryClient.invalidateQueries({ queryKey: getListAdminPbsSourceStatusQueryKey() }),
+    ]);
   };
 
   const refreshWatchlist = () => {
@@ -969,6 +1058,7 @@ function AdminPage() {
 
     {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-success/25 bg-success/10 px-4 py-3 text-sm font-semibold text-success" role="status" data-testid="status-ingestion-success"><Check className="h-4 w-4" />{notice}</div>}
     {(inputError || trigger.isError) && <div className="mb-5 flex items-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive" role="alert" data-testid="status-ingestion-error"><CircleAlert className="h-4 w-4" />{inputError || trigger.error?.message || 'The ingestion run could not be started.'}</div>}
+     <PbsSourceHealthPanel ingestionActive={Boolean(activeRun)} />
 
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" data-testid="section-significance-settings">
       <div className="border-b border-border px-5 py-4">

@@ -17,6 +17,11 @@ import {
   type PbsPublishedFile,
 } from "@workspace/db";
 import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
+import {
+  ensurePbsSourceRegistry,
+  refreshPbsSourceRegistryStatus,
+  type PublishedSourceKey,
+} from "./pbs-source-status";
 
 const PARSER_VERSION = "pbs-published-files-v1";
 const USER_AGENT = "pharmacy-pbs-manager/1.0";
@@ -29,14 +34,6 @@ const PAGE_URLS = {
   currentPriceDisclosureCycle:
     "https://www.pbs.gov.au/industry/pricing/price-disclosure-spd/current-price-disclosure-cycle",
 } as const;
-
-type PublishedSourceKey =
-  | "first_new_brand"
-  | "subject_to_price_disclosure"
-  | "indicative_non_efc"
-  | "indicative_efc"
-  | "confirmed_non_efc"
-  | "confirmed_efc";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -107,11 +104,17 @@ type SourceFile = {
 export const PUBLISHED_REPORT_MAX_AGE_DAYS = 180;
 
 function sourcePageUrl(sourceKey: PublishedSourceKey): string {
-  return sourceKey === "first_new_brand"
-    ? PAGE_URLS.firstNewBrand
-    : sourceKey === "subject_to_price_disclosure"
-      ? PAGE_URLS.subjectToPriceDisclosure
-      : PAGE_URLS.currentPriceDisclosureCycle;
+  if (sourceKey === "first_new_brand") return PAGE_URLS.firstNewBrand;
+  if (sourceKey === "subject_to_price_disclosure") return PAGE_URLS.subjectToPriceDisclosure;
+  if (
+    sourceKey === "indicative_non_efc" ||
+    sourceKey === "indicative_efc" ||
+    sourceKey === "confirmed_non_efc" ||
+    sourceKey === "confirmed_efc"
+  ) {
+    return PAGE_URLS.currentPriceDisclosureCycle;
+  }
+  return "https://www.pbs.gov.au/industry/pricing";
 }
 
 export function sourcePriority(sourceKey: string, confidence?: string | null): number {
@@ -487,7 +490,7 @@ function watchedRow(
   });
 }
 
-async function upsertPublishedFile(sourceFile: SourceFile): Promise<PbsPublishedFile> {
+async function upsertPublishedFile(sourceFile: SourceFile, ingestionRunId?: number): Promise<PbsPublishedFile> {
   const fileSha256 = createHash("sha256").update(sourceFile.bytes).digest("hex");
   await db
     .update(pbsPublishedFilesTable)
@@ -508,6 +511,11 @@ async function upsertPublishedFile(sourceFile: SourceFile): Promise<PbsPublished
       parserVersion: PARSER_VERSION,
       status: "processing",
       parseHealth: "processing",
+      fetchStatus: "succeeded",
+      parseStatus: "processing",
+      failureStage: null,
+      parsedAt: null,
+      ingestionRunId: ingestionRunId ?? null,
       metadata: { sheetNames: sourceFile.workbook.SheetNames },
       isCurrent: true,
     })
@@ -542,6 +550,10 @@ async function finishPublishedFile(
     .set({
       status: "completed",
       parseHealth,
+      parsedAt: new Date(),
+      fetchStatus: "succeeded",
+      parseStatus: parseHealth === "healthy" ? "succeeded" : "failed",
+      failureStage: parseHealth === "healthy" ? null : "parse",
       reportPublicationDate: provenance.reportPublicationDate,
       effectiveDate: provenance.effectiveDate,
       totalRows: result.totalRows,
@@ -564,6 +576,9 @@ async function failPublishedFile(fileId: number, message: string): Promise<void>
     .set({
       status: "failed",
       parseHealth: "rejected",
+      fetchStatus: "succeeded",
+      parseStatus: "failed",
+      failureStage: "parse",
       rejectedRows: 0,
       errorMessage: message.slice(0, 2_000),
       metadata: { parseHealth: "rejected", failure: message.slice(0, 2_000) },
@@ -589,6 +604,9 @@ async function recordFailedPublishedFile(sourceKey: PublishedSourceKey, message:
     parserVersion: PARSER_VERSION,
     status: "failed",
     parseHealth: "rejected",
+    fetchStatus: "failed",
+    parseStatus: "not_attempted",
+    failureStage: "fetch",
     errorMessage: message.slice(0, 2_000),
     metadata: { parseHealth: "rejected", failure: message.slice(0, 2_000) },
     isCurrent: true,
@@ -963,12 +981,13 @@ async function processSource(
   sourceKey: PublishedSourceKey,
   fetchSource: () => Promise<SourceFile>,
   context: DrugContext,
+  ingestionRunId?: number,
 ): Promise<PublishedFileReport> {
   let sourceFile: SourceFile | undefined;
   let file: PbsPublishedFile | undefined;
   try {
     sourceFile = await fetchSource();
-    file = await upsertPublishedFile(sourceFile);
+    file = await upsertPublishedFile(sourceFile, ingestionRunId);
     await clearFileRows(file.id);
     if (sourceKey === "first_new_brand") return await processFirstNewBrand(sourceFile, file, context);
     if (sourceKey === "subject_to_price_disclosure") {
@@ -996,8 +1015,9 @@ async function processSource(
   }
 }
 
-export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> {
+export async function ingestPublishedFiles(ingestionRunId?: number): Promise<PublishedIngestionReport> {
   const context = await loadContext();
+  await ensurePbsSourceRegistry();
   const files = await Promise.all([
     processSource(
       "first_new_brand",
@@ -1006,6 +1026,7 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           /first new brand|price reductions/i.test(`${link.text} ${link.href}`),
         ),
       context,
+      ingestionRunId,
     ),
     processSource(
       "subject_to_price_disclosure",
@@ -1016,6 +1037,7 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           (link) => /subject to price disclosure/i.test(`${link.text} ${link.href}`),
         ),
       context,
+      ingestionRunId,
     ),
     processSource(
       "indicative_non_efc",
@@ -1026,6 +1048,7 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           (link) => /indicative prices report/i.test(link.text) && /excluding efc/i.test(link.text),
         ),
       context,
+      ingestionRunId,
     ),
     processSource(
       "indicative_efc",
@@ -1036,6 +1059,7 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           (link) => /indicative prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
         ),
       context,
+      ingestionRunId,
     ),
     processSource(
       "confirmed_non_efc",
@@ -1046,6 +1070,7 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           (link) => /confirmed prices report/i.test(link.text) && /excluding efc/i.test(link.text),
         ),
       context,
+      ingestionRunId,
     ),
     processSource(
       "confirmed_efc",
@@ -1056,8 +1081,10 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
           (link) => /confirmed prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
         ),
       context,
+      ingestionRunId,
     ),
   ]);
+  await refreshPbsSourceRegistryStatus();
   await recalculatePredictedReductionsForAllDrugs();
   return { fetchedAt: new Date().toISOString(), files };
 }
