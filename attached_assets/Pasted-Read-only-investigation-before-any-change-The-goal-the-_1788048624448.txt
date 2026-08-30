@@ -1,0 +1,40 @@
+Read-only investigation before any change. The goal: the ARTG import should
+still keep the current watchlist-based filtering, but should NOT miss a
+combination product when ONE of its ingredients is a watched drug and another
+isn't. Right now those combos appear to be dropped. Before changing the matcher,
+I need to know how these combination products actually appear in the data.
+
+Investigate and report — do NOT change import logic yet:
+
+1. CURRENT MATCH RULE
+   Confirm exactly how the importer decides a row matches a tracked drug
+   (artg-import.ts around the ingredient-match logic). Specifically: does it
+   compare the row's active-ingredient field against tracked drug ingredients as
+   a single value? What happens to a row whose ingredient is a combination
+   (e.g. "drugA + drugB" or a composite pack)?
+
+2. HOW COMBINATIONS ARE REPRESENTED
+   Look at real rows from the already-imported TGA files (or the skipped-row
+   counts/warnings) and report how a combination product appears:
+   - Is the combination expressed as one ingredient string containing multiple
+     actives (e.g. "ezetimibe + rosuvastatin")?
+   - Or is it a composite pack with NO active ingredient on the row (like the
+     "Row 39 skipped — composite pack has no active ingredient" case)?
+   - Or components listed in a separate field?
+   Give concrete examples from the data if any exist.
+
+3. WOULD "MATCH ANY COMPONENT" WORK?
+   Based on 2, report whether changing the rule from "match the single
+   ingredient" to "keep the row if ANY component ingredient matches a watched
+   drug" would actually catch the target case — or whether the combination rows
+   don't carry parseable component ingredients at all, in which case matching
+   would need to read a different field (pack components) than the current
+   active-ingredient column.
+
+4. SCOPE OF THE CHANGE
+   Given the above, what would the minimal change touch to catch
+   "followed + non-followed combination" rows while still dropping fully
+   unwatched rows? Importer only, or schema/fields too?
+
+Report all four. I'll decide the fix after seeing how the data actually
+represents these combinations.
