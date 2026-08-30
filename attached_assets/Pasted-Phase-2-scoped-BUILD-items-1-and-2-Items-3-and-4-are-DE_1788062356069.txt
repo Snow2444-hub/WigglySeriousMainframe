@@ -1,0 +1,59 @@
+Phase 2, scoped. BUILD items 1 and 2. Items 3 and 4 are DESIGN-ONLY (propose,
+don't implement). Item 5 (info tab) is a build. Present diffs for review.
+
+=== BUILD NOW ===
+
+1. ANNIVERSARY FIXES
+   - Add the 15-year rate step-up: 26.1% now, 30% from 1 April 2027 onward.
+   - Add the section 99ACP 1.48% reduction, applied on the drug's ACTUAL 15th-
+     anniversary day (not the rounded 1 April date).
+   - Add the 60% cap off the reference AEMP (60% off / 40% of the reference
+     price — 1 Jan 2016 AEMP, or listing-date AEMP if listed after).
+   - CRITICAL: settings use onConflictDoNothing, so confirm these changes
+     actually take effect on existing DB settings, not just defaults. Show how
+     you verified the new rates/mechanisms apply to live predictions.
+   - Add tests covering: each anniversary rate, the 2027 step-up boundary, the
+     99ACP anniversary-day case, and the 60% cap.
+
+2. FNB "UP TO 25%" FIX
+   - Change flat 25% to handle the effective-price case: reduction is up to 25%,
+     less where the existing brand already has an effective price below AEMP.
+   - Add the 1 October 2018 eligibility cutoff.
+   - Note: pbs_fnb_reductions stores no percentage and suppresses per-drug not
+     per-item — report whether that limits the fix, but don't expand scope
+     without telling me.
+   - Tests for the effective-price case and the flat case.
+
+=== DESIGN ONLY — propose, do not build ===
+
+3. PRICE DISCLOSURE HARDENING (robustness, not correctness)
+   Propose (don't implement): confirmed-report ingestion, file freshness/max-age
+   validation, WADP deprecation bounding, and stale-prediction cleanup on parse
+   failure. Give me the scope; I'll sequence it separately.
+
+4. FLOW-ON COMBINATION PREDICTIONS (data-model project — design only)
+   Do NOT build. The audit confirmed the data model can't support this: no
+   per-component AEMPs, no combination relationships, and non-watched components
+   aren't even ingested. Produce a DESIGN PROPOSAL covering: the data source for
+   component/combination relationships + non-watched component pricing, the
+   schema (effective-dated component rows, combination AEMP, weighting, listed
+   status), how component reduction events are represented, the reg-65A calc
+   including multi-component same-date handling, and the prediction-storage
+   change beyond a single scalar. Phase the work. I'm deciding whether to build
+   this at all after talking to a pharmacist, so I want the cost laid out, not
+   code.
+
+=== BUILD — static content ===
+
+5. REDUCTION-TYPES INFORMATION TAB
+   Add an info/reference tab summarising the reduction mechanisms for the user:
+   for each of anniversary (5/10/15-yr + the 1.48% 99ACP), first-new-brand, price
+   disclosure, and combination flow-on — explain what it is, why the price drops,
+   the current rate/timing, and a short worked example.
+   - Use the current correct rates (15-yr 26.1% -> 30% from Apr 2027; FNB up to
+     25%; anniversary 1 April annually; flow-on published 1 August).
+   - IMPORTANT: describe flow-on as a PBS mechanism, but do NOT present it as
+     something THIS APP calculates yet — no fake computed flow-on figures. Static
+     explanation only until/unless we build item 4.
+   - This is static reference content; keep it clearly separate from live
+     prediction data.
