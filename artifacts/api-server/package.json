@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
-    "build": "node ./build.mjs",
+    "build": "pnpm run check:authority-boundary && node ./build.mjs",
+    "check:authority-boundary": "node ./scripts/check-authority-boundary.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "backfill-staged-premiums": "pnpm run build && node --enable-source-maps ./dist/backfill-staged-premiums.mjs",
     "scheduled-ingestion": "pnpm run build && node --enable-source-maps ./dist/scheduled-ingestion.mjs",
     "test": "node ./scripts/run-isolated-tests.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "pnpm run check:authority-boundary && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@clerk/express": "^2.1.61",

@@ -116,6 +116,31 @@ function runSchemaClone(sourceUrl, targetUrl, schema, env) {
   });
 }
 
+async function configureIsolatedSchemaRole(databaseUrl, quotedSchema) {
+  return run(
+    "psql",
+    [
+      databaseUrl,
+      "--quiet",
+      "--no-psqlrc",
+      "--set",
+      "ON_ERROR_STOP=1",
+      "--command",
+      [
+        `ALTER TABLE ${quotedSchema}.ingestion_runs OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.drugs OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.pbs_items OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.predicted_reductions OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.schedule_changes OWNER TO pbs_app`,
+        `GRANT USAGE ON SCHEMA ${quotedSchema} TO pbs_app`,
+        `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quotedSchema} TO pbs_app`,
+        `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${quotedSchema} TO pbs_app`,
+      ].join("; "),
+    ],
+    process.env,
+  );
+}
+
 const useDedicatedTestDatabase = Boolean(dedicatedTestDatabaseUrl);
 const baseDatabaseUrl = dedicatedTestDatabaseUrl ?? developmentDatabaseUrl;
 const schema = useDedicatedTestDatabase ? null : `test_${process.pid}_${Date.now()}`.slice(0, 55);
@@ -143,6 +168,12 @@ try {
       { ...process.env, DATABASE_URL: isolatedUrl, CI: "true" },
     );
     if (exitCode !== 0) throw new Error("Could not provision TEST_DATABASE_URL.");
+    exitCode = await run(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "authority:apply"],
+      { ...process.env, DATABASE_URL: isolatedUrl },
+    );
+    if (exitCode !== 0) throw new Error("Could not apply authority RLS to TEST_DATABASE_URL.");
   } else {
     childEnv.TEST_ISOLATION_SCHEMA = schema;
     childEnv.TEST_ISOLATION_DATABASE = "per-run-schema";
@@ -168,6 +199,8 @@ try {
 
     exitCode = await runSchemaClone(baseDatabaseUrl, isolatedUrl, schema, process.env);
     if (exitCode !== 0) throw new Error("Could not provision the isolated test schema.");
+    exitCode = await configureIsolatedSchemaRole(baseDatabaseUrl, quotedSchema);
+    if (exitCode !== 0) throw new Error("Could not configure the isolated test application role.");
   }
 
   const schemaCheck = await runCapture(

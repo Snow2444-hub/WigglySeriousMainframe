@@ -1,8 +1,9 @@
 import { createInsertSchema } from "drizzle-zod";
-import { date, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { drugsTable } from "./drugs";
+import { ingestionRunsTable } from "./ingestion-runs";
 
 export type ScheduleChangeAffectedItem = {
   liItemId: string;
@@ -30,8 +31,10 @@ export const scheduleChangesTable = pgTable(
     significance: text("significance").notNull().default("normal"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    authorityRunId: integer("authority_run_id").references(() => ingestionRunsTable.id),
   },
   (table) => [
+    index("schedule_changes_authority_run_idx").on(table.authorityRunId),
     uniqueIndex("schedule_changes_schedule_change_item_idx").on(
       table.scheduleCode,
       table.effectiveDate,

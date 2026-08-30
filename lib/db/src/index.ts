@@ -19,7 +19,21 @@ if (
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+function applicationRoleDatabaseUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  const existingOptions = url.searchParams.get("options");
+  url.searchParams.set(
+    "options",
+    [existingOptions, "-c role=pbs_app"].filter(Boolean).join(" "),
+  );
+  url.search = `?${url.searchParams.toString().replaceAll("+", "%20")}`;
+  return url.toString();
+}
+
+export const pool = new Pool({
+  connectionString: applicationRoleDatabaseUrl(process.env.DATABASE_URL),
+});
 export const db = drizzle(pool, { schema });
 
+export * from "./authority";
 export * from "./schema";
