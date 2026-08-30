@@ -10,3 +10,9 @@ Shared staging must also be treated as untrusted at production read and pruning 
 **Why:** The development database can contain a live or interrupted ingestion and historical staged data. A leaked complete fixture with a future effective date can otherwise be selected as the newest schedule, manufacture delistings, and then be preserved indefinitely by pruning.
 
 **How to apply:** Add explicit test-only scopes or exclusions to exercised APIs, use fixture-specific schedule codes/run IDs, and serialize the API integration suite. Independently validate staged run provenance in production loaders and pruners; do not rely on teardown alone.
+
+Published-file ingestion tests must persist non-canonical source keys, and every operational parent or child evidence reader must join or filter back to canonical source keys. This boundary must hold while leaked test rows still exist, not only after cleanup.
+
+**Why:** The user confirmed this as the required structural pattern after a failed assertion left a test observation as the newest operational source-health record.
+
+**How to apply:** Treat canonical source keys as authority provenance. Test-mode ingestion must namespace keys automatically, and new readers of published files, prices, FNB reductions, disclosure cycles, or row evidence must preserve the canonical-parent guard.

@@ -259,11 +259,12 @@ test("indicative prices produce one prediction per item and date without fanning
         pbsItemValues({ itemCode, drugId: fixture.drugId, formulary: "F2" }),
       ),
     );
+    const sourceKeys = ["indicative_non_efc", "confirmed_non_efc", "test:confirmed_non_efc"];
     const files = await db
       .insert(pbsPublishedFilesTable)
       .values(
-        [1, 2].map((index) => ({
-          sourceKey: `${fixture.token}_INDICATIVE_${index}`,
+        sourceKeys.map((sourceKey, index) => ({
+          sourceKey,
           pageUrl: "https://example.test/page",
           fileUrl: `https://example.test/file-${index}.xlsx`,
           fileName: `fixture-${index}.xlsx`,
@@ -300,9 +301,10 @@ test("indicative prices produce one prediction per item and date without fanning
           legalInstrumentMoa: "Oral",
           brandName: `Regression brand ${itemCode}`,
           currentAemp: 100,
-          newAemp: 90,
+          newAemp: fileIndex === 2 ? 1 : 90,
           predictedDate,
-          confidence: "indicative",
+          confidence: fileIndex === 0 ? "indicative" : "confirmed",
+          sourcePriority: fileIndex === 2 ? 99 : fileIndex + 1,
         })),
       ),
     );
@@ -312,6 +314,8 @@ test("indicative prices produce one prediction per item and date without fanning
       .select({
         itemCode: predictedReductionsTable.itemCode,
         predictedDate: predictedReductionsTable.predictedDate,
+        predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+        confidence: predictedReductionsTable.confidence,
       })
       .from(predictedReductionsTable)
       .where(
@@ -321,10 +325,23 @@ test("indicative prices produce one prediction per item and date without fanning
         ),
       );
 
-    assert.equal(predictions.length, itemCodes.length);
     assert.deepEqual(
-      predictions.map((prediction) => prediction.itemCode).sort(),
-      [...itemCodes].sort(),
+      predictions
+        .map((prediction) => ({
+          itemCode: prediction.itemCode,
+          predictedDate: prediction.predictedDate,
+          predictedNewPrice: prediction.predictedNewPrice,
+          confidence: prediction.confidence,
+        }))
+        .sort((left, right) => left.itemCode.localeCompare(right.itemCode)),
+      itemCodes
+        .map((itemCode) => ({
+          itemCode,
+          predictedDate,
+          predictedNewPrice: 90,
+          confidence: "confirmed",
+        }))
+        .sort((left, right) => left.itemCode.localeCompare(right.itemCode)),
     );
     assert.equal(new Set(predictions.map((prediction) => `${prediction.itemCode}:${prediction.predictedDate}`)).size, 2);
   } finally {

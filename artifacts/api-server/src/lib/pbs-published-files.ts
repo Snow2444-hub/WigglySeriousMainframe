@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname } from "node:path";
 import * as XLSX from "xlsx";
-import { and, asc, eq, like } from "drizzle-orm";
+import { and, asc, eq, inArray, like } from "drizzle-orm";
 import {
   db,
   drugsTable,
@@ -18,6 +18,7 @@ import {
 } from "@workspace/db";
 import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
 import {
+  CANONICAL_PUBLISHED_SOURCE_KEYS,
   ensurePbsSourceRegistry,
   refreshPbsSourceRegistryStatus,
   type PublishedSourceKey,
@@ -26,6 +27,11 @@ import {
 const PARSER_VERSION = "pbs-published-files-v1";
 const USER_AGENT = "pharmacy-pbs-manager/1.0";
 const PAGE_TIMEOUT_MS = 30_000;
+const TEST_SOURCE_KEY_PREFIX = "test:";
+const MAX_STORED_ERROR_LENGTH = 2_000;
+const MAX_OUTER_ERROR_LENGTH = 1_200;
+const MAX_DATABASE_DETAIL_LENGTH = 500;
+const MAX_CAUSE_DEPTH = 4;
 
 const PAGE_URLS = {
   anniversaryPriceReductions: "https://www.pbs.gov.au/industry/pricing/anniversary-price-reductions",
@@ -101,6 +107,12 @@ type SourceFile = {
   bytes: Buffer;
   workbook: XLSX.WorkBook;
 };
+
+function persistedSourceKey(sourceKey: PublishedSourceKey): string {
+  return process.env.NODE_ENV === "test"
+    ? `${TEST_SOURCE_KEY_PREFIX}${sourceKey}`
+    : sourceKey;
+}
 
 export const PUBLISHED_REPORT_MAX_AGE_DAYS = 180;
 
@@ -292,7 +304,7 @@ async function fetchSourceFile(
       raw: false,
     });
   } catch (error) {
-    throw new Error(`Downloaded PBS file is not a readable workbook: ${errorMessage(error)}`);
+    throw new Error(`Downloaded PBS file is not a readable workbook: ${publishedFileErrorMessage(error)}`);
   }
 
   return {
@@ -476,8 +488,44 @@ function extractCycle(value: string): {
   };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function boundedText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[\u0000-\u001f\u007f]+/g, " ").trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function databaseErrorDetails(error: unknown): string[] {
+  const details: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  for (let depth = 0; depth <= MAX_CAUSE_DEPTH; depth += 1) {
+    if (!isRecord(current) || seen.has(current)) break;
+    seen.add(current);
+
+    const code = boundedText(current.code, 5);
+    if (code && /^[A-Z0-9]{5}$/i.test(code)) details.push(`SQLSTATE ${code}`);
+
+    const constraint = boundedText(current.constraint, 128);
+    if (constraint && /^[A-Z0-9_.-]+$/i.test(constraint)) {
+      details.push(`constraint ${constraint}`);
+    }
+
+    const detail = boundedText(current.detail, MAX_DATABASE_DETAIL_LENGTH);
+    if (detail) details.push(`detail ${detail}`);
+
+    if (details.length > 0) break;
+    current = current.cause;
+  }
+
+  return details;
+}
+
+export function publishedFileErrorMessage(error: unknown): string {
+  const outerMessage =
+    boundedText(error instanceof Error ? error.message : isRecord(error) ? error.message : error, MAX_OUTER_ERROR_LENGTH) ??
+    "Unknown error";
+  return [outerMessage, ...databaseErrorDetails(error)].join("; ").slice(0, MAX_STORED_ERROR_LENGTH);
 }
 
 async function loadContext(): Promise<DrugContext> {
@@ -567,14 +615,15 @@ function watchedRow(
 
 async function upsertPublishedFile(sourceFile: SourceFile, ingestionRunId?: number): Promise<PbsPublishedFile> {
   const fileSha256 = createHash("sha256").update(sourceFile.bytes).digest("hex");
+  const sourceKey = persistedSourceKey(sourceFile.sourceKey);
   await db
     .update(pbsPublishedFilesTable)
     .set({ isCurrent: false })
-    .where(eq(pbsPublishedFilesTable.sourceKey, sourceFile.sourceKey));
+    .where(eq(pbsPublishedFilesTable.sourceKey, sourceKey));
   const [file] = await db
     .insert(pbsPublishedFilesTable)
     .values({
-      sourceKey: sourceFile.sourceKey,
+      sourceKey,
       pageUrl: sourceFile.pageUrl,
       fileUrl: sourceFile.fileUrl,
       fileName: sourceFile.fileName,
@@ -685,14 +734,15 @@ async function failPublishedFile(fileId: number, message: string): Promise<void>
 }
 
 async function recordFailedPublishedFile(sourceKey: PublishedSourceKey, message: string): Promise<void> {
+  const storageSourceKey = persistedSourceKey(sourceKey);
   await db
     .update(pbsPublishedFilesTable)
     .set({ isCurrent: false })
-    .where(eq(pbsPublishedFilesTable.sourceKey, sourceKey));
+    .where(eq(pbsPublishedFilesTable.sourceKey, storageSourceKey));
   const pageUrl = sourcePageUrl(sourceKey);
   const fileSha256 = createHash("sha256").update(`${sourceKey}:${message}`).digest("hex");
   await db.insert(pbsPublishedFilesTable).values({
-    sourceKey,
+    sourceKey: storageSourceKey,
     pageUrl,
     fileUrl: pageUrl,
     fileName: `${sourceKey}-unavailable`,
@@ -1184,7 +1234,7 @@ async function processSource(
     }
     return await processIndicativePrices(sourceFile, file, context);
   } catch (error) {
-    const message = errorMessage(error);
+    const message = publishedFileErrorMessage(error);
     if (file) {
       await failPublishedFile(file.id, message);
     } else {
@@ -1354,7 +1404,12 @@ export async function listLatestPublishedFiles(): Promise<Array<PbsPublishedFile
   const files = await db
     .select()
     .from(pbsPublishedFilesTable)
-    .where(eq(pbsPublishedFilesTable.isCurrent, true))
+    .where(
+      and(
+        eq(pbsPublishedFilesTable.isCurrent, true),
+        inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS),
+      ),
+    )
     .orderBy(asc(pbsPublishedFilesTable.sourceKey));
   return files.map((file) => ({
     ...file,

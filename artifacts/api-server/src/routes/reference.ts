@@ -15,6 +15,7 @@ import {
   priceHistoryTable,
   scheduleChangesTable,
 } from "@workspace/db";
+import { CANONICAL_PUBLISHED_SOURCE_KEYS } from "../lib/pbs-source-status";
 import type { ScheduleChangeAffectedItem } from "@workspace/db";
 import {
   GetDrugScheduleTimelineParams,
@@ -303,13 +304,17 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         cycleLabel: pbsDisclosureCyclesTable.cycleLabel,
         submissionDeadline: pbsDisclosureCyclesTable.submissionDeadline,
       })
-      .from(pbsDisclosureCyclesTable),
+      .from(pbsDisclosureCyclesTable)
+      .innerJoin(pbsPublishedFilesTable, eq(pbsDisclosureCyclesTable.fileId, pbsPublishedFilesTable.id))
+      .where(inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS)),
     db
       .select({
         drugId: pbsFnbReductionsTable.drugId,
         effectDate: pbsFnbReductionsTable.effectDate,
       })
-      .from(pbsFnbReductionsTable),
+      .from(pbsFnbReductionsTable)
+      .innerJoin(pbsPublishedFilesTable, eq(pbsFnbReductionsTable.fileId, pbsPublishedFilesTable.id))
+      .where(inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS)),
     getPriceChangeThresholds(),
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(req.userId as string);

@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import * as XLSX from "xlsx";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import {
   anniversaryFileLinkMatches,
   ingestPublishedFiles,
   inspectAnniversaryWorkbook,
   isPublishedReportFresh,
+  listLatestPublishedFiles,
+  publishedFileErrorMessage,
   publishedFileParseOutcome,
   section99acpFileLinkMatches,
   sourcePriority,
 } from "./pbs-published-files";
+import { listPbsSourceStatuses } from "./pbs-source-status";
 import {
   db,
   drugsTable,
@@ -65,6 +68,27 @@ test("parsed rows remain parse-healthy when none match the local catalogue", () 
     failureStage: "parse",
     errorMessage: "Parsed workbook contained no data rows",
   });
+});
+
+test("published-file errors retain only allowlisted nested PostgreSQL details", () => {
+  const postgresCause = Object.assign(new Error("duplicate key value violates unique constraint"), {
+    code: "23505",
+    constraint: "pbs_fnb_reductions_drug_moa_date_idx",
+    detail: "Key (drug_id, manner_of_administration, effect_date)=(1, Injection, 2021-04-01) already exists.",
+    connectionString: "postgresql://should-not-be-stored",
+    password: "should-not-be-stored",
+  });
+  const wrapped = new Error("Failed query: insert into pbs_fnb_reductions");
+  Object.assign(wrapped, { cause: postgresCause });
+
+  const message = publishedFileErrorMessage(wrapped);
+
+  assert.equal(
+    message,
+    "Failed query: insert into pbs_fnb_reductions; SQLSTATE 23505; constraint pbs_fnb_reductions_drug_moa_date_idx; detail Key (drug_id, manner_of_administration, effect_date)=(1, Injection, 2021-04-01) already exists.",
+  );
+  assert.equal(message.includes("postgresql://"), false);
+  assert.equal(message.includes("password"), false);
 });
 
 function anniversaryWorkbook(sheets: Array<{ name: string; title: string; proposedDate: string }>) {
@@ -256,7 +280,7 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
     const [firstFile] = await db
       .select({ id: pbsPublishedFilesTable.id })
       .from(pbsPublishedFilesTable)
-      .where(eq(pbsPublishedFilesTable.sourceKey, "first_new_brand"))
+      .where(eq(pbsPublishedFilesTable.sourceKey, "test:first_new_brand"))
       .orderBy(desc(pbsPublishedFilesTable.id))
       .limit(1);
     assert.ok(firstFile);
@@ -270,7 +294,7 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
     const [latestFile] = await db
       .select({ id: pbsPublishedFilesTable.id })
       .from(pbsPublishedFilesTable)
-      .where(eq(pbsPublishedFilesTable.sourceKey, "first_new_brand"))
+      .where(eq(pbsPublishedFilesTable.sourceKey, "test:first_new_brand"))
       .orderBy(desc(pbsPublishedFilesTable.id))
       .limit(1);
     assert.ok(latestFile);
@@ -306,6 +330,66 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
     }
     await db.delete(pbsItemsTable).where(eq(pbsItemsTable.itemCode, itemCode));
     await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+  }
+});
+
+test("an abandoned test observation is invisible to operational published-file readers", async () => {
+  const canonicalFileName = "operational-first-new-brand.xlsx";
+  const testFileName = "abandoned-test-first-new-brand.xlsx";
+  const createdFileIds: number[] = [];
+
+  try {
+    const inserted = await db
+      .insert(pbsPublishedFilesTable)
+      .values([
+        {
+          sourceKey: "first_new_brand",
+          pageUrl: "https://www.pbs.gov.au/operational",
+          fileUrl: "https://www.pbs.gov.au/operational.xlsx",
+          fileName: canonicalFileName,
+          fileSha256: `operational_${process.pid}_${Date.now()}`,
+          rawContentBase64: "",
+          parserVersion: "test",
+          status: "completed",
+          parseHealth: "healthy",
+          fetchStatus: "succeeded",
+          parseStatus: "succeeded",
+          totalRows: 1,
+          matchedRows: 1,
+          isCurrent: true,
+        },
+        {
+          sourceKey: "test:first_new_brand",
+          pageUrl: "https://example.test/abandoned",
+          fileUrl: "https://example.test/abandoned.xlsx",
+          fileName: testFileName,
+          fileSha256: `abandoned_${process.pid}_${Date.now()}`,
+          rawContentBase64: "",
+          parserVersion: "test",
+          status: "failed",
+          parseHealth: "rejected",
+          fetchStatus: "succeeded",
+          parseStatus: "failed",
+          failureStage: "parse",
+          errorMessage: "Intentional failure before teardown",
+          isCurrent: true,
+        },
+      ])
+      .returning({ id: pbsPublishedFilesTable.id });
+    createdFileIds.push(...inserted.map((file) => file.id));
+
+    const statuses = await listPbsSourceStatuses();
+    const firstNewBrand = statuses.find((status) => status.sourceKey === "first_new_brand");
+    assert.equal(firstNewBrand?.latestFileName, canonicalFileName);
+
+    const latestFiles = await listLatestPublishedFiles();
+    assert.equal(latestFiles.some((file) => file.fileName === testFileName), false);
+    assert.equal(latestFiles.some((file) => file.fileName === canonicalFileName), true);
+  } finally {
+    if (createdFileIds.length > 0) {
+      await db.delete(pbsPublishedFilesTable).where(inArray(pbsPublishedFilesTable.id, createdFileIds));
+      await listPbsSourceStatuses();
+    }
   }
 });
 

@@ -12,6 +12,7 @@ import {
   scheduleChangesTable,
 } from "@workspace/db";
 import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { CANONICAL_PUBLISHED_SOURCE_KEYS } from "./pbs-source-status";
 
 const DEFAULT_ANNIVERSARY_SETTINGS = [
   { anniversaryYears: 5, reductionType: "5-year statutory reduction", percentage: 5 },
@@ -289,7 +290,14 @@ export async function recalculatePredictedReductionsForDrug(
     db
       .select({ effectDate: pbsFnbReductionsTable.effectDate })
       .from(pbsFnbReductionsTable)
-      .where(and(eq(pbsFnbReductionsTable.drugId, drugId), lte(pbsFnbReductionsTable.effectDate, today)))
+      .innerJoin(pbsPublishedFilesTable, eq(pbsFnbReductionsTable.fileId, pbsPublishedFilesTable.id))
+      .where(
+        and(
+          eq(pbsFnbReductionsTable.drugId, drugId),
+          lte(pbsFnbReductionsTable.effectDate, today),
+          inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS),
+        ),
+      )
       .orderBy(asc(pbsFnbReductionsTable.effectDate)),
   ]);
   const firstNewBrandChange = firstNewBrandChanges[0];
@@ -401,6 +409,7 @@ export async function recalculatePredictedReductionsForDrug(
         eq(pbsPublishedPricesTable.drugId, drugId),
         eq(pbsPublishedFilesTable.isCurrent, true),
         eq(pbsPublishedFilesTable.status, "completed"),
+        inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS),
       ),
     );
   const freshPublishedPrices = publishedPrices.filter((price) => {

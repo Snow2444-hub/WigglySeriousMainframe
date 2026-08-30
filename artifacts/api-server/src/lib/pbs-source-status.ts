@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   pbsPublishedFilesTable,
@@ -130,6 +130,10 @@ export const PBS_SOURCE_DEFINITIONS = [
   cadenceConfig: Record<string, unknown>;
   staleAfterDays: number;
 }>;
+
+export const CANONICAL_PUBLISHED_SOURCE_KEYS = PBS_SOURCE_DEFINITIONS.map(
+  (definition) => definition.sourceKey,
+);
 
 export type PbsSourceStatus = {
   sourceKey: PublishedSourceKey;
@@ -332,7 +336,11 @@ export async function refreshPbsSourceRegistryStatus(asOf = new Date()): Promise
   await ensurePbsSourceRegistry();
   const [definitions, observations] = await Promise.all([
     db.select().from(pbsSourceRegistryTable).orderBy(asc(pbsSourceRegistryTable.sourceFamily), asc(pbsSourceRegistryTable.label)),
-    db.select().from(pbsPublishedFilesTable).orderBy(desc(pbsPublishedFilesTable.id)),
+    db
+      .select()
+      .from(pbsPublishedFilesTable)
+      .where(inArray(pbsPublishedFilesTable.sourceKey, CANONICAL_PUBLISHED_SOURCE_KEYS))
+      .orderBy(desc(pbsPublishedFilesTable.id)),
   ]);
   const today = dateOnly(asOf) ?? new Date().toISOString().slice(0, 10);
   const resultRows = definitions.flatMap((registry) => {
