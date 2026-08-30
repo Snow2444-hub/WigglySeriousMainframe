@@ -24,6 +24,7 @@ import type {
   AdminIngestionRun,
   AdminPbsSourceStatus,
   AdminPublishedFile,
+  AnniversaryVerificationResponse,
   ArtgEntry,
   ArtgImportRun,
   ArtgImportStatus,
@@ -1010,6 +1011,83 @@ export function useListUpcomingPredictedReductions<TData = Awaited<ReturnType<ty
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListUpcomingPredictedReductionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAnniversaryVerificationUrl = () => {
+
+
+
+
+  return `/api/anniversary-verification`
+}
+
+/**
+ * @summary List PBS anniversary prediction verification evidence
+ */
+export const listAnniversaryVerification = async ( options?: Parameters<typeof customFetch>[1]): Promise<AnniversaryVerificationResponse> => {
+
+  return customFetch<AnniversaryVerificationResponse>(getListAnniversaryVerificationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAnniversaryVerificationQueryKey = () => {
+    return [
+    `/api/anniversary-verification`
+    ] as const;
+    }
+
+
+export const getListAnniversaryVerificationQueryOptions = <TData = Awaited<ReturnType<typeof listAnniversaryVerification>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnniversaryVerification>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAnniversaryVerificationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAnniversaryVerification>>> = ({ signal }) => listAnniversaryVerification({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAnniversaryVerification>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAnniversaryVerificationQueryResult = NonNullable<Awaited<ReturnType<typeof listAnniversaryVerification>>>
+export type ListAnniversaryVerificationQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List PBS anniversary prediction verification evidence
+ */
+
+export function useListAnniversaryVerification<TData = Awaited<ReturnType<typeof listAnniversaryVerification>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAnniversaryVerification>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAnniversaryVerificationQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -337,6 +337,124 @@ export interface UpcomingPredictedReductionGroup {
   brands: UpcomingPredictedBrandReductionGroup[];
 }
 
+export type AnniversaryVerificationState = typeof AnniversaryVerificationState[keyof typeof AnniversaryVerificationState];
+
+
+export const AnniversaryVerificationState = {
+  VERIFIED: 'VERIFIED',
+  GENUINE_MISMATCH: 'GENUINE_MISMATCH',
+  CATALOGUE_FORMULARY_DISCREPANCY: 'CATALOGUE_FORMULARY_DISCREPANCY',
+  PREDICTION_ONLY: 'PREDICTION_ONLY',
+  PUBLISHED_ONLY: 'PUBLISHED_ONLY',
+} as const;
+
+export type AnniversaryCandidateItemFormularyFormulary = typeof AnniversaryCandidateItemFormularyFormulary[keyof typeof AnniversaryCandidateItemFormularyFormulary];
+
+
+export const AnniversaryCandidateItemFormularyFormulary = {
+  F1: 'F1',
+  F2: 'F2',
+} as const;
+
+export interface AnniversaryCandidateItemFormulary {
+  itemCode: string;
+  formulary: AnniversaryCandidateItemFormularyFormulary;
+}
+
+/**
+ * @nullable
+ */
+export type AnniversaryVerificationEvidenceExpectedFormulary = typeof AnniversaryVerificationEvidenceExpectedFormulary[keyof typeof AnniversaryVerificationEvidenceExpectedFormulary] | null;
+
+
+export const AnniversaryVerificationEvidenceExpectedFormulary = {
+  F1: 'F1',
+  F2: 'F2',
+} as const;
+
+export interface AnniversaryVerificationEvidence {
+  sourceRowId: number;
+  sourceRowNumber: number;
+  /** @nullable */
+  effectDate: string | null;
+  /** @nullable */
+  sourceDrugName: string | null;
+  /** @nullable */
+  sourceMoa: string | null;
+  /** @nullable */
+  sourceBrandName: string | null;
+  candidateItemCodes: string[];
+  candidateItemFormularies: AnniversaryCandidateItemFormulary[];
+  /** @nullable */
+  expectedFormulary: AnniversaryVerificationEvidenceExpectedFormulary;
+  /** @nullable */
+  publishedOldAemp: number | null;
+  /** @nullable */
+  publishedNewAemp: number | null;
+  /** @nullable */
+  publishedPercentage: number | null;
+}
+
+export interface AnniversaryPredictionVerification {
+  /** @nullable */
+  predictionId: number | null;
+  /** @nullable */
+  itemCode: string | null;
+  /** @nullable */
+  drugId: number | null;
+  /** @nullable */
+  drugName: string | null;
+  /** @nullable */
+  brandName: string | null;
+  /** @nullable */
+  predictedDate: string | null;
+  /** @nullable */
+  predictedPercentage: number | null;
+  /** @nullable */
+  predictedNewPrice: number | null;
+  state: AnniversaryVerificationState;
+  evidence: AnniversaryVerificationEvidence | null;
+}
+
+export type AnniversaryPublishedVerificationRow = AnniversaryVerificationEvidence & ({
+  state: AnniversaryVerificationState;
+  /** @nullable */
+  linkedPredictionId: number | null;
+});
+
+export type AnniversaryVerificationSourceSourceKey = typeof AnniversaryVerificationSourceSourceKey[keyof typeof AnniversaryVerificationSourceSourceKey];
+
+
+export const AnniversaryVerificationSourceSourceKey = {
+  anniversary_indicative: 'anniversary_indicative',
+  section_99acp: 'section_99acp',
+} as const;
+
+export interface AnniversaryVerificationSource {
+  sourceKey: AnniversaryVerificationSourceSourceKey;
+  sourceFileId: number;
+  sourceFileName: string;
+  /** @nullable */
+  reportPublicationDate: string | null;
+  /** @nullable */
+  effectiveDate: string | null;
+}
+
+export interface AnniversaryVerificationResponse {
+  available: boolean;
+  sources: AnniversaryVerificationSource[];
+  /** @nullable */
+  sourceFileId: number | null;
+  /** @nullable */
+  sourceFileName: string | null;
+  /** @nullable */
+  reportPublicationDate: string | null;
+  /** @nullable */
+  effectiveDate: string | null;
+  predictions: AnniversaryPredictionVerification[];
+  publishedRows: AnniversaryPublishedVerificationRow[];
+}
+
 export interface PriceHistory {
   id: number;
   itemCode: string;

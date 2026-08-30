@@ -1,8 +1,12 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
+  getListAnniversaryVerificationQueryKey,
   getListUpcomingPredictedReductionsQueryKey,
+  type AnniversaryPredictionVerification,
+  type AnniversaryVerificationState,
   type UpcomingPredictedBrandReductionGroup,
   type UpcomingPredictedReductionGroup,
+  useListAnniversaryVerification,
   useListUpcomingPredictedReductions,
 } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
@@ -46,13 +50,54 @@ function changeLabel(event: UpcomingPredictedReductionGroup) {
   return `${money(event.currentPrice)} → ${money(event.predictedNewPrice)} (${signedPercentage(event.predictedPercentage)})`;
 }
 
-function ListingRows({ brand }: { brand: UpcomingPredictedBrandReductionGroup }) {
+const verificationLabels: Record<AnniversaryVerificationState, string> = {
+  VERIFIED: 'Verified against PBS',
+  GENUINE_MISMATCH: 'Genuine mismatch',
+  CATALOGUE_FORMULARY_DISCREPANCY: 'Catalogue / formulary discrepancy',
+  PREDICTION_ONLY: 'Prediction only',
+  PUBLISHED_ONLY: 'Published only',
+};
+
+function verificationBadgeClass(state: AnniversaryVerificationState) {
+  if (state === 'VERIFIED') return 'border-success/30 bg-success/10 text-success';
+  if (state === 'GENUINE_MISMATCH') return 'border-danger/30 bg-danger/10 text-danger';
+  if (state === 'CATALOGUE_FORMULARY_DISCREPANCY') return 'border-warning/40 bg-warning/10 text-warning';
+  return 'border-border bg-muted text-muted-foreground';
+}
+
+function VerificationBadge({ state }: { state: AnniversaryVerificationState }) {
+  return (
+    <span className={`inline-flex rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${verificationBadgeClass(state)}`}>
+      {verificationLabels[state]}
+    </span>
+  );
+}
+
+function publishedAempLabel(entry: AnniversaryPredictionVerification | undefined) {
+  const evidence = entry?.evidence;
+  if (!evidence || evidence.publishedOldAemp === null || evidence.publishedNewAemp === null) return null;
+  return `PBS ${money(evidence.publishedOldAemp)} → ${money(evidence.publishedNewAemp)}`;
+}
+
+type VerificationLookup = Map<string, AnniversaryPredictionVerification>;
+
+function ListingRows({ brand, verificationByItemCode }: { brand: UpcomingPredictedBrandReductionGroup; verificationByItemCode: VerificationLookup }) {
   return (
     <div className="divide-y divide-border border-t border-border bg-muted/20">
       {brand.listings.map((listing) => (
         <Link key={listing.itemCode} href={`/pbs/${encodeURIComponent(listing.itemCode)}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs transition-colors hover:bg-secondary/30">
           <span className="min-w-0 truncate font-medium text-foreground">{listing.strength ?? 'Strength not supplied'} <span className="font-mono font-bold">· PBS {listing.pbsCode ?? listing.itemCode}</span></span>
-          <span className="shrink-0 font-mono text-[10px] font-medium text-muted-foreground">{listing.itemCode}</span>
+          <span className="flex shrink-0 items-center gap-2">
+            {listing.reductionType.includes('year statutory') && verificationByItemCode.get(listing.itemCode) ? (
+              <VerificationBadge state={verificationByItemCode.get(listing.itemCode)!.state} />
+            ) : null}
+            {listing.reductionType.includes('year statutory') ? (
+              <span className="hidden font-mono text-[10px] font-medium text-muted-foreground sm:inline">
+                {publishedAempLabel(verificationByItemCode.get(listing.itemCode))}
+              </span>
+            ) : null}
+            <span className="font-mono text-[10px] font-medium text-muted-foreground">{listing.itemCode}</span>
+          </span>
         </Link>
       ))}
     </div>
@@ -74,6 +119,9 @@ export function UpcomingChangesPage() {
   );
   const predictions = useListUpcomingPredictedReductions(params, {
     query: { queryKey: getListUpcomingPredictedReductionsQueryKey(params) },
+  });
+  const verification = useListAnniversaryVerification({
+    query: { queryKey: getListAnniversaryVerificationQueryKey() },
   });
   const yearOptions = useMemo(
     () => [...new Set((predictions.data ?? []).map((event) => event.predictedDate.slice(0, 4)))]
@@ -100,6 +148,17 @@ export function UpcomingChangesPage() {
       });
   }, [predictions.data, year]);
   const listingTotal = visiblePredictions.reduce((total, event) => total + event.listingCount, 0);
+  const verificationByItemCode = useMemo<VerificationLookup>(
+    () => new Map(
+      (verification.data?.predictions ?? [])
+        .filter((entry): entry is typeof entry & { itemCode: string } => Boolean(entry.itemCode))
+        .map((entry) => [entry.itemCode, entry]),
+    ),
+    [verification.data?.predictions],
+  );
+  const auditRows = (verification.data?.publishedRows ?? []).filter((row) =>
+    row.state === 'PUBLISHED_ONLY' || row.state === 'CATALOGUE_FORMULARY_DISCREPANCY',
+  );
 
   return (
     <AppShell>
@@ -180,7 +239,7 @@ export function UpcomingChangesPage() {
                                       <span className={`rounded px-2 py-1 text-[10px] font-bold capitalize ${neutralBadgeClass}`} title="Confidence in the prediction, not the size of the reduction">{brand.confidence}</span>
                                     </div>
                                  </div>
-                                 <ListingRows brand={brand} />
+                                      <ListingRows brand={brand} verificationByItemCode={verificationByItemCode} />
                                </div>
                              );
                            }
@@ -194,7 +253,7 @@ export function UpcomingChangesPage() {
                                 <ChevronDown className={`justify-self-end text-muted-foreground transition-transform ${brandExpanded ? 'rotate-180' : ''}`} />
                               </button>
                               {brandExpanded && (
-                                 <ListingRows brand={brand} />
+                                  <ListingRows brand={brand} verificationByItemCode={verificationByItemCode} />
                               )}
                             </div>
                           );
@@ -208,6 +267,50 @@ export function UpcomingChangesPage() {
           </div>
         </section>
       )}
+      <section className="mt-6 overflow-hidden rounded-2xl border border-border bg-card shadow-sm" data-testid="section-anniversary-verification">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/25 px-5 py-4">
+          <div>
+            <p className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+              <Info className="h-3.5 w-3.5 text-info" /> PBS anniversary cross-check
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Published AEMPs are compared with the unchanged prediction using a 0.10 percentage-point tolerance.
+            </p>
+          </div>
+          {verification.data?.available ? (
+            <span className="text-right text-[11px] font-medium text-muted-foreground">
+              {verification.data.sourceFileName ?? 'Current PBS source'} · {date(verification.data.reportPublicationDate)}
+            </span>
+          ) : null}
+        </div>
+        {verification.isLoading ? (
+          <div className="px-5 py-5 text-sm text-muted-foreground">Loading published anniversary evidence…</div>
+        ) : verification.isError ? (
+          <div className="px-5 py-5 text-sm text-muted-foreground">Anniversary evidence is temporarily unavailable.</div>
+        ) : !verification.data?.available ? (
+          <div className="px-5 py-5 text-sm text-muted-foreground">No fresh anniversary source is available for comparison.</div>
+        ) : !auditRows.length ? (
+          <div className="px-5 py-5 text-sm text-muted-foreground">No published-only or formulary-discrepancy rows are currently present.</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {auditRows.map((row) => (
+              <div key={row.sourceRowId} className="grid gap-3 px-5 py-4 md:grid-cols-[1.3fr_1fr_auto] md:items-center">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-foreground">{row.sourceDrugName ?? 'Unnamed medicine'} · {row.sourceBrandName ?? 'Brand not supplied'}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{row.sourceMoa ?? 'Form not supplied'} · effective {date(row.effectDate)}</p>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-mono font-semibold text-foreground">{row.publishedOldAemp === null ? '—' : money(row.publishedOldAemp)}</span>
+                  <span className="mx-2">→</span>
+                  <span className="font-mono font-semibold text-foreground">{row.publishedNewAemp === null ? '—' : money(row.publishedNewAemp)}</span>
+                  <span className="ml-2">· {row.candidateItemCodes.length} candidate PBS code{row.candidateItemCodes.length === 1 ? '' : 's'}</span>
+                </div>
+                <VerificationBadge state={row.state} />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </AppShell>
   );
 }

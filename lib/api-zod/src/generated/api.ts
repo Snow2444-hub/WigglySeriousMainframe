@@ -376,6 +376,73 @@ export const ListUpcomingPredictedReductionsResponse = zod.array(ListUpcomingPre
 
 
 /**
+ * @summary List PBS anniversary prediction verification evidence
+ */
+export const ListAnniversaryVerificationResponse = zod.object({
+  "available": zod.boolean(),
+  "sources": zod.array(zod.object({
+  "sourceKey": zod.enum(['anniversary_indicative', 'section_99acp']),
+  "sourceFileId": zod.int(),
+  "sourceFileName": zod.string(),
+  "reportPublicationDate": zod.coerce.date().nullable(),
+  "effectiveDate": zod.coerce.date().nullable()
+})),
+  "sourceFileId": zod.int().nullable(),
+  "sourceFileName": zod.string().nullable(),
+  "reportPublicationDate": zod.coerce.date().nullable(),
+  "effectiveDate": zod.coerce.date().nullable(),
+  "predictions": zod.array(zod.object({
+  "predictionId": zod.int().nullable(),
+  "itemCode": zod.string().nullable(),
+  "drugId": zod.int().nullable(),
+  "drugName": zod.string().nullable(),
+  "brandName": zod.string().nullable(),
+  "predictedDate": zod.coerce.date().nullable(),
+  "predictedPercentage": zod.number().nullable(),
+  "predictedNewPrice": zod.number().nullable(),
+  "state": zod.enum(['VERIFIED', 'GENUINE_MISMATCH', 'CATALOGUE_FORMULARY_DISCREPANCY', 'PREDICTION_ONLY', 'PUBLISHED_ONLY']),
+  "evidence": zod.union([zod.object({
+  "sourceRowId": zod.int(),
+  "sourceRowNumber": zod.int(),
+  "effectDate": zod.coerce.date().nullable(),
+  "sourceDrugName": zod.string().nullable(),
+  "sourceMoa": zod.string().nullable(),
+  "sourceBrandName": zod.string().nullable(),
+  "candidateItemCodes": zod.array(zod.string()),
+  "candidateItemFormularies": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "formulary": zod.enum(['F1', 'F2'])
+})),
+  "expectedFormulary": zod.union([zod.literal('F1'),zod.literal('F2'),zod.literal(null)]).nullable(),
+  "publishedOldAemp": zod.number().nullable(),
+  "publishedNewAemp": zod.number().nullable(),
+  "publishedPercentage": zod.number().nullable()
+}),zod.null()])
+})),
+  "publishedRows": zod.array(zod.object({
+  "sourceRowId": zod.int(),
+  "sourceRowNumber": zod.int(),
+  "effectDate": zod.coerce.date().nullable(),
+  "sourceDrugName": zod.string().nullable(),
+  "sourceMoa": zod.string().nullable(),
+  "sourceBrandName": zod.string().nullable(),
+  "candidateItemCodes": zod.array(zod.string()),
+  "candidateItemFormularies": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "formulary": zod.enum(['F1', 'F2'])
+})),
+  "expectedFormulary": zod.union([zod.literal('F1'),zod.literal('F2'),zod.literal(null)]).nullable(),
+  "publishedOldAemp": zod.number().nullable(),
+  "publishedNewAemp": zod.number().nullable(),
+  "publishedPercentage": zod.number().nullable()
+}).and(zod.object({
+  "state": zod.enum(['VERIFIED', 'GENUINE_MISMATCH', 'CATALOGUE_FORMULARY_DISCREPANCY', 'PREDICTION_ONLY', 'PUBLISHED_ONLY']),
+  "linkedPredictionId": zod.int().nullable()
+})))
+})
+
+
+/**
  * @summary List PBS items
  */
 export const listPbsItemsQueryLimitDefault = 50;

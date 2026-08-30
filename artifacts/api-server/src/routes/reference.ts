@@ -9,6 +9,8 @@ import {
   pbsDisclosureCyclesTable,
   pbsFnbReductionsTable,
   pbsItemsTable,
+  pbsPublishedFileRowsTable,
+  pbsPublishedFilesTable,
   predictedReductionsTable,
   priceHistoryTable,
   scheduleChangesTable,
@@ -36,6 +38,7 @@ import {
   ListMedicineDirectoryResponse,
   ListUpcomingPredictedReductionsQueryParams,
   ListUpcomingPredictedReductionsResponse,
+  ListAnniversaryVerificationResponse,
   ListItemPredictedReductionsParams,
   ListItemPredictedReductionsResponse,
   ListItemPremiumHistoryParams,
@@ -50,6 +53,13 @@ import {
 import { getPriceChangeThresholds, priceChangeSignificance } from "../lib/schedule-changes";
 import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
 import { pbsBrandMatchesArtgProduct } from "../lib/artg-import";
+import {
+  buildAnniversaryVerification,
+  type AnniversaryCatalogueItem,
+  type AnniversaryPrediction,
+  type AnniversaryPublishedRow,
+} from "../lib/anniversary-verification";
+import { isPublishedReportFresh } from "../lib/pbs-published-files";
 import { requireAuth } from "../middlewares/requireAuth";
 
 export function createReferenceRouter(
@@ -558,6 +568,117 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
         };
       }),
     ),
+  );
+});
+
+router.get("/anniversary-verification", async (_req, res): Promise<void> => {
+  const today = new Date().toISOString().slice(0, 10);
+  const latestFiles = await db
+    .select({
+      id: pbsPublishedFilesTable.id,
+      sourceKey: pbsPublishedFilesTable.sourceKey,
+      fileName: pbsPublishedFilesTable.fileName,
+      reportPublicationDate: pbsPublishedFilesTable.reportPublicationDate,
+      effectiveDate: pbsPublishedFilesTable.effectiveDate,
+      status: pbsPublishedFilesTable.status,
+      parseHealth: pbsPublishedFilesTable.parseHealth,
+      retrievedAt: pbsPublishedFilesTable.retrievedAt,
+    })
+    .from(pbsPublishedFilesTable)
+    .where(inArray(pbsPublishedFilesTable.sourceKey, ["anniversary_indicative", "section_99acp"]))
+    .orderBy(desc(pbsPublishedFilesTable.retrievedAt))
+    .limit(20);
+  const latestBySource = ["anniversary_indicative", "section_99acp"]
+    .map((sourceKey) => latestFiles.find((file) => file.sourceKey === sourceKey))
+    .filter((file): file is NonNullable<typeof file> => Boolean(file));
+  const currentFiles = latestBySource.filter((file) =>
+    file.status === "completed"
+    && file.parseHealth === "healthy"
+    && isPublishedReportFresh(file, today),
+  );
+  const available = currentFiles.length > 0;
+
+  const [catalogueRows, predictionRows, publishedRows] = await Promise.all([
+    db
+      .select({
+        itemCode: pbsItemsTable.itemCode,
+        drugId: pbsItemsTable.drugId,
+        drugName: drugsTable.name,
+        activeIngredient: drugsTable.activeIngredient,
+        brandName: pbsItemsTable.brandName,
+        form: pbsItemsTable.form,
+        liForm: pbsItemsTable.liForm,
+        formulary: pbsItemsTable.formulary,
+      })
+      .from(pbsItemsTable)
+      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
+    db
+      .select({
+        id: predictedReductionsTable.id,
+        itemCode: predictedReductionsTable.itemCode,
+        drugId: predictedReductionsTable.drugId,
+        drugName: drugsTable.name,
+        brandName: pbsItemsTable.brandName,
+        formulary: pbsItemsTable.formulary,
+        predictedDate: predictedReductionsTable.predictedDate,
+        reductionType: predictedReductionsTable.reductionType,
+        predictedPercentage: predictedReductionsTable.predictedPercentage,
+        predictedNewPrice: predictedReductionsTable.predictedNewPrice,
+        currentPrice: pbsItemsTable.currentAemp,
+      })
+      .from(predictedReductionsTable)
+      .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
+      .innerJoin(drugsTable, eq(predictedReductionsTable.drugId, drugsTable.id))
+      .where(
+        and(
+          gte(predictedReductionsTable.predictedDate, today),
+          freshPredictionCondition(today),
+          ilike(predictedReductionsTable.reductionType, "%year statutory reduction"),
+        ),
+      ),
+    currentFiles.length
+      ? db
+          .select({
+            id: pbsPublishedFileRowsTable.id,
+            fileId: pbsPublishedFileRowsTable.fileId,
+            sourceRowNumber: pbsPublishedFileRowsTable.sourceRowNumber,
+            sourceDrugName: pbsPublishedFileRowsTable.sourceDrugName,
+            sourceMoa: pbsPublishedFileRowsTable.sourceMoa,
+            rawRow: pbsPublishedFileRowsTable.rawRow,
+            effectDate: pbsPublishedFileRowsTable.effectDate,
+          })
+          .from(pbsPublishedFileRowsTable)
+          .where(inArray(pbsPublishedFileRowsTable.fileId, currentFiles.map((file) => file.id)))
+          .orderBy(asc(pbsPublishedFileRowsTable.sourceRowNumber))
+      : Promise.resolve([]),
+  ]);
+
+  const verification = buildAnniversaryVerification({
+    publishedRows: publishedRows as AnniversaryPublishedRow[],
+    catalogueItems: catalogueRows as AnniversaryCatalogueItem[],
+    predictions: predictionRows as AnniversaryPrediction[],
+  });
+  res.json(
+    ListAnniversaryVerificationResponse.parse({
+      available,
+      sources: currentFiles.map((file) => ({
+        sourceKey: file.sourceKey,
+        sourceFileId: file.id,
+        sourceFileName: file.fileName,
+        reportPublicationDate: file.reportPublicationDate,
+        effectiveDate: file.effectiveDate,
+      })),
+      sourceFileId: currentFiles.length === 1 ? currentFiles[0]?.id ?? null : null,
+      sourceFileName: currentFiles.length ? currentFiles.map((file) => file.fileName).join(" · ") : null,
+      reportPublicationDate: currentFiles.length
+        ? currentFiles.map((file) => file.reportPublicationDate).filter(Boolean).sort().at(-1) ?? null
+        : null,
+      effectiveDate: currentFiles.length
+        ? currentFiles.map((file) => file.effectiveDate).filter(Boolean).sort().at(-1) ?? null
+        : null,
+      predictions: verification.predictions,
+      publishedRows: verification.publishedRows,
+    }),
   );
 });
 

@@ -278,6 +278,18 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/UpcomingPredictedReductionGroup"
+  /anniversary-verification:
+    get:
+      operationId: listAnniversaryVerification
+      tags: [pbs]
+      summary: List PBS anniversary prediction verification evidence
+      responses:
+        "200":
+          description: Current anniversary evidence and its comparison with predictions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnniversaryVerificationResponse"
   /pbs-items:
     get:
       operationId: listPbsItems
@@ -1483,6 +1495,134 @@ components:
           items:
             $ref: "#/components/schemas/UpcomingPredictedBrandReductionGroup"
       required: [drugId, drugName, originatorBrandName, predictedDate, currentPrice, predictedNewPrice, predictedPercentage, brandCount, listingCount, significance, brands]
+    AnniversaryVerificationState:
+      type: string
+      enum: [VERIFIED, GENUINE_MISMATCH, CATALOGUE_FORMULARY_DISCREPANCY, PREDICTION_ONLY, PUBLISHED_ONLY]
+    AnniversaryCandidateItemFormulary:
+      type: object
+      properties:
+        itemCode:
+          type: string
+        formulary:
+          type: string
+          enum: [F1, F2]
+      required: [itemCode, formulary]
+    AnniversaryVerificationEvidence:
+      type: object
+      properties:
+        sourceRowId:
+          type: integer
+        sourceRowNumber:
+          type: integer
+        effectDate:
+          type: ["string", "null"]
+          format: date
+        sourceDrugName:
+          type: ["string", "null"]
+        sourceMoa:
+          type: ["string", "null"]
+        sourceBrandName:
+          type: ["string", "null"]
+        candidateItemCodes:
+          type: array
+          items:
+            type: string
+        candidateItemFormularies:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnniversaryCandidateItemFormulary"
+        expectedFormulary:
+          type: ["string", "null"]
+          enum: [F1, F2, null]
+        publishedOldAemp:
+          type: ["number", "null"]
+        publishedNewAemp:
+          type: ["number", "null"]
+        publishedPercentage:
+          type: ["number", "null"]
+      required: [sourceRowId, sourceRowNumber, effectDate, sourceDrugName, sourceMoa, sourceBrandName, candidateItemCodes, candidateItemFormularies, expectedFormulary, publishedOldAemp, publishedNewAemp, publishedPercentage]
+    AnniversaryPredictionVerification:
+      type: object
+      properties:
+        predictionId:
+          type: ["integer", "null"]
+        itemCode:
+          type: ["string", "null"]
+        drugId:
+          type: ["integer", "null"]
+        drugName:
+          type: ["string", "null"]
+        brandName:
+          type: ["string", "null"]
+        predictedDate:
+          type: ["string", "null"]
+          format: date
+        predictedPercentage:
+          type: ["number", "null"]
+        predictedNewPrice:
+          type: ["number", "null"]
+        state:
+          $ref: "#/components/schemas/AnniversaryVerificationState"
+        evidence:
+          oneOf:
+            - $ref: "#/components/schemas/AnniversaryVerificationEvidence"
+            - type: "null"
+      required: [predictionId, itemCode, drugId, drugName, brandName, predictedDate, predictedPercentage, predictedNewPrice, state, evidence]
+    AnniversaryPublishedVerificationRow:
+      allOf:
+        - $ref: "#/components/schemas/AnniversaryVerificationEvidence"
+        - type: object
+          properties:
+            state:
+              $ref: "#/components/schemas/AnniversaryVerificationState"
+            linkedPredictionId:
+              type: ["integer", "null"]
+          required: [state, linkedPredictionId]
+    AnniversaryVerificationResponse:
+      type: object
+      properties:
+        available:
+          type: boolean
+        sources:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnniversaryVerificationSource"
+        sourceFileId:
+          type: ["integer", "null"]
+        sourceFileName:
+          type: ["string", "null"]
+        reportPublicationDate:
+          type: ["string", "null"]
+          format: date
+        effectiveDate:
+          type: ["string", "null"]
+          format: date
+        predictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnniversaryPredictionVerification"
+        publishedRows:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnniversaryPublishedVerificationRow"
+      required: [available, sources, sourceFileId, sourceFileName, reportPublicationDate, effectiveDate, predictions, publishedRows]
+    AnniversaryVerificationSource:
+      type: object
+      properties:
+        sourceKey:
+          type: string
+          enum: [anniversary_indicative, section_99acp]
+        sourceFileId:
+          type: integer
+        sourceFileName:
+          type: string
+        reportPublicationDate:
+          type: ["string", "null"]
+          format: date
+        effectiveDate:
+          type: ["string", "null"]
+          format: date
+      required: [sourceKey, sourceFileId, sourceFileName, reportPublicationDate, effectiveDate]
     PriceHistory:
       type: object
       properties:
