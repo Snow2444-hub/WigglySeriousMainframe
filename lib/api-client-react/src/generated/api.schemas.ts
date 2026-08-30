@@ -861,6 +861,7 @@ export const AdminIngestionRunStatus = {
   running: 'running',
   completed: 'completed',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;
 
 export type AdminIngestionRunMode = typeof AdminIngestionRunMode[keyof typeof AdminIngestionRunMode];
@@ -876,6 +877,8 @@ export interface AdminIngestionRun {
   startedAt: string;
   /** @nullable */
   finishedAt: string | null;
+  /** @nullable */
+  cancelRequestedAt: string | null;
   status: AdminIngestionRunStatus;
   recordsProcessed: number;
   pagesFetched: number;
@@ -1019,6 +1022,7 @@ export const ScheduledIngestionResultStatus = {
   completed: 'completed',
   skipped: 'skipped',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;
 
 export interface ScheduledIngestionResult {

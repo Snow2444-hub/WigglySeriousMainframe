@@ -1,10 +1,12 @@
 import { db, ingestionRunsTable, type IngestionRun } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { executeCurrentIngestionRun } from "./pbs-current-ingestion";
 import {
   acquireIngestionRun,
   configuredIngestionStaleMinutes,
   currentScheduleDate,
+  finalizeCancelledIngestionRun,
+  isIngestionRunCancelRequested,
 } from "./ingestion-run-control";
 import { logger } from "./logger";
 
@@ -25,6 +27,7 @@ type ScheduledIngestionOptions = {
 
 export type ScheduledIngestionResult =
   | { status: "completed"; runId: number; recoveredRunIds: number[] }
+  | { status: "cancelled"; runId: number; recoveredRunIds: number[] }
   | { status: "skipped"; activeRunId: number; recoveredRunIds: number[] }
   | { status: "failed"; runId: number; errorMessage: string; recoveredRunIds: number[] };
 
@@ -107,11 +110,21 @@ async function completeScheduledIngestion(
   try {
     await execute(runId, scheduleDate);
   } catch (error) {
+    if (await isIngestionRunCancelRequested(runId)) {
+      await finalizeCancelledIngestionRun(runId);
+      return { status: "cancelled", runId, recoveredRunIds };
+    }
     const errorMessage = error instanceof Error ? error.message : "Unknown scheduled ingestion error";
     await db
       .update(ingestionRunsTable)
       .set({ status: "failed", finishedAt: new Date(), errorMessage: errorMessage.slice(0, 2_000) })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          inArray(ingestionRunsTable.status, ["queued", "running"]),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      );
     logger.error({ err: error, runId }, "Scheduled PBS ingestion threw an uncaught error");
     return { status: "failed", runId, errorMessage, recoveredRunIds };
   }
@@ -125,6 +138,9 @@ async function completeScheduledIngestion(
     .where(eq(ingestionRunsTable.id, runId))
     .limit(1);
 
+  if (completedRun?.status === "cancelled") {
+    return { status: "cancelled", runId, recoveredRunIds };
+  }
   if (completedRun?.status !== "completed") {
     const errorMessage = completedRun?.errorMessage ?? "Scheduled ingestion did not complete";
     logger.error({ runId, status: completedRun?.status, errorMessage }, "Scheduled PBS ingestion failed");

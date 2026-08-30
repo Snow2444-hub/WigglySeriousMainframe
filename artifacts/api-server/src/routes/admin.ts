@@ -1,6 +1,6 @@
 import { raw, Router, type IRouter } from "express";
 import { createHash } from "node:crypto";
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   artgEntriesTable,
   artgIngestionRunsTable,
@@ -16,6 +16,8 @@ import {
   DeletePbsWatchlistEntryParams,
   GetScheduleChangeSettingsResponse,
   GetCurrentAdminIngestionRunResponse,
+  CancelAdminIngestionRunParams,
+  CancelAdminIngestionRunResponse,
   ListAdminPbsSourceStatusResponse,
   ListAdminPublishedFilesResponse,
   ListPbsWatchlistEntriesResponse,
@@ -57,8 +59,14 @@ import {
 import {
   ACTIVE_INGESTION_STATUSES,
   acquireIngestionRun,
+  beginIngestionChangeDetection,
   currentScheduleDate,
+  finalizeCancelledIngestionRun,
+  IngestionCancelledError,
+  isIngestionRunCancelRequested,
   pruneRawScheduleStaging,
+  requestIngestionRunCancellation,
+  throwIfIngestionRunCancelled,
 } from "../lib/ingestion-run-control";
 import {
   ARTG_PARSER_VERSION,
@@ -137,7 +145,7 @@ export async function executeBackfillIngestionRun(
       dependencies.syncScheduleChangesFromStagedData ?? syncScheduleChangesFromStagedData;
     const pruneRawScheduleStagingImpl = dependencies.pruneRawScheduleStaging ?? pruneRawScheduleStaging;
 
-    await db
+    const [startedRun] = await db
       .update(ingestionRunsTable)
       .set({
         status: "running",
@@ -148,7 +156,19 @@ export async function executeBackfillIngestionRun(
         totalSchedules: null,
         schedulesProcessed: 0,
       })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "queued"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning({ id: ingestionRunsTable.id });
+    if (!startedRun) {
+      await throwIfIngestionRunCancelled(runId);
+      throw new Error(`PBS backfill run ${runId} was not available to start`);
+    }
+    await throwIfIngestionRunCancelled(runId);
 
     const enabledWatchlist = await db
       .select()
@@ -201,6 +221,7 @@ export async function executeBackfillIngestionRun(
         schedules.push(...historicalSchedulesFromPayload(payload));
       },
     });
+    await throwIfIngestionRunCancelled(runId);
 
     const latestEffectiveDate = schedules
       .map((schedule) => schedule.effectiveDate)
@@ -224,6 +245,7 @@ export async function executeBackfillIngestionRun(
     for (const [scheduleIndex, schedule] of uniqueSchedules.entries()) {
       const remainingPages = maxPages === undefined ? undefined : maxPages - pagesFetched;
       if (remainingPages === 0) break;
+      await throwIfIngestionRunCancelled(runId);
 
       const atcItemIds = new Set<string>();
       const itemMetadata: PbsItemScheduleMetadata = new Map();
@@ -256,6 +278,7 @@ export async function executeBackfillIngestionRun(
               stagingRunId: runId,
               resumeFromStaging: true,
               onPage: handlePage,
+              shouldCancel: () => isIngestionRunCancelRequested(runId),
               onPayload: handleAtcPayload,
             });
       const pagesAvailableForItems =
@@ -276,6 +299,7 @@ export async function executeBackfillIngestionRun(
               stagingRunId: runId,
               resumeFromStaging: true,
               onPage: handlePage,
+              shouldCancel: () => isIngestionRunCancelRequested(runId),
               onPayload: async (page) => {
                 if (page.endpoint !== "items") return;
                 const matched = recordsFromPayload(page.payload).filter((record) =>
@@ -299,6 +323,7 @@ export async function executeBackfillIngestionRun(
                 await persistProgress();
               },
             });
+      await throwIfIngestionRunCancelled(runId);
       const pagesAvailableForPremiums =
         pagesAvailableForItems === undefined ? undefined : pagesAvailableForItems - itemPages.length;
       const premiumPages =
@@ -317,6 +342,7 @@ export async function executeBackfillIngestionRun(
               stagingRunId: runId,
               resumeFromStaging: true,
               onPage: handlePage,
+              shouldCancel: () => isIngestionRunCancelRequested(runId),
               onPayload: async (page) => {
                 if (page.endpoint !== "item-dispensing-rule-relationships") return;
                 const matched = recordsFromPayload(page.payload).filter((record) => {
@@ -334,6 +360,7 @@ export async function executeBackfillIngestionRun(
                 await persistProgress();
               },
             });
+      await throwIfIngestionRunCancelled(runId);
       if (atcPages.length + itemPages.length + premiumPages.length === 0) break;
       schedulesProcessed = scheduleIndex + 1;
       await persistProgress();
@@ -348,7 +375,11 @@ export async function executeBackfillIngestionRun(
       );
     }
     const pageCapReached = maxPages !== undefined && pagesFetched >= maxPages;
-    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesImpl();
+    let changesRecorded = 0;
+    if (!pageCapReached) {
+      await beginIngestionChangeDetection(runId);
+      changesRecorded = await syncScheduleChangesImpl();
+    }
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the backfill page cap was reached");
     } else {
@@ -357,7 +388,8 @@ export async function executeBackfillIngestionRun(
       });
     }
 
-    await db
+    await throwIfIngestionRunCancelled(runId);
+    const [completedRun] = await db
       .update(ingestionRunsTable)
       .set({
         status: "completed",
@@ -370,7 +402,18 @@ export async function executeBackfillIngestionRun(
         requestUrls: [...requestUrls],
         snapshotComplete: !pageCapReached,
       })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "running"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning({ id: ingestionRunsTable.id });
+    if (!completedRun) {
+      await throwIfIngestionRunCancelled(runId);
+      throw new Error(`PBS backfill run ${runId} could not be completed`);
+    }
 
     logger.info(
       {
@@ -384,11 +427,22 @@ export async function executeBackfillIngestionRun(
       "PBS backfill ingestion run completed",
     );
   } catch (error) {
+    if (error instanceof IngestionCancelledError || await isIngestionRunCancelRequested(runId)) {
+      await finalizeCancelledIngestionRun(runId);
+      logger.info({ runId }, "PBS backfill ingestion run cancelled");
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : "Unknown ingestion error";
     await db
       .update(ingestionRunsTable)
       .set({ status: "failed", finishedAt: new Date(), errorMessage: errorMessage.slice(0, 2_000) })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "running"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      );
     logger.error({ err: error, runId }, "PBS backfill ingestion run failed");
   }
 }
@@ -412,6 +466,20 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
     .limit(1);
 
   res.json(GetCurrentAdminIngestionRunResponse.parse({ currentRun: run ?? null }));
+});
+
+router.post("/admin/ingestion-runs/:id/cancel", requireAdmin, async (req, res): Promise<void> => {
+  const params = CancelAdminIngestionRunParams.parse(req.params);
+  const result = await requestIngestionRunCancellation(params.id);
+  if (!result) {
+    res.status(404).json({ error: "Ingestion run not found" });
+    return;
+  }
+  if (result.kind === "terminal" && result.run.status !== "cancelled") {
+    res.status(409).json({ error: `Ingestion run is already ${result.run.status}` });
+    return;
+  }
+  res.json(CancelAdminIngestionRunResponse.parse(result.run));
 });
 
 function uploadFileName(value: string | undefined): string {

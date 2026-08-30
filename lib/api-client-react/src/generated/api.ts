@@ -2407,6 +2407,77 @@ export function useGetCurrentAdminIngestionRun<TData = Awaited<ReturnType<typeof
 
 
 
+export const getCancelAdminIngestionRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/admin/ingestion-runs/${id}/cancel`
+}
+
+/**
+ * @summary Request cancellation of a PBS ingestion run
+ */
+export const cancelAdminIngestionRun = async (id: number, options?: Parameters<typeof customFetch>[1]): Promise<AdminIngestionRun> => {
+
+  return customFetch<AdminIngestionRun>(getCancelAdminIngestionRunUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCancelAdminIngestionRunMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAdminIngestionRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cancelAdminIngestionRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['cancelAdminIngestionRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cancelAdminIngestionRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  cancelAdminIngestionRun(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CancelAdminIngestionRunMutationResult = NonNullable<Awaited<ReturnType<typeof cancelAdminIngestionRun>>>
+
+    export type CancelAdminIngestionRunMutationError = ErrorType<Error>
+
+    /**
+ * @summary Request cancellation of a PBS ingestion run
+ */
+export const useCancelAdminIngestionRun = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cancelAdminIngestionRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cancelAdminIngestionRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCancelAdminIngestionRunMutationOptions(options));
+    }
+
 export const getRunScheduledAdminIngestionUrl = () => {
 
 

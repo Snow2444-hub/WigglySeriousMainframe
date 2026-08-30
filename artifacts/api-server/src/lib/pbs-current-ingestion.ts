@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   db,
   ingestionRunsTable,
@@ -21,7 +21,14 @@ import {
   type PbsItemScheduleMetadata,
 } from "./pbs-item-mapping";
 import { ingestPublishedFiles } from "./pbs-published-files";
-import { pruneRawScheduleStaging } from "./ingestion-run-control";
+import {
+  beginIngestionChangeDetection,
+  finalizeCancelledIngestionRun,
+  IngestionCancelledError,
+  isIngestionRunCancelRequested,
+  pruneRawScheduleStaging,
+  throwIfIngestionRunCancelled,
+} from "./ingestion-run-control";
 import { syncScheduleChangesFromStagedData } from "./schedule-changes";
 import type { PbsIngestionExecutorDependencies } from "./pbs-ingestion-executor-dependencies";
 
@@ -60,7 +67,7 @@ export async function executeCurrentIngestionRun(
     const pruneRawScheduleStagingImpl = dependencies.pruneRawScheduleStaging ?? pruneRawScheduleStaging;
     const ingestPublishedFilesImpl = dependencies.ingestPublishedFiles ?? ingestPublishedFiles;
 
-    await db
+    const [startedRun] = await db
       .update(ingestionRunsTable)
       .set({
         status: "running",
@@ -72,7 +79,19 @@ export async function executeCurrentIngestionRun(
         schedulesProcessed: 0,
         snapshotComplete: false,
       })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "queued"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning({ id: ingestionRunsTable.id });
+    if (!startedRun) {
+      await throwIfIngestionRunCancelled(runId);
+      throw new Error(`PBS ingestion run ${runId} was not available to start`);
+    }
+    await throwIfIngestionRunCancelled(runId);
 
     const enabledWatchlist = await db
       .select()
@@ -116,6 +135,7 @@ export async function executeCurrentIngestionRun(
       stagingRunId: runId,
       resumeFromStaging: true,
       onPage: handlePage,
+      shouldCancel: () => isIngestionRunCancelRequested(runId),
       onPayload: async (page) => {
         if (page.endpoint !== "schedules") return;
         const metadata = scheduleMetadataFromPayload(page.payload);
@@ -124,6 +144,7 @@ export async function executeCurrentIngestionRun(
         await persistProgress();
       },
     });
+    await throwIfIngestionRunCancelled(runId);
     if (!scheduleEffectiveDate) {
       throw new Error("Latest PBS schedule metadata did not include an effective_date");
     }
@@ -150,6 +171,7 @@ export async function executeCurrentIngestionRun(
             stagingRunId: runId,
             resumeFromStaging: true,
             onPage: handlePage,
+            shouldCancel: () => isIngestionRunCancelRequested(runId),
             onPayload: async (page) => {
               if (page.endpoint === "item-atc-relationships") {
                 itemIdsFromAtcRelationshipPayload(page.payload).forEach((itemId) => atcItemIds.add(itemId));
@@ -157,6 +179,7 @@ export async function executeCurrentIngestionRun(
               await persistProgress();
             },
           });
+    await throwIfIngestionRunCancelled(runId);
 
     const pagesAvailableForItems =
       pagesAvailableAfterSchedule === undefined ? undefined : pagesAvailableAfterSchedule - atcPages.length;
@@ -172,6 +195,7 @@ export async function executeCurrentIngestionRun(
             stagingRunId: runId,
             resumeFromStaging: true,
             onPage: handlePage,
+            shouldCancel: () => isIngestionRunCancelRequested(runId),
             onPayload: async (page) => {
               if (page.endpoint !== "items") return;
               if (!scheduleEffectiveDate) {
@@ -194,6 +218,7 @@ export async function executeCurrentIngestionRun(
               await persistProgress();
             },
           });
+    await throwIfIngestionRunCancelled(runId);
 
     const pagesAvailableForPremiums =
       pagesAvailableForItems === undefined ? undefined : pagesAvailableForItems - itemsPages.length;
@@ -212,6 +237,7 @@ export async function executeCurrentIngestionRun(
             stagingRunId: runId,
             resumeFromStaging: true,
             onPage: handlePage,
+            shouldCancel: () => isIngestionRunCancelRequested(runId),
             onPayload: async (page) => {
               if (page.endpoint !== "item-dispensing-rule-relationships") return;
               if (!scheduleEffectiveDate) {
@@ -232,6 +258,7 @@ export async function executeCurrentIngestionRun(
               await persistProgress();
             },
           });
+    await throwIfIngestionRunCancelled(runId);
 
     const pages = [...schedulePages, ...atcPages, ...itemsPages, ...premiumPages];
     if (recordsReturned > 0 && recordsMatched === 0) {
@@ -243,7 +270,11 @@ export async function executeCurrentIngestionRun(
       );
     }
     const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
-    const changesRecorded = pageCapReached ? 0 : await syncScheduleChangesImpl();
+    let changesRecorded = 0;
+    if (!pageCapReached) {
+      await beginIngestionChangeDetection(runId);
+      changesRecorded = await syncScheduleChangesImpl();
+    }
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the page cap was reached");
     } else {
@@ -251,9 +282,11 @@ export async function executeCurrentIngestionRun(
         logger.error({ err: error, runId }, "Failed to prune raw PBS schedule staging after ingestion");
       });
     }
+    await throwIfIngestionRunCancelled(runId);
     const publishedFiles = await ingestPublishedFilesImpl(runId);
 
-    await db
+    await throwIfIngestionRunCancelled(runId);
+    const [completedRun] = await db
       .update(ingestionRunsTable)
       .set({
         scheduleCode,
@@ -266,13 +299,29 @@ export async function executeCurrentIngestionRun(
         requestUrls: [...requestUrls],
         snapshotComplete: !pageCapReached,
       })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "running"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning({ id: ingestionRunsTable.id });
+    if (!completedRun) {
+      await throwIfIngestionRunCancelled(runId);
+      throw new Error(`PBS ingestion run ${runId} could not be completed`);
+    }
 
     logger.info(
       { runId, pages: pages.length, recordsProcessed, changesRecorded, publishedFiles, requestUrls: [...requestUrls] },
       "PBS ingestion run completed",
     );
   } catch (error) {
+    if (error instanceof IngestionCancelledError || await isIngestionRunCancelRequested(runId)) {
+      await finalizeCancelledIngestionRun(runId);
+      logger.info({ runId }, "PBS ingestion run cancelled");
+      return;
+    }
     const errorMessage = error instanceof Error ? error.message : "Unknown ingestion error";
     await db
       .update(ingestionRunsTable)
@@ -281,7 +330,13 @@ export async function executeCurrentIngestionRun(
         finishedAt: new Date(),
         errorMessage: errorMessage.slice(0, 2_000),
       })
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "running"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      );
     logger.error({ err: error, runId }, "PBS ingestion run failed");
   }
 }

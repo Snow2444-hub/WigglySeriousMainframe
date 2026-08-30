@@ -13,4 +13,5 @@ export const ScheduledIngestionResultStatus = {
   completed: 'completed',
   skipped: 'skipped',
   failed: 'failed',
+  cancelled: 'cancelled',
 } as const;

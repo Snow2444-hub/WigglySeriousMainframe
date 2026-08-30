@@ -733,6 +733,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /admin/ingestion-runs/{id}/cancel:
+    post:
+      operationId: cancelAdminIngestionRun
+      tags: [admin]
+      summary: Request cancellation of a PBS ingestion run
+      parameters:
+        - $ref: "#/components/parameters/AdminIngestionRunId"
+      responses:
+        "200":
+          description: Ingestion cancellation requested or completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminIngestionRun"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Ingestion run not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Ingestion run is already terminal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /admin/run-scheduled-ingestion:
     post:
       operationId: runScheduledAdminIngestion
@@ -1105,6 +1143,12 @@ components:
       schema:
         type: integer
     WatchlistEntryId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    AdminIngestionRunId:
       name: id
       in: path
       required: true
@@ -2112,9 +2156,12 @@ components:
         finishedAt:
           type: ["string", "null"]
           format: date-time
+        cancelRequestedAt:
+          type: ["string", "null"]
+          format: date-time
         status:
           type: string
-          enum: [queued, running, completed, failed]
+          enum: [queued, running, completed, failed, cancelled]
         recordsProcessed:
           type: integer
         pagesFetched:
@@ -2132,7 +2179,7 @@ components:
           type: ["integer", "null"]
         schedulesProcessed:
           type: integer
-      required: [id, startedAt, finishedAt, status, recordsProcessed, pagesFetched, requestUrls, errorMessage, mode, totalSchedules, schedulesProcessed]
+      required: [id, startedAt, finishedAt, cancelRequestedAt, status, recordsProcessed, pagesFetched, requestUrls, errorMessage, mode, totalSchedules, schedulesProcessed]
     AdminIngestionInput:
       type: object
       properties:
@@ -2286,7 +2333,7 @@ components:
       properties:
         status:
           type: string
-          enum: [completed, skipped, failed]
+          enum: [completed, skipped, failed, cancelled]
         runId:
           type: integer
         activeRunId:

@@ -1,5 +1,5 @@
 import { db, ingestionRunsTable, rawScheduleStagingTable, type IngestionRun } from "@workspace/db";
-import { and, asc, desc, eq, inArray, like, lt, not, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, like, lt, not, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { numberField, recordsFromPayload, stringField } from "./pbs-item-mapping";
 import { scheduleCodeFromRequestKey } from "./schedule-changes";
@@ -15,8 +15,16 @@ export const INGESTION_STALE_MINUTES_ENV = "PBS_INGESTION_STALE_MINUTES";
 export const INGESTION_STALE_ERROR = "Ingestion marked stale after no page progress";
 export const DEFAULT_STAGING_RETENTION_HOURS = 48;
 export const STAGING_RETENTION_HOURS_ENV = "PBS_STAGING_RETENTION_HOURS";
+export const INGESTION_CANCELLED_ERROR = "Ingestion cancelled by administrator";
 const RESTART_INTERRUPTED_ERROR = "Ingestion interrupted by an API server restart";
 type IngestionMode = "current" | "backfill";
+
+export class IngestionCancelledError extends Error {
+  constructor() {
+    super(INGESTION_CANCELLED_ERROR);
+    this.name = "IngestionCancelledError";
+  }
+}
 
 export type IngestionRunAcquisition =
   | { run: IngestionRun; activeRun?: never; recoveredRunIds: number[] }
@@ -55,6 +63,36 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
 
     let recoveredRunIds: number[] = [];
+    const cancellationRequestedRuns = await tx
+      .select({ id: ingestionRunsTable.id })
+      .from(ingestionRunsTable)
+      .where(
+        and(
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          isNotNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      );
+    for (const run of cancellationRequestedRuns) {
+      await tx
+        .delete(rawScheduleStagingTable)
+        .where(like(rawScheduleStagingTable.requestKey, `%:run-${run.id}`));
+      await tx
+        .update(ingestionRunsTable)
+        .set({
+          status: "cancelled",
+          finishedAt: new Date(),
+          lastProgressAt: new Date(),
+          errorMessage: INGESTION_CANCELLED_ERROR,
+          snapshotComplete: false,
+        })
+        .where(
+          and(
+            eq(ingestionRunsTable.id, run.id),
+            inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            isNotNull(ingestionRunsTable.cancelRequestedAt),
+          ),
+        );
+    }
     if (options.recoverStaleBefore) {
       const recoveredRuns = await tx
         .update(ingestionRunsTable)
@@ -66,6 +104,7 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
         .where(
           and(
             inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            isNull(ingestionRunsTable.cancelRequestedAt),
             lt(
               sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
               options.recoverStaleBefore,
@@ -110,8 +149,20 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
 
 export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promise<IngestionRun[]> {
   const runIdFilter = runIds && runIds.length > 0 ? inArray(ingestionRunsTable.id, runIds) : undefined;
+  const cancellationRequestedRuns = await db
+    .select({ id: ingestionRunsTable.id })
+    .from(ingestionRunsTable)
+    .where(
+      runIdFilter
+        ? and(runIdFilter, inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt))
+        : and(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt)),
+    );
+  for (const run of cancellationRequestedRuns) {
+    await finalizeCancelledIngestionRun(run.id);
+  }
+
   const interruptedState = or(
-    inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+    and(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNull(ingestionRunsTable.cancelRequestedAt)),
     and(eq(ingestionRunsTable.status, "failed"), eq(ingestionRunsTable.errorMessage, RESTART_INTERRUPTED_ERROR)),
   );
   const interruptedRuns = await db
@@ -162,6 +213,36 @@ export async function recoverStaleIngestionRuns(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
     const recoveredAt = new Date();
+    const cancellationRequestedRuns = await tx
+      .select()
+      .from(ingestionRunsTable)
+      .where(
+        and(
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          isNotNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      );
+    for (const run of cancellationRequestedRuns) {
+      await tx
+        .delete(rawScheduleStagingTable)
+        .where(like(rawScheduleStagingTable.requestKey, `%:run-${run.id}`));
+      await tx
+        .update(ingestionRunsTable)
+        .set({
+          status: "cancelled",
+          finishedAt: recoveredAt,
+          lastProgressAt: recoveredAt,
+          errorMessage: INGESTION_CANCELLED_ERROR,
+          snapshotComplete: false,
+        })
+        .where(
+          and(
+            eq(ingestionRunsTable.id, run.id),
+            inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            isNotNull(ingestionRunsTable.cancelRequestedAt),
+          ),
+        );
+    }
     const staleRuns = await tx
       .update(ingestionRunsTable)
       .set({
@@ -173,6 +254,7 @@ export async function recoverStaleIngestionRuns(
       .where(
         and(
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            isNull(ingestionRunsTable.cancelRequestedAt),
           lt(
             sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
             staleBefore,
@@ -180,13 +262,146 @@ export async function recoverStaleIngestionRuns(
         ),
       )
       .returning();
+    if (cancellationRequestedRuns.length > 0) {
+      logger.info(
+        { runIds: cancellationRequestedRuns.map((run) => run.id) },
+        "Finalized cancellation-requested PBS ingestion runs",
+      );
+    }
     if (staleRuns.length > 0) {
       logger.warn(
         { runIds: staleRuns.map((run) => run.id), staleBefore },
         "Retired stalled PBS ingestion runs",
       );
     }
-    return staleRuns;
+    return [...cancellationRequestedRuns.map((run) => ({ ...run, status: "cancelled" })), ...staleRuns];
+  });
+}
+
+export async function isIngestionRunCancelRequested(runId: number): Promise<boolean> {
+  const [run] = await db
+    .select({ cancelRequestedAt: ingestionRunsTable.cancelRequestedAt, status: ingestionRunsTable.status })
+    .from(ingestionRunsTable)
+    .where(eq(ingestionRunsTable.id, runId))
+    .limit(1);
+  return Boolean(run?.cancelRequestedAt) || run?.status === "cancelled";
+}
+
+export async function throwIfIngestionRunCancelled(runId: number): Promise<void> {
+  if (await isIngestionRunCancelRequested(runId)) throw new IngestionCancelledError();
+}
+
+export async function beginIngestionChangeDetection(runId: number): Promise<void> {
+  const [startedRun] = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
+    return tx
+      .update(ingestionRunsTable)
+      .set({ changeDetectionStartedAt: new Date() })
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.status, "running"),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+          isNull(ingestionRunsTable.changeDetectionStartedAt),
+        ),
+      )
+      .returning({ id: ingestionRunsTable.id });
+  });
+  if (!startedRun) throw new IngestionCancelledError();
+}
+
+export async function finalizeCancelledIngestionRun(runId: number): Promise<IngestionRun | undefined> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
+    const [run] = await tx
+      .select()
+      .from(ingestionRunsTable)
+      .where(eq(ingestionRunsTable.id, runId))
+      .limit(1);
+    if (!run) return undefined;
+    if (run.status === "cancelled") return run;
+    if (!ACTIVE_INGESTION_STATUSES.includes(run.status as (typeof ACTIVE_INGESTION_STATUSES)[number])) return run;
+    if (!run.cancelRequestedAt) return run;
+
+    await tx
+      .delete(rawScheduleStagingTable)
+      .where(like(rawScheduleStagingTable.requestKey, `%:run-${runId}`));
+    const [cancelledRun] = await tx
+      .update(ingestionRunsTable)
+      .set({
+        status: "cancelled",
+        finishedAt: new Date(),
+        lastProgressAt: new Date(),
+        errorMessage: INGESTION_CANCELLED_ERROR,
+        snapshotComplete: false,
+      })
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          isNotNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning();
+    return cancelledRun;
+  });
+}
+
+export type IngestionCancellationRequestResult =
+  | { kind: "cancelled"; run: IngestionRun }
+  | { kind: "requested"; run: IngestionRun }
+  | { kind: "terminal"; run: IngestionRun };
+
+export async function requestIngestionRunCancellation(
+  runId: number,
+): Promise<IngestionCancellationRequestResult | undefined> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
+    const [run] = await tx
+      .select()
+      .from(ingestionRunsTable)
+      .where(eq(ingestionRunsTable.id, runId))
+      .limit(1);
+    if (!run) return undefined;
+    if (run.status === "cancelled" || run.status === "completed" || run.status === "failed") {
+      return { kind: "terminal", run };
+    }
+    if (run.status === "queued") {
+      await tx
+        .delete(rawScheduleStagingTable)
+        .where(like(rawScheduleStagingTable.requestKey, `%:run-${runId}`));
+      const [cancelledRun] = await tx
+        .update(ingestionRunsTable)
+        .set({
+          status: "cancelled",
+          cancelRequestedAt: run.cancelRequestedAt ?? new Date(),
+          finishedAt: new Date(),
+          lastProgressAt: new Date(),
+          errorMessage: INGESTION_CANCELLED_ERROR,
+          snapshotComplete: false,
+        })
+        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.status, "queued")))
+        .returning();
+      if (cancelledRun) return { kind: "cancelled", run: cancelledRun };
+    }
+    const [requestedRun] = await tx
+      .update(ingestionRunsTable)
+      .set({ cancelRequestedAt: run.cancelRequestedAt ?? new Date() })
+      .where(
+        and(
+          eq(ingestionRunsTable.id, runId),
+          inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          isNull(ingestionRunsTable.cancelRequestedAt),
+        ),
+      )
+      .returning();
+    if (requestedRun) return { kind: "requested", run: requestedRun };
+    const [currentRun] = await tx
+      .select()
+      .from(ingestionRunsTable)
+      .where(eq(ingestionRunsTable.id, runId))
+      .limit(1);
+    return currentRun ? { kind: currentRun.status === "cancelled" ? "cancelled" : "requested", run: currentRun } : undefined;
   });
 }
 

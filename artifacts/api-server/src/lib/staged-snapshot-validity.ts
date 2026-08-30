@@ -18,11 +18,13 @@ export function isAuthoritativeStagedSnapshot(input: {
   requestKey: string;
   effectiveDate: string;
   ingestionRunIds: ReadonlySet<number>;
+  cancelledIngestionRunIds?: ReadonlySet<number>;
   now?: Date;
   futureHorizonMonths?: number;
 }): boolean {
   const runId = stagedRunIdFromRequestKey(input.requestKey);
   if (runId === undefined || !input.ingestionRunIds.has(runId)) return false;
+  if (input.cancelledIngestionRunIds?.has(runId)) return false;
   if (!DATE_ONLY_PATTERN.test(input.effectiveDate)) return false;
 
   const futureHorizonMonths =

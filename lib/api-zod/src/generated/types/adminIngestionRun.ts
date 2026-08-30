@@ -13,6 +13,8 @@ export interface AdminIngestionRun {
   startedAt: Date;
   /** @nullable */
   finishedAt: Date | null;
+  /** @nullable */
+  cancelRequestedAt: Date | null;
   status: AdminIngestionRunStatus;
   recordsProcessed: number;
   pagesFetched: number;

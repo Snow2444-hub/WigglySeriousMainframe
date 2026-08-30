@@ -917,7 +917,8 @@ export const ListAdminIngestionRunsResponseItem = zod.object({
   "id": zod.int(),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "cancelRequestedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
@@ -946,7 +947,8 @@ export const TriggerAdminIngestionResponse = zod.object({
   "id": zod.int(),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "cancelRequestedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
@@ -965,7 +967,8 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "id": zod.int(),
   "startedAt": zod.coerce.date(),
   "finishedAt": zod.coerce.date().nullable(),
-  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "cancelRequestedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
   "recordsProcessed": zod.int(),
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
@@ -974,6 +977,29 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "totalSchedules": zod.int().nullable(),
   "schedulesProcessed": zod.int()
 }),zod.null()])
+})
+
+
+/**
+ * @summary Request cancellation of a PBS ingestion run
+ */
+export const CancelAdminIngestionRunParams = zod.object({
+  "id": zod.coerce.number().int()
+})
+
+export const CancelAdminIngestionRunResponse = zod.object({
+  "id": zod.int(),
+  "startedAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable(),
+  "cancelRequestedAt": zod.coerce.date().nullable(),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed', 'cancelled']),
+  "recordsProcessed": zod.int(),
+  "pagesFetched": zod.int(),
+  "requestUrls": zod.array(zod.string()),
+  "errorMessage": zod.string().nullable(),
+  "mode": zod.enum(['current', 'backfill']),
+  "totalSchedules": zod.int().nullable(),
+  "schedulesProcessed": zod.int()
 })
 
 

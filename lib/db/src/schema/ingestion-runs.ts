@@ -12,6 +12,7 @@ export const ingestionRunsTable = pgTable("ingestion_runs", {
   pagesFetched: integer("pages_fetched").notNull().default(0),
   requestUrls: jsonb("request_urls").$type<string[]>().notNull().default([]),
   errorMessage: text("error_message"),
+   cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true, mode: "date" }),
   mode: text("mode").notNull().default("current"),
   scheduleDate: date("schedule_date", { mode: "string" }),
   maxPages: integer("max_pages"),
@@ -20,6 +21,7 @@ export const ingestionRunsTable = pgTable("ingestion_runs", {
   scheduleCode: integer("schedule_code"),
   scheduleEffectiveDate: date("schedule_effective_date", { mode: "string" }),
   snapshotComplete: boolean("snapshot_complete").notNull().default(false),
+   changeDetectionStartedAt: timestamp("change_detection_started_at", { withTimezone: true, mode: "date" }),
 });
 
 export const insertIngestionRunSchema = createInsertSchema(ingestionRunsTable).omit({ id: true });

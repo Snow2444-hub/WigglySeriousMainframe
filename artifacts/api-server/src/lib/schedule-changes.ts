@@ -433,9 +433,12 @@ async function loadStagedSnapshots(
         asc(pbsItemPremiumHistoryTable.scheduleEffectiveDate),
         asc(pbsItemPremiumHistoryTable.dispensingRuleReference),
       ),
-    db.select({ id: ingestionRunsTable.id }).from(ingestionRunsTable),
+    db.select({ id: ingestionRunsTable.id, status: ingestionRunsTable.status }).from(ingestionRunsTable),
   ]);
   const ingestionRunIds = new Set(ingestionRuns.map((run) => run.id));
+  const cancelledIngestionRunIds = new Set(
+    ingestionRuns.filter((run) => run.status === "cancelled").map((run) => run.id),
+  );
 
   const effectiveDates = new Map<number, string>();
   for (const page of schedulePages) {
@@ -509,11 +512,14 @@ async function loadStagedSnapshots(
       // Run existence, rather than completion status, is intentional. The
       // current ingestion calls change detection while its real run row is
       // still "running"; fixture run numbers have no row and are rejected.
+      // Cancelled runs are explicitly excluded even if their staged page was
+      // marked complete before cancellation was requested.
       if (
         !isAuthoritativeStagedSnapshot({
           requestKey: page.requestKey,
           effectiveDate,
           ingestionRunIds,
+          cancelledIngestionRunIds,
         })
       ) {
         continue;

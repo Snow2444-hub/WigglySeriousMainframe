@@ -25,6 +25,7 @@ import {
   uploadAdminArtgExport,
   useCreatePbsWatchlistEntry,
   useCreateStock,
+  useCancelAdminIngestionRun,
   useDeletePbsWatchlistEntry,
   useDeleteStock,
   useGetCurrentAdminIngestionRun,
@@ -723,6 +724,7 @@ function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
     running: 'status-running',
     completed: 'status-success',
     failed: 'status-error',
+    cancelled: 'status-warning',
   } as const;
   return <span className={`status-badge ${styles[status]}`}>{status}</span>;
 }
@@ -840,6 +842,7 @@ function AdminPage() {
     },
   });
   const trigger = useTriggerAdminIngestion();
+  const cancelIngestion = useCancelAdminIngestionRun();
   const artgImports = useListAdminArtgImportRuns({
     query: {
       queryKey: getListAdminArtgImportRunsQueryKey(),
@@ -962,6 +965,29 @@ function AdminPage() {
         ]);
       },
     });
+  };
+
+  const stopIngestion = () => {
+    if (!activeRun || activeRun.cancelRequestedAt || cancelIngestion.isPending) return;
+    setNotice('');
+    setInputError('');
+    cancelIngestion.mutate(
+      { id: activeRun.id },
+      {
+        onSuccess: (run) => {
+          setNotice(
+            run.status === 'cancelled'
+              ? `Ingestion run #${run.id} was cancelled and its staged data was discarded.`
+              : `Cancellation requested for ingestion run #${run.id}. It will stop at the next safe point.`,
+          );
+          void Promise.all([
+            queryClient.invalidateQueries({ queryKey: getListAdminIngestionRunsQueryKey() }),
+            queryClient.invalidateQueries({ queryKey: getGetCurrentAdminIngestionRunQueryKey() }),
+          ]);
+        },
+        onError: () => setInputError('The ingestion run could not be cancelled. Refresh and try again.'),
+      },
+    );
   };
 
   const uploadArtgExport = () => {
@@ -1119,7 +1145,10 @@ function AdminPage() {
     <section className="mb-6 overflow-hidden rounded-2xl border border-border bg-card shadow-xs" aria-live="polite" data-testid="card-current-ingestion">
       <div className="flex flex-col gap-4 border-b border-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Current run</p><h2 className="mt-1 text-lg font-bold tracking-[-0.03em]">Live ingestion progress</h2></div>
-        {activeRun ? <IngestionStatus status={activeRun.status} /> : <span className="status-badge status-neutral">Idle</span>}
+         <div className="flex flex-wrap items-center gap-2">
+           {activeRun ? <IngestionStatus status={activeRun.status} /> : <span className="status-badge status-neutral">Idle</span>}
+           {activeRun && <button type="button" onClick={stopIngestion} disabled={Boolean(activeRun.cancelRequestedAt) || cancelIngestion.isPending} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-destructive/30 bg-destructive/5 px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-55" data-testid="button-cancel-ingestion"><X className="h-3.5 w-3.5" />{activeRun.cancelRequestedAt || cancelIngestion.isPending ? 'Stopping…' : 'Cancel run'}</button>}
+         </div>
       </div>
        {current.isLoading ? <div className="p-5"><QueryState kind="loading" /></div> : current.isError ? <div className="p-5"><QueryState kind="error" onRetry={() => current.refetch()} /></div> : activeRun ? <div className="grid gap-4 p-5 sm:grid-cols-4">
         {activeRun.mode === 'backfill' ? <div className="sm:col-span-4 rounded-xl border border-primary/15 bg-primary/5 p-4" data-testid="progress-backfill-schedules">
@@ -1137,7 +1166,7 @@ function AdminPage() {
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Items mapped</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-records-processed">{activeRun.recordsProcessed.toLocaleString('en-AU')}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Pages fetched</p><p className="mt-2 font-mono text-lg font-bold" data-testid="text-current-pages-fetched">{activeRun.pagesFetched.toLocaleString('en-AU')}</p></div>
         <div className="rounded-xl bg-muted/55 p-4"><p className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Started</p><p className="mt-2 text-sm font-bold">{formatDateTime(activeRun.startedAt)}</p></div>
-      </div> : <div className="flex items-start gap-4 p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info"><DatabaseZap className="h-5 w-5" /></span><div><h3 className="font-bold">No ingestion is running.</h3><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Start a run when you are ready to fetch the latest PBS schedule into raw staging. Progress refreshes automatically while a run is active.</p></div></div>}
+         </div> : <div className="flex items-start gap-4 p-6"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-info/10 text-info"><DatabaseZap className="h-5 w-5" /></span><div><h3 className="font-bold">No ingestion is running.</h3><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Start a run when you are ready to fetch the latest PBS schedule into raw staging. Progress refreshes automatically while a run is active.</p></div></div>}
      </section>
      {watchlistDeleteCandidate && <DeleteWatchlistDialog entry={watchlistDeleteCandidate} pending={deleteWatchlistEntry.isPending} error={watchlistDeleteError} onClose={() => { if (!deleteWatchlistEntry.isPending) { setWatchlistDeleteCandidate(null); setWatchlistDeleteError(''); } }} onConfirm={confirmWatchlistRemoval} />}
 

@@ -1,6 +1,7 @@
 import { db, rawScheduleStagingTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { IngestionCancelledError } from "./ingestion-run-control";
 
 const PBS_API_BASE_URL = "https://data-api.health.gov.au/pbs/api/v3";
 const PBS_API_ORIGIN = new URL(PBS_API_BASE_URL).origin;
@@ -33,6 +34,7 @@ export interface FetchScheduleOptions {
   sleep?: Sleep;
   onPage?: (page: FetchedSchedulePage) => void | Promise<void>;
   onPayload?: (page: FetchedSchedulePayload) => void | Promise<void>;
+  shouldCancel?: () => boolean | Promise<boolean>;
 }
 
 export interface PbsRequestFilter {
@@ -297,6 +299,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
     sleep = defaultSleep,
     onPage,
     onPayload,
+    shouldCancel,
   } = options;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) {
@@ -340,6 +343,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
       let nextUrl: URL | undefined;
 
       while (true) {
+        if (await shouldCancel?.()) throw new IngestionCancelledError();
         if (pageNumber > maxPagesPerEndpoint) {
           throw new Error(`PBS endpoint ${endpoint} exceeded the ${maxPagesPerEndpoint}-page safety limit`);
         }
@@ -390,9 +394,11 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
         fetchedPages.push(page);
         await onPage?.(page);
         await onPayload?.({ ...page, payload });
+        if (await shouldCancel?.()) throw new IngestionCancelledError();
 
         const pagination = getPaginationInfo(payload, pageNumber, limit);
         if (!pagination.hasMore) {
+          if (await shouldCancel?.()) throw new IngestionCancelledError();
           if (coverageScope === "schedule") {
             await db
               .update(rawScheduleStagingTable)
@@ -408,6 +414,7 @@ export async function fetchSchedule(options: FetchScheduleOptions): Promise<Fetc
           break;
         }
         if (maxPages !== undefined && fetchedPages.length >= maxPages) {
+          if (await shouldCancel?.()) throw new IngestionCancelledError();
           return fetchedPages;
         }
         pageNumber += 1;
