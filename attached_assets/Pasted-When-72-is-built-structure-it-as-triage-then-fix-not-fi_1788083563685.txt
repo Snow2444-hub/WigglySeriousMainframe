@@ -1,0 +1,151 @@
+When #72 is built, structure it as triage-then-fix, not fix-everything, because the audit flagged ~9 tables and they're not equal risk:
+
+    First, resolve the caveat the audit couldn't: what's the actual CI/runtime isolation? Does CI reset the DB between test runs? Do tests run in parallel against shared state? Is there runtime test isolation not visible in source? This determines which code-level exposures are REAL vs already-mooted by a policy. Report before fixing anything.
+
+    Then rank the tables by blast radius, not just exposure. A leaked row in predicted_reductions or schedule_changes corrupts predictions/feed (like 2092 did) — highest priority. A leak in a table nothing authoritative reads is low. drugs / pbs_items / predicted_reductions / schedule_changes / ingestion_runs are the ones where a leak becomes visible wrong data; do those first.
+
+    Apply the SAME structural pattern that worked twice now: canonical/production provenance that production readers require, so test rows are invisible even without cleanup — not per-table cleanup improvements. If a general mechanism (a shared test-namespace boundary at the persistence layer) can cover multiple tables at once, prefer that over N separate per-table guards.
+
+Report the CI/runtime finding and the risk ranking before building. I want to fix the category with one pattern, not patch nine tables nine ways.
+Free
+13 minutes ago
+
+I’ll investigate the isolation policy and execution model first—CI configuration, test commands, database setup/reset behavior, workflow environment, and parallelism—without changing code. Then I’ll report the actual caveat resolution and rank the tables by user-visible blast radius before proposing any implementation.
+
+The initial scan already shows no checked-in CI workflow or separate test database setting. I’m verifying the remaining runtime details directly: how the DB client chooses its connection, whether tests override it, whether workflow parallelism can create competing writers, and whether any repository hook resets or rolls back state.
+Isolation finding
+
+I did not change code or rebuild #72.
+
+The repository’s actual isolation model is:
+
+    No checked-in CI configuration exists.
+        No GitHub/GitLab/Circle workflow or CI database-reset script is present.
+        Therefore, the repository cannot establish that CI resets the database between runs.
+    Tests use the normal DATABASE_URL.
+        lib/db/src/index.ts only reads DATABASE_URL.
+        There is no TEST_DATABASE_URL, test schema, temporary database, or automatic schema/database reset.
+        In this workspace, DATABASE_URL is available and TEST_DATABASE_URL is not.
+        The API test command therefore runs against the same development database connection used by the project unless an external runner overrides the environment.
+    Tests are serialized inside the API test process.
+        The test command sets --test-concurrency=1.
+        This prevents test files from racing with each other inside that process.
+    The workflows themselves run typecheck, build, and test in parallel, but only the test workflow writes database state.
+    There is no transaction-wide rollback harness.
+        Tests generally insert rows and clean them up manually.
+        A failed assertion can skip cleanup.
+    There is no repository-level guarantee against multiple test jobs sharing a database.
+        Separate CI jobs, local test runs, a running API, scheduled ingestion, or another developer could still write to the same database if they use the same DATABASE_URL.
+    post-merge.sh runs dependency installation and a development schema push; it does not reset test data.
+
+Conclusion
+
+The audit caveat is resolved: the global-table exposure is real, not already neutralized by repository policy.
+
+The existing published-file test: namespace is currently a special-case protection. It does not provide general isolation for the other tables.
+Risk ranking by blast radius
+Priority 1 — fix first
+
+    predicted_reductions
+        Directly feeds dashboard results, medicine-directory predictions, item prediction endpoints, reference views, and stock exposure calculations.
+        A leaked row can become visible wrong pricing or reduction data.
+        This is the closest match to the previous phantom-observation incident.
+
+    schedule_changes
+        Feeds schedule-change and delisting/change views.
+        A leaked row can produce false changes, phantom delistings, or incorrect feed entries.
+        This is an authoritative user-facing event table.
+
+    drugs
+        Global master data joined by reference, admin, mapping, ingestion, and prediction code.
+        A leaked row can create visible medicines, alter joins, or cause synthetic drugs to participate in calculations.
+
+    pbs_items
+        Global catalogue data read by reference, stock, mapping, and prediction paths.
+        A leaked item can appear in user-facing catalogue responses or be included in price/prediction joins.
+
+    ingestion_runs
+        Controls freshness, active-run detection, recovery, and latest-successful-run decisions.
+        A leaked completed or active run may not always create visible data, but it can make the system select the wrong snapshot, skip work, or report incorrect ingestion status.
+
+These are the first group I would implement against, as requested.
+Priority 2 — important but narrower
+
+    raw_schedule_staging
+        Some production readers already require valid run/snapshot provenance, which reduces the risk.
+        Other run-control and recovery paths still inspect staging state.
+        A leaked row could affect completeness, resume behavior, or schedule processing.
+
+    price_history
+        Used by mapping, reference, and prediction-related paths.
+        Usually bounded by item-code fixtures, but leaked history can alter price evidence or calculations.
+
+    artg_entries
+        Can appear in reference and stock lookups.
+        Blast radius is mostly limited to ARTG/reference outputs rather than PBS prediction authority.
+
+    pbs_watchlist
+        Can change which drugs or items ingestion selects.
+        Important operationally, but less likely to directly corrupt already-published user-facing data.
+
+    users
+
+    Global authorization data.
+    Generated fixture IDs reduce collision risk, but a leaked row or role update could affect admin access or user enumeration.
+
+Already addressed separately
+
+    pbs_published_files
+    pbs_published_prices
+    Published-file child evidence such as FNB reductions and disclosure cycles
+
+These now require canonical parent provenance in the relevant production readers.
+Structurally safer
+
+    pharmacy_stock
+    pharmacy_brand_preferences
+
+These are scoped by userId and are not global reference/operational data. They should not be part of the first remediation wave.
+Recommended implementation shape
+
+I agree with avoiding nine unrelated patches.
+
+The next implementation should first design one shared authoritative data scope/provenance boundary, then apply it to the five Priority 1 tables.
+
+The mechanism should provide:
+
+    A production/authoritative scope that production readers require.
+    A test scope that cannot satisfy production-reader predicates.
+    Automatic assignment at the persistence boundary rather than relying on each test author to remember a namespace.
+    A shared reader predicate/helper so new operational readers cannot silently omit the boundary.
+    A root authority for ingestion-derived rows, with child tables inheriting or joining to that authority.
+    A migration/backfill rule for existing rows.
+    Failure-before-teardown tests proving leaked test rows remain invisible.
+
+One design constraint is important: drugs and pbs_items are master/reference tables, while predicted_reductions, schedule_changes, and ingestion_runs are operational/derived tables. They may share one scope contract, but the authority relationship may differ:
+
+    Master rows need an explicit data scope.
+    Derived rows should ideally also reference a scoped authoritative ingestion run or source.
+    ingestion_runs becomes the authority root rather than depending on another table.
+
+No code changes should be made until that shared boundary is selected and its behavior against existing endpoint tests is understood.
+Free
+10 minutes ago
+Reading approval design
+
+I’ll read the approved design attachment, compare it with the current schema and test setup, then implement the shared authority boundary in one pass with focused regression coverage.
+
+The attachment confirms this is a design-review deliverable only. I will not modify production code. I’m gathering the exact schema lineage, reader predicates, migration constraints, and endpoint-test fixtures needed to make the document concrete rather than speculative.
+
+The evidence supports a shared design: ingestion_runs as the authority root, explicit scope for master rows, and derived-row lineage through a real scoped run. Before writing the document, I’m checking the exact endpoint test names and current migration tooling so the “real rows remain visible” proof plan names concrete cases and does not promise a rollback mechanism the repository lacks.
+
+The design evidence is complete. I’m writing the review document now—design only, with the authority contract, lineage model, migration/backfill safeguards, concrete endpoint-test proof matrix, and sequencing. No production implementation will be made from this attachment yet.
+
+The design document is written and contains no production-code changes. I’m doing a final consistency check on the document, then I’ll return it for review with the key decision points called out.
+Use a more capable model when needed for this request?
+Got it, staying on Free.
+Finalizing the design
+
+The design is ready for review at:
+
+docs/shared-authority-boundary-design.md
