@@ -1,0 +1,154 @@
+## Phase 2 complete — removal and verification only
+
+No ingestion was triggered, and no Phase 3 application changes were implemented.
+
+### Deleted
+
+The deletion ran atomically with count guards. Any mismatch would have rolled back both operations.
+
+| Set | Expected | Deleted | Remaining |
+|---|---:|---:|---:|
+| Fixture staging IDs 1532, 1533, 1534, 1535, 1537 | 5 | **5** | **0** |
+| Phantom `schedule_changes` predicate | 1,216 | **1,216** | **0** |
+
+The Phase 1 exports remain available as rollback/audit records.
+
+## Clean-state verification
+
+### Staging
+
+All targeted checks now return zero:
+
+- Fixture request keys: **0**
+- Fixture schedule codes `1983062564`/`1983062565`: **0**
+- Fixture run IDs `1983062574`/`1983062575`: **0**
+- Metadata effective dates `2092-01-01`/`2092-02-01`: **0**
+- Complete fixture snapshots visible to `loadStagedSnapshots()`: **0**
+
+### Updates feed and timelines
+
+All checks return zero:
+
+- `schedule_code = 1983062564`: **0**
+- `effective_date = 2092-01-01`: **0**
+- Any event at or after 2092: **0**
+- Per-item 2092 timeline rows: **0**
+- Per-drug 2092 timeline rows: **0**
+
+Because the feed and both timeline consumers read from `schedule_changes`, none can now surface a 2092 event.
+
+## Downstream before/after
+
+### Predictions
+
+The historical figure of 136 is no longer the live baseline because 799 price-disclosure predictions have since been generated.
+
+| Prediction scope | Before | After |
+|---|---:|---:|
+| Original seven affected drugs | 790 | **790** |
+| Ten drugs in the regenerated phantom set | 806 | **806** |
+| Total predictions | 806 | **806** |
+| Upcoming prediction rows | 806 | **806** |
+
+No prediction recalculation occurred.
+
+### Overview/dashboard periods
+
+All tracked change counters are unchanged:
+
+| Period | New brands | Delistings | Formulary | Amended |
+|---|---:|---:|---:|---:|
+| This schedule | 12 → **12** | 0 → **0** | 11 → **11** | 4 → **4** |
+| Three months | 15 → **15** | 0 → **0** | 13 → **13** | 4 → **4** |
+| Twelve months | 18 → **18** | 68 → **68** | 13 → **13** | 6 → **6** |
+
+The removed 2092 rows were outside these dashboard periods.
+
+### Stock exposure
+
+- Stock lines: **5 → 5**
+- Tracked item codes: **2 → 2**
+- Stock units: **799 → 799**
+- Lines with predictions: **5 → 5**
+- At-risk lines: **0 → 0**
+- Total calculated exposure: **$0 → $0**
+
+### Upcoming Changes
+
+- Prediction rows: **806 → 806**
+- Database-level grouped events: **12 → 12**
+- Next date: **1 October 2026 → 1 October 2026**
+
+## Regeneration check
+
+I did **not** invoke `syncScheduleChangesFromStagedData()`, because it is write-producing and has no read-only/dry-run mode.
+
+Instead, I ran the equivalent source check used to determine whether the generator remains:
+
+- Complete fixture snapshots visible to the loader: **0**
+- Fixture metadata rows: **0**
+- Fixture item pages: **0**
+
+Therefore, a change-detection pass can no longer load schedule `1983062564` or recreate its 2092 delistings from the removed fixture.
+
+---
+
+## Proposed Phase 3 diffs — not implemented
+
+### 1. Validate staged snapshots at the read boundary
+
+**File:** `artifacts/api-server/src/lib/schedule-changes.ts`
+
+```diff
++ Load the set of genuine ingestion run IDs.
++ Require complete schedule-scoped snapshots to have a parseable run-N suffix.
++ Reject the snapshot when run-N has no matching ingestion_runs record.
++ Accept existing/running runs as valid because change detection executes
++ before the current run is marked completed.
++
++ Add an injectable effective-date horizon.
++ Reject implausibly future snapshots before they enter snapshot ordering.
+```
+
+The primary protection would be run provenance. The future-date horizon would be defence in depth.
+
+### 2. Apply the same validity rule to pruning
+
+**File:** `artifacts/api-server/src/lib/ingestion-run-control.ts`
+
+```diff
+- Determine “latest complete snapshot” from every complete staged page.
++ Determine “latest complete snapshot” only from pages whose source run
++ exists and whose effective date passes the sanity horizon.
+
+- Protect an invalid future snapshot as newest.
++ Never give invalid snapshots newest-snapshot protection.
++ Allow invalid pages older than the retention grace period to be pruned.
+```
+
+Schedule metadata can remain retained, but invalid item snapshots must not be preserved or treated as authoritative.
+
+### 3. Add regression coverage
+
+**Files:**
+
+- `artifacts/api-server/src/lib/schedule-changes.test.ts`
+- `artifacts/api-server/src/lib/ingestion-run-control.test.ts`
+
+```diff
++ Stage a legitimate previous snapshot tied to a real ingestion run.
++ Stage a complete, future-dated snapshot tied to a nonexistent run.
++ Run change detection scoped to the test schedules.
++ Assert that zero delistings are produced from the fake snapshot.
+
++ Run pruning after the retention threshold.
++ Assert that the invalid future snapshot is not protected as newest.
++ Assert that the valid real snapshot remains protected.
+
++ Verify that a genuine currently-running ingestion run remains eligible,
++ preventing the guard from rejecting the normal ingestion call sequence.
+```
+
+I have intentionally not included ingestion scoping in this first proposed diff. Correct scoping would need to include both schedules touched by the run and the immediate predecessor snapshot; passing only the current schedule would prevent comparison entirely.
+
+A separate follow-up, **“Prevent leaked staging fixtures from creating false PBS delistings,”** has been proposed. Phase 3 awaits approval.
