@@ -1,0 +1,21 @@
+Update the "How PBS reductions work" reference guide with corrections and additions. Keep the existing card layout and tone.
+
+DEFINITIONS — add a glossary section (collapsible or at the top), because terms like AEMP and WADP are used throughout but never defined:
+- AEMP — Approved Ex-Manufacturer Price: the wholesale price the manufacturer is approved to charge, before wholesaler markup, pharmacy markup and dispensing fees. This is the "wholesale price" the app tracks.
+- WADP — Weighted Average Disclosed Price: under price disclosure, the average of the actual (often discounted) transaction prices manufacturers disclose. When the WADP is meaningfully below the approved price, the PBS resets the price down to it.
+- F1 / F2 — F1 holds single-brand medicines with no generic/biosimilar competitor; F2 holds multi-brand medicines subject to price disclosure. A drug moves F1→F2 when a first new brand lists.
+- SPR — Statutory Price Reduction (applied automatically by law).
+- FNB — First New Brand.
+- MoA — Manner of Administration (e.g. oral, injection).
+
+ADD a new card — "Reductions don't stack": Anniversary and first-new-brand reductions are mutually exclusive. The 5/10/15-year anniversary reductions do not apply if a first-new-brand reduction has applied, and a first-new-brand reduction does not apply if the 15-year anniversary reduction has already applied. (Source: National Health Act, Division 3A.) Note that the app's predictions reflect this — a drug won't be shown both.
+
+ADD a short intro card — "Why PBS prices fall": one paragraph in plain language covering the three forces — time on market (anniversary SPRs), competition arriving (first new brand), and disclosed real prices catching up (price disclosure).
+
+ADD to the anniversary card: all SPRs are capped at 60% off the brand's AEMP on 1 January 2016 (or the date-of-listing AEMP if listed after that).
+
+ADD a brief note on exempt items: some pharmaceutical items are exempt from the 15-year anniversary, first-new-brand and price-disclosure reductions (but NOT from 5- and 10-year anniversary reductions) — typically formulations for specific groups like children.
+
+FIX / CLARIFY: the first-new-brand card states an "eligibility cutoff used here is 1 October 2018." Confirm whether that is a published PBS rule or an internal modelling assumption. If it's our assumption, label it clearly as "our modelling assumption," not as a PBS rule.
+
+Keep the existing "decision support, not a legal instrument" disclaimer at the top.
