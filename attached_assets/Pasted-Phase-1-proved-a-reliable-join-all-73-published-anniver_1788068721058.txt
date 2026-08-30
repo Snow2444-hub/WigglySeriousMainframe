@@ -1,0 +1,41 @@
+Phase 1 proved a reliable join: all 73 published anniversary rows match our
+catalogue on normalized drug + form + brand, resolving to a SET of PBS item codes
+(one product, several codes for program/benefit reasons — not a matching
+failure). Build the Phase 2 verification layer on the candidate-code-set
+resolver. Do NOT change prediction formulas or predicted values — this is an
+annotation layer only.
+
+BUILD:
+
+1. RESOLVER
+   For each published anniversary indicative row, resolve to its product via
+   normalized drug + form + brand, and keep the COMPLETE set of matching PBS item
+   codes (do not collapse to one). A prediction is matched to a published row
+   when the prediction's stored itemCode is a member of that row's candidate set.
+   Do not build a manual one-to-one mapping table.
+
+2. VERIFICATION STATES — classify each into exactly one:
+   - VERIFIED: matched, and published implied % agrees with our predicted %
+     within 0.10 percentage-point tolerance (published AEMPs are cent-rounded).
+   - GENUINE MISMATCH: matched, but published % / price differs beyond tolerance.
+   - CATALOGUE/FORMULARY DISCREPANCY: matched product, but a formulary/eligibility
+     inconsistency (e.g. the Omalizumab/Xolair case — published in the 15-yr F1
+     workbook but F2 in our catalogue). This is distinct from a % mismatch.
+   - PREDICTION-ONLY: we predict it, no published row (e.g. current Apixaban).
+   - PUBLISHED-ONLY: PBS published it, we don't predict it.
+
+3. SURFACE IT
+   On the prediction / upcoming-changes views, annotate each anniversary
+   prediction with its state, and where a published row exists, show PBS's
+   published old AEMP -> proposed AEMP alongside our predicted figure so the user
+   sees the government's number next to ours. Published-only and formulary-
+   discrepancy rows should be visible somewhere too — they're the most useful
+   signal, not noise to hide.
+   The predicted values themselves are unchanged; this is a badge/annotation.
+
+4. TESTS
+   Cover each of the five states, the candidate-set membership logic, the 0.10
+   tolerance boundary, and specifically a formulary-discrepancy case.
+
+Report the state breakdown against real catalogue data and confirm prediction
+values are untouched.
