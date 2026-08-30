@@ -1,0 +1,47 @@
+The 2092 phantom delistings are BACK. The PBS updates feed again shows every
+drug with: date 01 Jan 2092, schedule_code 1983062564, event DELETED LISTINGS.
+This is the same signature as the phantom set we deleted earlier. A fresh
+ingestion ran today (ingested 30 Aug 12:06 PM), so this may be a regeneration,
+not the old rows.
+
+READ-ONLY investigation. Do NOT delete, re-run cleanup, or modify anything until
+we know which case this is. Re-running the old delete would just hide a
+recurring root cause.
+
+Report:
+
+1. SAME ROWS OR NEW ROWS?
+   Check the schedule_changes rows now showing 2092/1983062564. Compare their
+   row IDs / creation timestamps against the 1,140 we exported and deleted
+   earlier.
+   - Are these NEW rows (created today, around the 30 Aug 12:06 run)?
+   - Or do rows we supposedly deleted still exist (the earlier DELETE didn't
+     actually remove them)?
+   Report row count now, and earliest/latest creation timestamp.
+
+2. IS THE FIXTURE DATA STILL IN STAGING?
+   The original provenance was fixture rows in raw_schedule_staging (IDs
+   1532–1537, request keys for schedule 1983062564, run-1983062574). Check
+   whether those staging rows (or any rows with schedule_code 1983062564 /
+   run-1983062574 / 2092 dates) still exist in raw_schedule_staging right now.
+   Report exactly what's there.
+
+3. HOW DID THIS RUN REGENERATE THEM?
+   If the rows are new: the change-detection pass in today's run compared
+   against fixture staging data again. Trace how — did today's ingestion run
+   change detection over a staging set that still included the 1983062564
+   fixture snapshot? loadStagedSnapshots uses highest-run selection; report
+   whether the fixture's run-1983062574 (a very high number) is WINNING that
+   selection and being treated as the authoritative snapshot.
+
+4. WHY DIDN'T THE ISOLATION GUARD STOP THIS?
+   We added test-isolation work so fixtures couldn't leak into staging. But that
+   addressed the WRITE path (tests writing to staging). This recurrence suggests
+   either the fixture rows were already in staging before the guard, and were
+   never removed, or a path still writes/reads them. Report which.
+
+Report all four. Do NOT fix yet — the correct fix is almost certainly at the
+staging/detection level (remove or quarantine the fixture staging rows, and make
+change detection refuse to treat them as authoritative), NOT another
+delete-the-symptom pass. I want to confirm the mechanism before we change
+anything.
