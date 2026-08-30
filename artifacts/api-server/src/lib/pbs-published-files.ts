@@ -614,33 +614,55 @@ async function clearFileRows(fileId: number): Promise<void> {
     );
 }
 
+export function publishedFileParseOutcome(
+  totalRows: number,
+  parseHealthOverride?: "healthy" | "rejected",
+): {
+  parseHealth: "healthy" | "rejected";
+  parseStatus: "succeeded" | "failed";
+  failureStage: "parse" | null;
+  errorMessage: string | null;
+} {
+  const parseHealth = parseHealthOverride ?? (totalRows > 0 ? "healthy" : "rejected");
+  const errorMessage = parseHealth === "rejected"
+    ? "Parsed workbook contained no data rows"
+    : null;
+  return {
+    parseHealth,
+    parseStatus: parseHealth === "healthy" ? "succeeded" : "failed",
+    failureStage: parseHealth === "healthy" ? null : "parse",
+    errorMessage,
+  };
+}
+
 async function finishPublishedFile(
   fileId: number,
   result: Omit<PublishedFileReport, "sourceKey" | "fileUrl" | "fileName" | "status">,
   provenance: { reportPublicationDate: string | null; effectiveDate: string | null },
   parseHealthOverride?: "healthy" | "rejected",
 ): Promise<void> {
-  const parseHealth = parseHealthOverride ?? (result.totalRows > 0 && result.matchedRows > 0 ? "healthy" : "rejected");
+  const outcome = publishedFileParseOutcome(result.totalRows, parseHealthOverride);
   await db
     .update(pbsPublishedFilesTable)
     .set({
       status: "completed",
-      parseHealth,
+      parseHealth: outcome.parseHealth,
       parsedAt: new Date(),
       fetchStatus: "succeeded",
-      parseStatus: parseHealth === "healthy" ? "succeeded" : "failed",
-      failureStage: parseHealth === "healthy" ? null : "parse",
+      parseStatus: outcome.parseStatus,
+      failureStage: outcome.failureStage,
       reportPublicationDate: provenance.reportPublicationDate,
       effectiveDate: provenance.effectiveDate,
       totalRows: result.totalRows,
       matchedRows: result.matchedRows,
       rejectedRows: Math.max(0, result.totalRows - result.matchedRows),
       watchlistUnmatchedRows: result.watchlistUnmatchedRows,
-      errorMessage: null,
+      errorMessage: outcome.errorMessage,
       metadata: {
         watchlistFailures: result.watchlistFailures,
-        parseHealth,
+        parseHealth: outcome.parseHealth,
         rejectedRows: Math.max(0, result.totalRows - result.matchedRows),
+        ...(outcome.errorMessage ? { failure: outcome.errorMessage } : {}),
       },
     })
     .where(eq(pbsPublishedFilesTable.id, fileId));

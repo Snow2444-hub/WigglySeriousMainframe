@@ -49,6 +49,7 @@ import { Link, useLocation } from 'wouter';
 import { ArrowRight, BarChart3, Bell, BookOpen, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Clock3, DatabaseZap, Filter, History, LoaderCircle, PackagePlus, Pencil, Play, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, TrendingDown, X, XCircle } from 'lucide-react';
 import { AppShell, PageHeading, QueryState } from '@/components/app-shell';
 import { formatDateOnly, formatDateTime, formatDateValue } from '@/lib/date-format';
+import { sourceHealthDetail } from '@/lib/source-health';
 
 const money = (value: number) => new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 const date = (value: string | null | undefined) => formatDateValue(value, { day: '2-digit', month: 'short', year: 'numeric' });
@@ -730,28 +731,31 @@ function IngestionStatus({ status }: { status: AdminIngestionRun['status'] }) {
 }
 
 function sourceHealthStatusClass(status: AdminPbsSourceStatus['status']) {
-  return status === 'OK' ? 'status-success' : status === 'STALE' ? 'status-warning' : 'status-error';
+  return status === 'OK'
+    ? 'status-success'
+    : status === 'NO_RELEVANT_ROWS'
+      ? 'status-neutral'
+      : status === 'COVERAGE_GAP'
+        ? 'status-error'
+      : status === 'STALE'
+        ? 'status-warning'
+        : 'status-error';
 }
 
 function sourceHealthIcon(status: AdminPbsSourceStatus['status']) {
-  return status === 'OK' ? CheckCircle2 : status === 'STALE' ? Clock3 : XCircle;
+  return status === 'OK'
+    ? CheckCircle2
+    : status === 'NO_RELEVANT_ROWS'
+      ? CircleAlert
+      : status === 'COVERAGE_GAP'
+        ? CircleAlert
+      : status === 'STALE'
+        ? Clock3
+        : XCircle;
 }
 
 function sourceHealthDate(value: string | null | undefined) {
   return value ? date(value) : 'Not recorded';
-}
-
-function sourceHealthFailure(row: AdminPbsSourceStatus) {
-  if (row.status === 'STALE') {
-    return row.nextExpectedRefreshDate
-      ? `No newer file after ${date(row.nextExpectedRefreshDate)}`
-      : 'No newer file has been recorded';
-  }
-  if (row.latestFailureMessage) {
-    return `${row.latestFailureStage ? `${row.latestFailureStage} failed · ` : ''}${row.latestFailureMessage}`;
-  }
-  if (!row.lastSuccessfulPullAt) return 'No successful observation has been recorded yet';
-  return row.cadenceType === 'unconfigured' ? 'Source is healthy; refresh cadence is not configured' : 'Source is healthy';
 }
 
 function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean }) {
@@ -765,6 +769,8 @@ function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean })
   const rows = sourceStatuses.data ?? [];
   const counts = {
     OK: rows.filter((row) => row.status === 'OK').length,
+    NO_RELEVANT_ROWS: rows.filter((row) => row.status === 'NO_RELEVANT_ROWS').length,
+    COVERAGE_GAP: rows.filter((row) => row.status === 'COVERAGE_GAP').length,
     STALE: rows.filter((row) => row.status === 'STALE').length,
     FAILED: rows.filter((row) => row.status === 'FAILED').length,
   };
@@ -778,6 +784,8 @@ function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean })
       </div>
       {!sourceStatuses.isLoading && !sourceStatuses.isError && <div className="flex flex-wrap gap-2 text-[11px] font-bold">
         <span className="status-badge status-success">{counts.OK} OK</span>
+        <span className="status-badge status-neutral">{counts.NO_RELEVANT_ROWS} no relevant rows</span>
+        <span className="status-badge status-error">{counts.COVERAGE_GAP} coverage gaps</span>
         <span className="status-badge status-warning">{counts.STALE} stale</span>
         <span className="status-badge status-error">{counts.FAILED} failed</span>
       </div>}
@@ -791,7 +799,7 @@ function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean })
         return <div key={row.sourceKey} className="grid gap-3 px-5 py-4 transition-colors hover:bg-muted/25 lg:grid-cols-[1.2fr_.85fr_.8fr_.8fr_1.25fr] lg:items-center lg:gap-4" data-testid={`row-pbs-source-health-${row.sourceKey}`}>
           <div className="min-w-0">
             <div className="flex items-start gap-2">
-              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${row.status === 'OK' ? 'text-success' : row.status === 'STALE' ? 'text-warning' : 'text-destructive'}`} aria-hidden="true" />
+              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${row.status === 'OK' ? 'text-success' : row.status === 'STALE' ? 'text-warning' : row.status === 'FAILED' || row.status === 'COVERAGE_GAP' ? 'text-destructive' : 'text-muted-foreground'}`} aria-hidden="true" />
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold">{row.label}</p>
                 <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{row.sourceFamily} · {row.cadenceLabel}</p>
@@ -802,7 +810,7 @@ function PbsSourceHealthPanel({ ingestionActive }: { ingestionActive: boolean })
           <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Last successful pull</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.lastSuccessfulPullAt)}</p><p className="mt-0.5 text-[10px] text-muted-foreground">Parsed {sourceHealthDate(row.lastSuccessfulParseAt)}</p></div>
           <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Published</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.publicationDate)}</p></div>
           <div className="pl-6 lg:pl-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground lg:hidden">Next expected</p><p className="mt-0.5 text-xs font-semibold">{sourceHealthDate(row.nextExpectedRefreshDate)}</p>{row.staleAfterDate && <p className="mt-0.5 text-[10px] text-muted-foreground">Stale after {date(row.staleAfterDate)}</p>}</div>
-          <div className="pl-6 lg:pl-0"><span className={`status-badge ${sourceHealthStatusClass(row.status)}`}>{row.status}</span><p className={`mt-1 text-xs leading-relaxed ${row.status === 'FAILED' ? 'text-destructive' : row.status === 'STALE' ? 'text-warning' : 'text-muted-foreground'}`}>{sourceHealthFailure(row)}</p>{row.latestAttemptAt && <p className="mt-1 text-[10px] text-muted-foreground">Latest attempt {formatDateTime(row.latestAttemptAt)}</p>}</div>
+          <div className="pl-6 lg:pl-0"><span className={`status-badge ${sourceHealthStatusClass(row.status)}`}>{row.status === 'NO_RELEVANT_ROWS' ? 'NO RELEVANT ROWS' : row.status === 'COVERAGE_GAP' ? 'COVERAGE GAP' : row.status}</span><p className={`mt-1 text-xs leading-relaxed ${row.status === 'FAILED' || row.status === 'COVERAGE_GAP' ? 'text-destructive' : row.status === 'STALE' ? 'text-warning' : 'text-muted-foreground'}`}>{sourceHealthDetail(row)}</p>{row.latestAttemptAt && <p className="mt-1 text-[10px] text-muted-foreground">Latest attempt {formatDateTime(row.latestAttemptAt)}</p>}</div>
         </div>;
       })}
     </div>}

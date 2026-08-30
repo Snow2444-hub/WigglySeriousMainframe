@@ -2261,7 +2261,7 @@ components:
           type: string
         status:
           type: string
-          enum: [OK, STALE, FAILED]
+          enum: [OK, NO_RELEVANT_ROWS, COVERAGE_GAP, STALE, FAILED]
         lastSuccessfulPullAt:
           type: ["string", "null"]
           format: date-time
@@ -2305,7 +2305,9 @@ components:
           type: integer
         rejectedRows:
           type: integer
-      required: [sourceKey, label, sourceFamily, pageUrl, cadenceType, cadenceLabel, status, lastSuccessfulPullAt, lastSuccessfulParseAt, publicationDate, nextExpectedRefreshDate, staleAfterDate, latestAttemptAt, latestAttemptStatus, latestFailureStage, latestFailureMessage, latestFileName, latestFileUrl, latestFileSha256, lastSuccessfulFileName, lastSuccessfulFileSha256, parserVersion, totalRows, matchedRows, rejectedRows]
+        watchlistUnmatchedRows:
+          type: integer
+      required: [sourceKey, label, sourceFamily, pageUrl, cadenceType, cadenceLabel, status, lastSuccessfulPullAt, lastSuccessfulParseAt, publicationDate, nextExpectedRefreshDate, staleAfterDate, latestAttemptAt, latestAttemptStatus, latestFailureStage, latestFailureMessage, latestFileName, latestFileUrl, latestFileSha256, lastSuccessfulFileName, lastSuccessfulFileSha256, parserVersion, totalRows, matchedRows, rejectedRows, watchlistUnmatchedRows]
     PublishedFileMatchFailure:
       type: object
       properties:

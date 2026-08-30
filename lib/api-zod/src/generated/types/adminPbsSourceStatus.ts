@@ -49,4 +49,5 @@ export interface AdminPbsSourceStatus {
   totalRows: number;
   matchedRows: number;
   rejectedRows: number;
+  watchlistUnmatchedRows: number;
 }

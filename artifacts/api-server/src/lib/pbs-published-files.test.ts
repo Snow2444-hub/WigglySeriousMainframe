@@ -7,6 +7,7 @@ import {
   ingestPublishedFiles,
   inspectAnniversaryWorkbook,
   isPublishedReportFresh,
+  publishedFileParseOutcome,
   section99acpFileLinkMatches,
   sourcePriority,
 } from "./pbs-published-files";
@@ -49,6 +50,21 @@ test("published reports expire at the configured maximum age", () => {
   assert.equal(isPublishedReportFresh(report({ parseHealth: "rejected" }), "2026-06-30"), false);
   assert.equal(isPublishedReportFresh(report({ status: "failed" }), "2026-06-30"), false);
   assert.equal(isPublishedReportFresh(report(), "2025-12-31"), false);
+});
+
+test("parsed rows remain parse-healthy when none match the local catalogue", () => {
+  assert.deepEqual(publishedFileParseOutcome(36), {
+    parseHealth: "healthy",
+    parseStatus: "succeeded",
+    failureStage: null,
+    errorMessage: null,
+  });
+  assert.deepEqual(publishedFileParseOutcome(0), {
+    parseHealth: "rejected",
+    parseStatus: "failed",
+    failureStage: "parse",
+    errorMessage: "Parsed workbook contained no data rows",
+  });
 });
 
 function anniversaryWorkbook(sheets: Array<{ name: string; title: string; proposedDate: string }>) {

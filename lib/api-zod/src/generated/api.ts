@@ -1110,7 +1110,7 @@ export const ListAdminPbsSourceStatusResponseItem = zod.object({
   "pageUrl": zod.url(),
   "cadenceType": zod.enum(['annual_august', 'price_disclosure_cycle', 'unconfigured']),
   "cadenceLabel": zod.string(),
-  "status": zod.enum(['OK', 'STALE', 'FAILED']),
+  "status": zod.enum(['OK', 'NO_RELEVANT_ROWS', 'COVERAGE_GAP', 'STALE', 'FAILED']),
   "lastSuccessfulPullAt": zod.coerce.date().nullable(),
   "lastSuccessfulParseAt": zod.coerce.date().nullable(),
   "publicationDate": zod.coerce.date().nullable(),
@@ -1128,7 +1128,8 @@ export const ListAdminPbsSourceStatusResponseItem = zod.object({
   "parserVersion": zod.string().nullable(),
   "totalRows": zod.int(),
   "matchedRows": zod.int(),
-  "rejectedRows": zod.int()
+  "rejectedRows": zod.int(),
+  "watchlistUnmatchedRows": zod.int()
 })
 export const ListAdminPbsSourceStatusResponse = zod.array(ListAdminPbsSourceStatusResponseItem)
 

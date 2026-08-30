@@ -138,7 +138,7 @@ export type PbsSourceStatus = {
   pageUrl: string;
   cadenceType: SourceCadence;
   cadenceLabel: string;
-  status: "OK" | "STALE" | "FAILED";
+  status: "OK" | "NO_RELEVANT_ROWS" | "COVERAGE_GAP" | "STALE" | "FAILED";
   lastSuccessfulPullAt: Date | null;
   lastSuccessfulParseAt: Date | null;
   publicationDate: string | null;
@@ -157,6 +157,7 @@ export type PbsSourceStatus = {
   totalRows: number;
   matchedRows: number;
   rejectedRows: number;
+  watchlistUnmatchedRows: number;
 };
 
 function dateOnly(value: Date | string | null | undefined): string | null {
@@ -196,12 +197,29 @@ function nextExpectedRefresh(
     : nextCycleDate(anchor ?? today);
 }
 
-function isSuccessfulObservation(file: PbsPublishedFile): boolean {
+function isLegacyNoRelevantRowsObservation(file: PbsPublishedFile): boolean {
   return (
     file.status === "completed" &&
-    file.parseHealth === "healthy" &&
-    file.fetchStatus !== "failed" &&
-    file.parseStatus !== "failed"
+    file.parseHealth === "rejected" &&
+    file.fetchStatus === "succeeded" &&
+    file.parseStatus === "failed" &&
+    file.failureStage === "parse" &&
+    file.totalRows > 0 &&
+    file.matchedRows === 0 &&
+    file.watchlistUnmatchedRows === 0 &&
+    !file.errorMessage
+  );
+}
+
+function isSuccessfulObservation(file: PbsPublishedFile): boolean {
+  return (
+    isLegacyNoRelevantRowsObservation(file) ||
+    (
+      file.status === "completed" &&
+      file.parseHealth === "healthy" &&
+      file.fetchStatus !== "failed" &&
+      file.parseStatus !== "failed"
+    )
   );
 }
 
@@ -271,9 +289,13 @@ function sourceStatus(
   const status: PbsSourceStatus["status"] =
     !latestSucceeded || !successful
       ? "FAILED"
-      : staleAfter && today > staleAfter
+      : latest && latest.watchlistUnmatchedRows > 0
+        ? "COVERAGE_GAP"
+        : staleAfter && today > staleAfter
         ? "STALE"
-        : "OK";
+        : latest && latest.totalRows > 0 && latest.matchedRows === 0
+          ? "NO_RELEVANT_ROWS"
+          : "OK";
   const latestFailure = latest && !latestSucceeded ? latest : null;
 
   return {
@@ -302,6 +324,7 @@ function sourceStatus(
     totalRows: latest?.totalRows ?? 0,
     matchedRows: latest?.matchedRows ?? 0,
     rejectedRows: latest?.rejectedRows ?? 0,
+    watchlistUnmatchedRows: latest?.watchlistUnmatchedRows ?? 0,
   };
 }
 

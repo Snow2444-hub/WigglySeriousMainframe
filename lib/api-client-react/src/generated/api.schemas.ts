@@ -964,6 +964,8 @@ export type AdminPbsSourceStatusStatus = typeof AdminPbsSourceStatusStatus[keyof
 
 export const AdminPbsSourceStatusStatus = {
   OK: 'OK',
+  NO_RELEVANT_ROWS: 'NO_RELEVANT_ROWS',
+  COVERAGE_GAP: 'COVERAGE_GAP',
   STALE: 'STALE',
   FAILED: 'FAILED',
 } as const;
@@ -1009,6 +1011,7 @@ export interface AdminPbsSourceStatus {
   totalRows: number;
   matchedRows: number;
   rejectedRows: number;
+  watchlistUnmatchedRows: number;
 }
 
 export interface CurrentAdminIngestionRun {

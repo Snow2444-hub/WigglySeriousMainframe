@@ -27,3 +27,4 @@
 - [PBS anniversary workbook feeds](pbs-anniversary-workbook-feeds.md) — Current annual links are label-discovered; 1 April and 99ACP workbooks use separate sheets and publish from 1 August.
 - [Anniversary catalogue joins](anniversary-catalogue-joins.md) — Drug, legal form, and brand identify one product concept, but often map to multiple PBS codes across programs.
 - [Clerk auth test fixtures](clerk-auth-test-fixtures.md) — Real Express auth middleware tests need branded session-token request auth plus a seeded local role.
+- [PBS source relevance](pbs-source-relevance.md) — Local catalogue absence is benign only for untracked rows; tracked unmatched rows are a coverage gap, not source failure.

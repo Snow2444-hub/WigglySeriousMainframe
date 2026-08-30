@@ -11,6 +11,8 @@ export type AdminPbsSourceStatusStatus = typeof AdminPbsSourceStatusStatus[keyof
 
 export const AdminPbsSourceStatusStatus = {
   OK: 'OK',
+  NO_RELEVANT_ROWS: 'NO_RELEVANT_ROWS',
+  COVERAGE_GAP: 'COVERAGE_GAP',
   STALE: 'STALE',
   FAILED: 'FAILED',
 } as const;

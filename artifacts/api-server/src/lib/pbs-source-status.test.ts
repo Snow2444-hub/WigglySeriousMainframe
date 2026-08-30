@@ -130,6 +130,64 @@ test("a successful recovery becomes healthy again", () => {
   assert.equal(row.lastSuccessfulFileSha256, "hash-3");
 });
 
+test("a parsed source with no local catalogue matches is healthy but visibly has no relevant rows", () => {
+  const row = evaluatePbsSourceStatus(
+    definition("indicative_efc"),
+    [file({
+      sourceKey: "indicative_efc",
+      totalRows: 36,
+      matchedRows: 0,
+      rejectedRows: 36,
+      reportPublicationDate: "2026-08-30",
+      effectiveDate: "2026-10-01",
+    })],
+    "2026-08-30",
+  );
+  assert.equal(row.status, "NO_RELEVANT_ROWS");
+  assert.equal(row.latestFailureStage, null);
+  assert.equal(row.latestFailureMessage, null);
+});
+
+test("a legacy zero-match rejection is normalized without hiding tracked catalogue gaps", () => {
+  const row = evaluatePbsSourceStatus(
+    definition("indicative_efc"),
+    [file({
+      sourceKey: "indicative_efc",
+      status: "completed",
+      parseHealth: "rejected",
+      fetchStatus: "succeeded",
+      parseStatus: "failed",
+      failureStage: "parse",
+      errorMessage: null,
+      totalRows: 36,
+      matchedRows: 0,
+      rejectedRows: 36,
+      watchlistUnmatchedRows: 0,
+      reportPublicationDate: "2026-08-30",
+      effectiveDate: "2026-10-01",
+    })],
+    "2026-08-30",
+  );
+  assert.equal(row.status, "NO_RELEVANT_ROWS");
+  assert.equal(row.latestFailureMessage, null);
+});
+
+test("unmatched tracked rows are shown as a catalogue coverage gap", () => {
+  const row = evaluatePbsSourceStatus(
+    definition("indicative_efc"),
+    [file({
+      sourceKey: "indicative_efc",
+      totalRows: 36,
+      matchedRows: 0,
+      rejectedRows: 36,
+      watchlistUnmatchedRows: 2,
+    })],
+    "2026-08-30",
+  );
+  assert.equal(row.status, "COVERAGE_GAP");
+  assert.equal(row.watchlistUnmatchedRows, 2);
+});
+
 test("unconfigured FNB cadence is visible without inventing a stale date", () => {
   const row = evaluatePbsSourceStatus(
     definition("first_new_brand"),
