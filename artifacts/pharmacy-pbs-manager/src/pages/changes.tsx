@@ -14,7 +14,7 @@ import { reductionBorderClass, reductionTextClass } from '@/lib/percentage-signi
 import { neutralBadgeClass } from '@/lib/status-styles';
 import { drugDisplayName } from '@/lib/drug-label';
 import { formatDateValue } from '@/lib/date-format';
-import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, CalendarDays, ChevronDown } from 'lucide-react';
+import { Filter, X, History, ArrowRight, AlertCircle, AlertTriangle, Activity, CalendarDays, ChevronDown, Info } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 
 const money = (value: unknown) => {
@@ -929,6 +929,7 @@ export function ChangesPage() {
   const [scheduleCode, setScheduleCode] = useState<number | ''>(() => initialParams.get('scheduleCode') ? Number(initialParams.get('scheduleCode')) : '');
   const [from, setFrom] = useState(() => initialParams.get('from') ?? '');
   const [to, setTo] = useState(() => initialParams.get('to') ?? '');
+  const [year, setYear] = useState(() => initialParams.get('year') ?? '');
   const [direction] = useState<'decrease' | ''>(() => initialParams.get('direction') === 'decrease' ? 'decrease' : '');
   const [significance, setSignificance] = useState<ListScheduleChangesSignificance | ''>('');
   
@@ -962,9 +963,18 @@ export function ChangesPage() {
   });
 
   const changes = query.data ?? [];
+  const yearOptions = useMemo(
+    () => [...new Set(changes.map((change) => change.effectiveDate.slice(0, 4)))]
+      .filter((value) => /^\d{4}$/.test(value))
+      .sort((left, right) => right.localeCompare(left)),
+    [changes],
+  );
   const filteredChanges = useMemo(
-    () => category === 'all' ? changes : changes.filter((change) => changeCategory(change) === category),
-    [changes, category],
+    () => changes.filter((change) => (
+      (category === 'all' || changeCategory(change) === category)
+      && (!year || change.effectiveDate.slice(0, 4) === year)
+    )),
+    [changes, category, year],
   );
   const events = useMemo(() => groupScheduleChanges(filteredChanges), [filteredChanges]);
   const timelineGroups = useMemo(
@@ -1016,6 +1026,14 @@ export function ChangesPage() {
         <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground">
           <CalendarDays className="h-4 w-4 text-info" /><span className="hidden xl:inline">To</span>
           <input value={to} onChange={(e) => setTo(e.target.value)} type="date" className="min-w-0 bg-transparent text-sm font-medium text-foreground outline-none" data-testid="input-changes-to" />
+        </label>
+
+        <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-sm focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
+          <CalendarDays className="h-4 w-4 text-info" />
+          <select value={year} onChange={(e) => setYear(e.target.value)} className="w-full bg-transparent text-sm font-semibold outline-none" data-testid="select-changes-year">
+            <option value="">All years</option>
+            {yearOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+          </select>
         </label>
 
         <label className="flex h-11 items-center gap-2 rounded-xl border border-input bg-background px-3 text-xs font-semibold text-muted-foreground">
@@ -1087,7 +1105,7 @@ export function ChangesPage() {
             <span>Medicine</span>
             <span>Event</span>
             <span>Details</span>
-            <span />
+            <span className="flex items-center justify-end gap-1" title="Impact reflects the significance of the schedule change, not prediction confidence">Impact <Info className="h-3 w-3" /></span>
           </div>
           <div className="divide-y divide-border">
             {events.map((event) => {

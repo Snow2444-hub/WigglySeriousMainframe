@@ -64,11 +64,53 @@ type Tier =
   | { level: 'brands', drug: MedicineDrugSummary }
   | { level: 'items', drugId: number, drugName: string, originatorBrandName: string | null, brand: MedicineBrandSummary | { brandName: string } };
 
+function tierFromParams(params: URLSearchParams): Tier {
+  const drugId = Number(params.get('drugId'));
+  const drugName = params.get('drugName');
+  const originatorBrandName = params.get('originatorBrandName');
+  const brandName = params.get('brandName');
+  if (Number.isInteger(drugId) && drugId > 0 && drugName && brandName) {
+    return { level: 'items', drugId, drugName, originatorBrandName, brand: { brandName } };
+  }
+  if (Number.isInteger(drugId) && drugId > 0 && drugName) {
+    return {
+      level: 'brands',
+      drug: { drugId, drugName, originatorBrandName } as MedicineDrugSummary,
+    };
+  }
+  return { level: 'drugs' };
+}
+
+function directoryHref(tier: Tier, search: string, expandedStrengths: string[]): string {
+  const params = new URLSearchParams();
+  if (search) params.set('search', search);
+  if (tier.level !== 'drugs') {
+    params.set('drugId', String(tier.level === 'brands' ? tier.drug.drugId : tier.drugId));
+    params.set('drugName', tier.level === 'brands' ? tier.drug.drugName : tier.drugName);
+    const originatorBrandName = tier.level === 'brands' ? tier.drug.originatorBrandName : tier.originatorBrandName;
+    if (originatorBrandName) params.set('originatorBrandName', originatorBrandName);
+  }
+  if (tier.level === 'items') {
+    params.set('brandName', tier.brand.brandName);
+    const expandedStrength = expandedStrengths.find((key) => key.startsWith(`${tier.drugId}:${tier.brand.brandName}:`));
+    if (expandedStrength) params.set('strength', expandedStrength.slice(`${tier.drugId}:${tier.brand.brandName}:`.length));
+  }
+  const query = params.toString();
+  return query ? `/pbs?${query}` : '/pbs';
+}
+
 export function PbsDirectory() {
-  const [, setLocation] = useLocation();
-  const [search, setSearch] = useState('');
-  const [tier, setTier] = useState<Tier>({ level: 'drugs' });
-  const [expandedStrengths, setExpandedStrengths] = useState<string[]>([]);
+  const [location, setLocation] = useLocation();
+  const initialParams = useMemo(() => new URLSearchParams(location.split('?')[1] ?? ''), [location]);
+  const initialTier = useMemo(() => tierFromParams(initialParams), [initialParams]);
+  const [search, setSearch] = useState(() => initialParams.get('search') ?? '');
+  const [tier, setTier] = useState<Tier>(() => initialTier);
+  const [expandedStrengths, setExpandedStrengths] = useState<string[]>(() => {
+    const strength = initialParams.get('strength');
+    return strength && initialTier.level === 'items'
+      ? [`${initialTier.drugId}:${initialTier.brand.brandName}:${strength}`]
+      : [];
+  });
 
   const drugParams = useMemo(() => ({ search: search || undefined }), [search]);
   const drugsQuery = useListMedicineDirectory(drugParams, {
@@ -87,21 +129,33 @@ export function PbsDirectory() {
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
-    if (tier.level !== 'drugs') setTier({ level: 'drugs' });
+    const nextTier: Tier = { level: 'drugs' };
+    if (tier.level !== 'drugs') setTier(nextTier);
+    setExpandedStrengths([]);
+    setLocation(directoryHref(nextTier, val, []), { replace: true });
   };
 
   const clickDrug = (drug: MedicineDrugSummary) => {
     if (drug.searchMatchLevel === 'item' && drug.matchedItemCode) {
-      setLocation(`/pbs/${drug.matchedItemCode}`);
+      setLocation(`/pbs/${encodeURIComponent(drug.matchedItemCode)}`);
     } else if (drug.searchMatchLevel === 'brand' && drug.matchedBrandName) {
-      setTier({ level: 'items', drugId: drug.drugId, drugName: drug.drugName, originatorBrandName: drug.originatorBrandName, brand: { brandName: drug.matchedBrandName } });
+      const nextTier: Tier = { level: 'items', drugId: drug.drugId, drugName: drug.drugName, originatorBrandName: drug.originatorBrandName, brand: { brandName: drug.matchedBrandName } };
+      setTier(nextTier);
+      setExpandedStrengths([]);
+      setLocation(directoryHref(nextTier, search, []), { replace: true });
     } else {
-      setTier({ level: 'brands', drug });
+      const nextTier: Tier = { level: 'brands', drug };
+      setTier(nextTier);
+      setExpandedStrengths([]);
+      setLocation(directoryHref(nextTier, search, []), { replace: true });
     }
   };
 
   const clickBrand = (brand: MedicineBrandSummary, drugName: string, originatorBrandName: string | null) => {
-    setTier({ level: 'items', drugId: brand.drugId, drugName, originatorBrandName, brand });
+    const nextTier: Tier = { level: 'items', drugId: brand.drugId, drugName, originatorBrandName, brand };
+    setTier(nextTier);
+    setExpandedStrengths([]);
+    setLocation(directoryHref(nextTier, search, []), { replace: true });
   };
 
   return (
@@ -132,8 +186,13 @@ export function PbsDirectory() {
 
       {tier.level !== 'drugs' && (
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-muted-foreground animate-rise-in">
-          <button 
-            onClick={() => setTier({ level: 'drugs' })} 
+            <button
+              onClick={() => {
+                const nextTier: Tier = { level: 'drugs' };
+                setTier(nextTier);
+                setExpandedStrengths([]);
+                setLocation(directoryHref(nextTier, search, []), { replace: true });
+              }}
             className="hover:text-foreground transition-colors flex items-center gap-1"
           >
             <ArrowLeft className="h-4 w-4" /> Directory
@@ -141,8 +200,13 @@ export function PbsDirectory() {
           <ChevronRight className="h-4 w-4 opacity-50" />
           {tier.level === 'items' ? (
             <>
-              <button 
-                onClick={() => setTier({ level: 'brands', drug: { drugId: tier.drugId, drugName: tier.drugName, originatorBrandName: tier.originatorBrandName } as MedicineDrugSummary })}
+               <button
+                 onClick={() => {
+                   const nextTier: Tier = { level: 'brands', drug: { drugId: tier.drugId, drugName: tier.drugName, originatorBrandName: tier.originatorBrandName } as MedicineDrugSummary };
+                   setTier(nextTier);
+                   setExpandedStrengths([]);
+                   setLocation(directoryHref(nextTier, search, []), { replace: true });
+                 }}
                 className="hover:text-foreground transition-colors"
               >
                  {drugDisplayName(tier.drugName, tier.originatorBrandName)}
@@ -468,7 +532,13 @@ export function PbsDirectory() {
                            <div key={groupKey}>
                              <button
                                type="button"
-                               onClick={() => setExpandedStrengths((current) => current.includes(groupKey) ? current.filter((key) => key !== groupKey) : [...current, groupKey])}
+                                onClick={() => {
+                                  const nextExpanded = expandedStrengths.includes(groupKey)
+                                    ? expandedStrengths.filter((key) => key !== groupKey)
+                                    : [...expandedStrengths, groupKey];
+                                  setExpandedStrengths(nextExpanded);
+                                  setLocation(directoryHref(tier, search, nextExpanded), { replace: true });
+                                }}
                                aria-expanded={expanded}
                                className="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/20 md:grid-cols-[1fr_auto_minmax(240px,1.2fr)_auto] md:px-6"
                              >
@@ -495,7 +565,7 @@ export function PbsDirectory() {
                                  </div>
                                  <div className="divide-y divide-border/70">
                                    {group.items.map((item) => (
-                                     <Link key={item.itemCode} href={`/pbs/${item.itemCode}`} className="grid gap-1.5 px-2 py-2.5 text-xs transition-colors hover:bg-secondary/30 md:grid-cols-[1fr_1fr_1.2fr_1fr_auto] md:items-center md:gap-3" title={`Open listing details · Internal listing ID: ${item.liItemId ?? item.itemCode}`}>
+                                      <Link key={item.itemCode} href={`/pbs/${encodeURIComponent(item.itemCode)}`} className="grid gap-1.5 px-2 py-2.5 text-xs transition-colors hover:bg-secondary/30 md:grid-cols-[1fr_1fr_1.2fr_1fr_auto] md:items-center md:gap-3" title={`Open listing details · Internal listing ID: ${item.liItemId ?? item.itemCode}`}>
                                        <span className="font-mono font-bold text-foreground">PBS {item.pbsCode || 'not supplied'}</span>
                                        <span className="font-medium text-muted-foreground">{item.packSize ? `Pack of ${item.packSize}` : 'Pack not supplied'}</span>
                                        <span className="font-medium text-muted-foreground">{benefitTypeLabel(item.benefitTypeCode)}</span>

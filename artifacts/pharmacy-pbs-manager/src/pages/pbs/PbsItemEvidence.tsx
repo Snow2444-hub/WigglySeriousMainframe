@@ -1,4 +1,4 @@
-import { useParams } from 'wouter';
+import { useLocation, useParams } from 'wouter';
 import { 
   useGetPbsItem, getGetPbsItemQueryKey,
   useListPriceHistory, getListPriceHistoryQueryKey,
@@ -101,8 +101,16 @@ function PremiumSummary({ className }: { className?: string }) {
 }
 
 export function PbsItemEvidence() {
+  const [, setLocation] = useLocation();
   const params = useParams();
   const itemCode = params.itemCode!;
+  const goBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      setLocation('/pbs');
+    }
+  };
 
   const itemQuery = useGetPbsItem(itemCode, { query: { enabled: !!itemCode, queryKey: getGetPbsItemQueryKey(itemCode) } });
   const priceHistory = useListPriceHistory(itemCode, { query: { enabled: !!itemCode, queryKey: getListPriceHistoryQueryKey(itemCode) } });
@@ -153,9 +161,9 @@ export function PbsItemEvidence() {
   return (
     <AppShell>
       <div className="mb-4 animate-rise-in">
-        <Link href="/pbs" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">
+        <button type="button" onClick={goBack} className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" /> Back to directory
-        </Link>
+        </button>
       </div>
 
       {itemQuery.isLoading ? <QueryState kind="loading" /> : 
