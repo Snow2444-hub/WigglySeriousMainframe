@@ -70,3 +70,31 @@ mtime_ms = 1788042006165
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/ebbcc0c7-b243-4f14-a173-906c69f39462/85179c5f-6b2f-448b-9b15-3eeaf0a1481a"
 storage_version_token = "1788042037749182"
 content_type = "text/csv"
+
+[[outputs]]
+id = "LTBGFLs1THLAhpUXlQSio"
+uri = "file://exports/fixture-staging-1983062564-1983062565.csv"
+type = "table"
+title = "Complete fixture staging export"
+description = "Read-only Phase 1 export of all five raw PBS staging rows matching the confirmed fixture signature."
+logical_id = "e0662a5a-99be-40b2-87e7-cf5a5c9fd522"
+content_hash = "sha256:9e0159ce239a5366aa0428c0aea36f5fb4ecb3ee7ca0f78ee20c53a3a484364c"
+size = 1956
+mtime_ms = 1788059447973
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/e0662a5a-99be-40b2-87e7-cf5a5c9fd522/8b232512-41b8-4649-8e9f-66b55f7b17cc"
+storage_version_token = "1788059455038568"
+content_type = "text/csv"
+
+[[outputs]]
+id = "Tbn8RGGOpQvW9V2J_UW48"
+uri = "file://exports/phantom-schedule-changes-1983062564-2092-current.csv"
+type = "table"
+title = "Current phantom schedule changes export"
+description = "Read-only Phase 1 export of all schedule-change rows matching the 2092 phantom-delisting predicate."
+logical_id = "5d7c3f3c-c2d5-4184-a2df-7a2f967b7b8d"
+content_hash = "sha256:e89b578729d7c64cd91523108beee3a57af1b623e197650783aecbbaac94af49"
+size = 440557
+mtime_ms = 1788059218289
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/5d7c3f3c-c2d5-4184-a2df-7a2f967b7b8d/317b7594-7f44-45ee-9799-d9f06ef14523"
+storage_version_token = "1788059286566781"
+content_type = "text/csv"

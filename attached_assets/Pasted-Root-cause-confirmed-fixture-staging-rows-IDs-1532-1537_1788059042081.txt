@@ -1,0 +1,75 @@
+Root-cause confirmed: fixture staging rows (IDs 1532-1537, the dangerous one is
+1533 — complete schedule-scoped snapshot for schedule 1983062564, effective
+2092-01-01) leaked before the isolation fix, were never removed, are PROTECTED
+by the pruner because their 2092 date looks newest, and are regenerated into
+schedule_changes by every unscoped global change-detection run.
+
+Fixing schedule_changes alone regenerates them. The fix must remove the
+generator (the staging fixture) AND guard the read path so this can't recur.
+
+Work in gated phases. Export before every destructive step. STOP after Phase 1
+and report before deleting anything.
+
+=== PHASE 1 — INVESTIGATE + EXPORT + DRY RUN (read-only except writing exports) ===
+
+1. Identify the full fixture staging set to remove. Start from IDs 1532-1537 and
+   ALSO search raw_schedule_staging for any row matching the fixture signature:
+   schedule_code 1983062564 or 1983062565, request keys containing
+   run-1983062574 or run-1983062575, or payload effective dates 2092-01-01 /
+   2092-02-01. List every matching row with its ID, request key, endpoint,
+   coverage flags. Confirm you've found all of them, not just 1532-1537.
+
+2. Identify the current phantom schedule_changes rows (the 1,216 new ones, IDs
+   ~4609-8813, plus any I haven't seen). Confirm count and that the predicate
+   (schedule_code 1983062564 AND effective_date 2092-01-01 AND
+   change_type delisted) selects exactly them and nothing real.
+
+3. Export BOTH sets to files: the fixture staging rows, and the phantom
+   schedule_changes rows. Report paths and counts.
+
+4. Dry-run both deletes as SELECT COUNT(*). Report the counts. Do NOT delete.
+
+STOP. Report the full fixture staging set, the phantom-change count, export
+paths, and dry-run counts. Wait for "approved".
+
+=== PHASE 2 — REMOVE (only after "approved") ===
+
+5. Delete the fixture staging rows (raw_schedule_staging) using the confirmed
+   set from step 1. This removes the generator.
+
+6. Delete the phantom schedule_changes rows using the confirmed predicate.
+
+7. Re-run verification: confirm no 2092 / 1983062564 rows remain in either
+   table, and confirm the feed, timelines, Overview counts, and predictions are
+   clean (same downstream checks as the earlier cleanup — 136 predictions,
+   dashboard counts unchanged).
+
+=== PHASE 3 — GUARD THE READ PATH (so it can't recur even if a fixture leaks) ===
+
+Present these as a plan for approval BEFORE implementing — I want to review the
+diffs. Do not apply in the same pass.
+
+8. Change detection should not treat implausible staging as authoritative. At
+   minimum ONE of, ideally layered:
+   a. Reject staged snapshots whose effective date is implausibly far in the
+      future (e.g. beyond a sane horizon) from participating in change
+      detection.
+   b. Require a staged run identifier to correspond to a REAL ingestion run
+      (join against the ingestion-run table); reject snapshots whose run-N has
+      no matching real run. The fixture's run-1983062574 has no real run.
+   c. Reconsider unscoped global change detection: both current and backfill
+      ingestion call syncScheduleChangesImpl() with no scheduleCodes, so every
+      run scans ALL staged snapshots including stale/foreign ones. Scoping
+      detection to the schedules the run actually touched would prevent a
+      dormant staged snapshot from re-emitting on unrelated runs.
+
+9. Fix the pruner so a future-dated fixture snapshot can't be protected as
+   "newest" — the same run-validity or future-date-sanity rule should stop
+   1533-type rows being preserved.
+
+10. Add a regression test: a staging table containing a future-dated,
+    fake-run complete snapshot must produce ZERO phantom delistings from a
+    normal ingestion's change detection.
+
+Report the Phase 3 plan for approval after Phase 2 verification. Do not
+implement 8-10 until I approve the diffs.
