@@ -1,10 +1,11 @@
 import { useAuth } from "@clerk/react";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { adminAccessForRole, type AdminRole } from "@/lib/admin-access";
 
 export type RoleResponse = {
   id: string;
-  role: "user" | "admin";
+  role: AdminRole;
 };
 
 export async function getCurrentRole(): Promise<RoleResponse> {
@@ -30,7 +31,7 @@ export function AdminGuard({ children }: { children: ReactNode }) {
     return <div className="flex min-h-[240px] items-center justify-center"><div className="w-56 space-y-3"><div className="skeleton-bar h-3 rounded bg-muted" /><div className="skeleton-bar h-10 rounded-xl bg-muted" /></div></div>;
   }
 
-  if (roleQuery.isError || roleQuery.data?.role !== "admin") {
+  if (roleQuery.isError || !adminAccessForRole(roleQuery.data?.role).canViewPage) {
     return <div className="rounded-2xl border border-destructive/25 bg-destructive/5 p-10 text-center"><h1 className="text-xl font-bold">Admin access required</h1><p className="mt-2 text-sm text-muted-foreground">This page is restricted to administrator accounts.</p></div>;
   }
 

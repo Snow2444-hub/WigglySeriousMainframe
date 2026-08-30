@@ -21,6 +21,7 @@ import {
   Info
 } from 'lucide-react';
 import { useCurrentRole } from '@/components/admin-guard';
+import { adminAccessForRole } from '@/lib/admin-access';
 import {
   useGetPharmacyBrandPreferences,
   useClearPharmacyBrandPreferences,
@@ -66,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const roleQuery = useCurrentRole();
   const dashboardQuery = useGetDashboard();
   const initials = (user?.firstName?.[0] ?? user?.emailAddresses?.[0]?.emailAddress?.[0] ?? 'P').toUpperCase();
-  const visibleNavItems = roleQuery.data?.role === 'admin'
+  const visibleNavItems = adminAccessForRole(roleQuery.data?.role).showNavigationLink
     ? [...navItems, { href: '/admin', label: 'Data updates', icon: Settings2 }]
     : navItems;
 
