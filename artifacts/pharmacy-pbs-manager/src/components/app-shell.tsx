@@ -17,7 +17,8 @@ import {
   TrendingDown,
   X,
   SlidersHorizontal,
-  EyeOff
+  EyeOff,
+  Info
 } from 'lucide-react';
 import { useCurrentRole } from '@/components/admin-guard';
 import {
@@ -37,6 +38,7 @@ const navItems = [
   { href: '/artg', label: 'ARTG register', icon: Database },
   { href: '/stock', label: 'Private stock', icon: Boxes },
   { href: '/brand-preferences', label: 'Brand visibility', icon: SlidersHorizontal },
+  { href: '/reduction-info', label: 'Reduction guide', icon: Info },
 ];
 
 export function BrandMark({ compact = false }: { compact?: boolean }) {

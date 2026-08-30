@@ -23,3 +23,4 @@
 - [Ingestion restart resume](ingestion-restart-resume.md) — Requeue interrupted runs, replay run-scoped staged pages, and trust schedule changes only after complete coverage.
 - [Ingestion test isolation](ingestion-test-isolation.md) — Scope test fixtures, and treat shared staging as untrusted unless snapshot provenance is valid.
 - [Ingestion heartbeat recovery](ingestion-heartbeat-recovery.md) — Retire silent in-process hangs instead of concurrently resuming the same run; restart recovery alone may safely replay staged pages.
+- [Reference AEMP availability](reference-aemp-availability.md) — Current development history may not reach statutory reference dates; mark resulting predictions conditional and do not imply the cap was verified.

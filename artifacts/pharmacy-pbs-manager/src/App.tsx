@@ -24,6 +24,7 @@ import { PbsDirectory } from "@/pages/pbs/PbsDirectory";
 import { PbsItemEvidence } from "@/pages/pbs/PbsItemEvidence";
 import { UpcomingChangesPage } from "@/pages/UpcomingChanges";
 import { BrandPreferencesPage } from "@/pages/brand-preferences";
+import { ReductionInfoPage } from "@/pages/reduction-info";
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -184,6 +185,7 @@ function Router() {
     <Route path="/artg" component={() => <Protected><ArtgDirectory /></Protected>} />
     <Route path="/stock" component={() => <Protected><StockPage /></Protected>} />
     <Route path="/brand-preferences" component={() => <Protected><BrandPreferencesPage /></Protected>} />
+    <Route path="/reduction-info" component={() => <Protected><ReductionInfoPage /></Protected>} />
     <Route path="/admin" component={() => <Protected><AdminGuard><AdminPage /></AdminGuard></Protected>} />
     <Route component={NotFound} />
   </Switch></RoutedErrorBoundary>;
