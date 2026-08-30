@@ -28,6 +28,7 @@ const USER_AGENT = "pharmacy-pbs-manager/1.0";
 const PAGE_TIMEOUT_MS = 30_000;
 
 const PAGE_URLS = {
+  anniversaryPriceReductions: "https://www.pbs.gov.au/industry/pricing/anniversary-price-reductions",
   firstNewBrand: "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand-price-reductions",
   subjectToPriceDisclosure:
     "https://www.pbs.gov.au/industry/pricing/price-disclosure-spd/drugs-subject-to-price-disclosure",
@@ -104,6 +105,7 @@ type SourceFile = {
 export const PUBLISHED_REPORT_MAX_AGE_DAYS = 180;
 
 function sourcePageUrl(sourceKey: PublishedSourceKey): string {
+  if (sourceKey === "anniversary_indicative" || sourceKey === "section_99acp") return PAGE_URLS.anniversaryPriceReductions;
   if (sourceKey === "first_new_brand") return PAGE_URLS.firstNewBrand;
   if (sourceKey === "subject_to_price_disclosure") return PAGE_URLS.subjectToPriceDisclosure;
   if (
@@ -196,6 +198,14 @@ function headerKey(value: string): string {
 
 function findHeader(headers: string[], pattern: RegExp): string | undefined {
   return headers.find((header) => pattern.test(headerKey(header)));
+}
+
+export function anniversaryFileLinkMatches(link: { text: string; href: string }): boolean {
+  return /^indicative pricing\s*[-–—]\s*anniversary price reductions\s*[-–—]\s*fed\b/i.test(link.text);
+}
+
+export function section99acpFileLinkMatches(link: { text: string; href: string }): boolean {
+  return /^indicative pricing\s+s\.\s*99acp anniversary list for\s+\d{4}\.xlsx\b/i.test(link.text);
 }
 
 function moaMatches(localForm: string | null, sourceMoa: string): boolean {
@@ -341,8 +351,13 @@ function workbookYellowRows(workbook: XLSX.WorkBook, bytes: Buffer): Set<number>
   return rows;
 }
 
-function workbookRows(workbook: XLSX.WorkBook, bytes: Buffer, headerRowIndex: number): WorkbookRows {
-  const sheetName = workbook.SheetNames[0];
+function workbookRows(
+  workbook: XLSX.WorkBook,
+  bytes: Buffer,
+  headerRowIndex: number,
+  requestedSheetName?: string,
+): WorkbookRows {
+  const sheetName = requestedSheetName ?? workbook.SheetNames[0];
   if (!sheetName) throw new Error("PBS workbook did not contain a worksheet");
   const sheet = workbook.Sheets[sheetName];
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
@@ -370,7 +385,7 @@ function workbookRows(workbook: XLSX.WorkBook, bytes: Buffer, headerRowIndex: nu
     rows,
     sheet,
     headerRowIndex,
-    yellowRowNumbers: workbookYellowRows(workbook, bytes),
+    yellowRowNumbers: sheetName === workbook.SheetNames[0] ? workbookYellowRows(workbook, bytes) : new Set<number>(),
   };
 }
 
@@ -543,8 +558,9 @@ async function finishPublishedFile(
   fileId: number,
   result: Omit<PublishedFileReport, "sourceKey" | "fileUrl" | "fileName" | "status">,
   provenance: { reportPublicationDate: string | null; effectiveDate: string | null },
+  parseHealthOverride?: "healthy" | "rejected",
 ): Promise<void> {
-  const parseHealth = result.totalRows > 0 && result.matchedRows > 0 ? "healthy" : "rejected";
+  const parseHealth = parseHealthOverride ?? (result.totalRows > 0 && result.matchedRows > 0 ? "healthy" : "rejected");
   await db
     .update(pbsPublishedFilesTable)
     .set({

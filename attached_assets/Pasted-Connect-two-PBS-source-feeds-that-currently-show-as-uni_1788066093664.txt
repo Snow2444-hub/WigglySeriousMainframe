@@ -1,0 +1,65 @@
+Connect two PBS source feeds that currently show as uninitialized in the source-
+health panel: the Anniversary indicative list and the Section 99ACP list. Goal:
+turn those status rows into live evidence by actually downloading, observing, and
+displaying the files — WITHOUT changing any prediction formulas.
+
+SCOPE — strict:
+This task is INGEST + OBSERVE + DISPLAY only. Do NOT wire the ingested data into
+prediction calculations, rate reconciliation, or anything that changes predicted
+numbers. If you find yourself editing prediction logic, STOP and report — that's
+a separate task. The anniversary/99ACP rates already live in the predictor; this
+task does not touch them.
+
+SOURCE PAGES (discover the current file links from these, don't hardcode a URL
+that will go stale):
+- Anniversary indicative list:
+  https://www.pbs.gov.au/industry/pricing/anniversary-price-reductions
+  (the "1 April [year] SPRs – List of Affected Drugs and Indicative pricing"
+  .xlsx link — currently the 1 April 2027 file)
+- Section 99ACP list:
+  same page, the "section 99ACP SPRs (1.48% price reductions)" .xlsx link
+  (currently the 2027 list)
+
+BUILD:
+
+1. DOWNLOAD ADAPTERS
+   Add download adapters for these two sources that discover the current file
+   link from the PBS publication page (parse the page for the right .xlsx link
+   by its label/pattern), then fetch the file. Do not hardcode a single dated
+   URL — the file changes each cycle, so resolve it from the page each run.
+   Report how you identify the correct link.
+
+2. SHARED OBSERVATION LIFECYCLE
+   Run both through the EXISTING immutable observation lifecycle built in #57/#62
+   — the same one the price-disclosure and FNB sources use. Each fetch/parse
+   attempt records: publication date, fetch outcome, parse outcome, failure
+   stage/message, parser version, row counts (total/matched/rejected/unmatched),
+   SHA-256, and the source-key provenance. Reuse the shared pipeline; do NOT
+   build a parallel one.
+
+3. PARSE THE FILES
+   Parse each workbook's actual structure (inspect the real files first and
+   report their columns before finalizing the parser). Capture the row-level data
+   into the observation record for audit. Report each file's real column layout.
+
+4. STATUS PANEL
+   The two rows in the Data updates source-health panel should move from
+   uninitialized to OK (or STALE if past the refresh window) based on a real
+   successful observation, with real publication date and last-pull time. No
+   other panel behavior changes.
+
+CADENCE NOTE:
+Both publish ~1 August annually for the following 1 April. It's late August now,
+so current-cycle files should exist and be fetchable — verify the live fetch
+actually works and the rows flip to OK. The STALE transition won't trigger until
+next cycle; that's expected, don't fake it.
+
+VERIFY:
+- Both sources fetch, parse, and observe successfully against the live PBS files.
+- Both rows show OK with real publication dates in the panel.
+- Confirm NO prediction formula or predicted number changed (diff the prediction
+  logic — it should be untouched).
+- Existing tests still pass; add observation/parse tests for the two new sources.
+
+Report the two files' real column structures, how you resolve the current file
+link per source, and confirmation that prediction logic is untouched.
