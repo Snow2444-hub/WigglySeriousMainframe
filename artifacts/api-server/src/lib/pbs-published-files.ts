@@ -389,6 +389,66 @@ function workbookRows(
   };
 }
 
+type AnniversaryWorkbookSheet = {
+  sheetName: string;
+  parsed: WorkbookRows;
+  effectiveDate: string;
+  drugHeader: string;
+  formHeader: string;
+  brandHeader: string;
+};
+
+function anniversaryWorkbookSheets(sourceFile: SourceFile): AnniversaryWorkbookSheet[] {
+  return sourceFile.workbook.SheetNames.map((sheetName) => {
+    const parsed = workbookRows(sourceFile.workbook, sourceFile.bytes, 1, sheetName);
+    const drugHeader = findHeader(parsed.headers, /legal instrument drug/i);
+    const formHeader = findHeader(parsed.headers, /legal instrument form/i);
+    const brandHeader = findHeader(parsed.headers, /^brand name$/i);
+    const currentAempHeader = findHeader(parsed.headers, /^aemp as at/i);
+    const proposedAempHeader = findHeader(parsed.headers, /^proposed aemp as at/i);
+    if (!drugHeader || !formHeader || !brandHeader || !currentAempHeader || !proposedAempHeader) {
+      throw new Error(`Anniversary workbook sheet "${sheetName}" is missing a required column`);
+    }
+    const effectiveDate = extractReductionDate(parsed.title) ?? extractReductionDate(proposedAempHeader);
+    if (!effectiveDate) {
+      throw new Error(`Anniversary workbook sheet "${sheetName}" has no proposed AEMP date`);
+    }
+    return { sheetName, parsed, effectiveDate, drugHeader, formHeader, brandHeader };
+  });
+}
+
+function anniversaryPublicationDate(sheets: AnniversaryWorkbookSheet[]): string | null {
+  const years = sheets
+    .map((sheet) => Number(sheet.effectiveDate.slice(0, 4)))
+    .filter((year) => Number.isInteger(year));
+  return years.length ? `${Math.min(...years) - 1}-08-01` : null;
+}
+
+export function inspectAnniversaryWorkbook(workbook: XLSX.WorkBook, bytes: Buffer): {
+  publicationDate: string | null;
+  sheets: Array<{ sheetName: string; headers: string[]; rowCount: number; effectiveDate: string }>;
+} {
+  const sourceFile = {
+    sourceKey: "anniversary_indicative" as const,
+    pageUrl: PAGE_URLS.anniversaryPriceReductions,
+    fileUrl: PAGE_URLS.anniversaryPriceReductions,
+    fileName: "inspection.xlsx",
+    contentType: null,
+    bytes,
+    workbook,
+  };
+  const sheets = anniversaryWorkbookSheets(sourceFile);
+  return {
+    publicationDate: anniversaryPublicationDate(sheets),
+    sheets: sheets.map((sheet) => ({
+      sheetName: sheet.sheetName,
+      headers: sheet.parsed.headers,
+      rowCount: sheet.parsed.rows.length,
+      effectiveDate: sheet.effectiveDate,
+    })),
+  };
+}
+
 function extractReductionDate(value: string): string | null {
   const match = value.match(
     /\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i,
@@ -859,6 +919,79 @@ async function processSubjectToPriceDisclosure(
   };
 }
 
+async function processAnniversaryIndicative(
+  sourceFile: SourceFile,
+  file: PbsPublishedFile,
+  context: DrugContext,
+): Promise<PublishedFileReport> {
+  const sheets = anniversaryWorkbookSheets(sourceFile);
+  let totalRows = 0;
+  let matchedRows = 0;
+  const watchlistFailures: PublishedMatchFailure[] = [];
+
+  for (const [sheetIndex, sheet] of sheets.entries()) {
+    for (const row of sheet.parsed.rows) {
+      totalRows += 1;
+      const sourceDrugName = textValue(row.record[sheet.drugHeader]);
+      const sourceMoa = textValue(row.record[sheet.formHeader]);
+      const brandName = textValue(row.record[sheet.brandHeader]);
+      const match = matchDrugAndMoa(context, sourceDrugName, sourceMoa);
+      const isMatched = match.drugId !== null && match.itemCodes.length > 0;
+      const isWatched = watchedRow(context, {
+        drugName: sourceDrugName,
+        moa: sourceMoa,
+        itemCode: null,
+        brandName,
+      });
+      const reason = isMatched ? null : match.reason ?? "No local item matched";
+      const sourceRowNumber = sheetIndex * 100_000 + row.rowNumber;
+
+      if (isMatched) matchedRows += 1;
+      await persistFileRow({
+        fileId: file.id,
+        rowNumber: sourceRowNumber,
+        rawRow: { ...row.record, _sheetName: sheet.sheetName },
+        sourceDrugName,
+        sourceMoa,
+        sourceItemCode: null,
+        matchedDrugId: match.drugId,
+        matchedItemCodes: match.itemCodes,
+        matchStatus: isMatched ? "matched" : "unmatched",
+        failureReason: reason,
+        isWatchlistMatch: isWatched,
+        effectDate: sheet.effectiveDate,
+      });
+      if (!isMatched && isWatched) {
+        watchlistFailures.push({
+          rowNumber: sourceRowNumber,
+          sourceDrugName,
+          sourceMoa,
+          sourceItemCode: null,
+          reason: reason ?? "No local item matched",
+        });
+      }
+    }
+  }
+
+  const result = { totalRows, matchedRows, watchlistUnmatchedRows: watchlistFailures.length, watchlistFailures };
+  await finishPublishedFile(
+    file.id,
+    result,
+    {
+      reportPublicationDate: anniversaryPublicationDate(sheets),
+      effectiveDate: sheets.map((sheet) => sheet.effectiveDate).sort()[0] ?? null,
+    },
+    "healthy",
+  );
+  return {
+    sourceKey: sourceFile.sourceKey,
+    status: "completed",
+    fileUrl: sourceFile.fileUrl,
+    fileName: sourceFile.fileName,
+    ...result,
+  };
+}
+
 function indicativeDate(parsed: WorkbookRows): string {
   const date =
     extractReductionDate(parsed.title) ??
@@ -1005,6 +1138,9 @@ async function processSource(
     sourceFile = await fetchSource();
     file = await upsertPublishedFile(sourceFile, ingestionRunId);
     await clearFileRows(file.id);
+    if (sourceKey === "anniversary_indicative" || sourceKey === "section_99acp") {
+      return await processAnniversaryIndicative(sourceFile, file, context);
+    }
     if (sourceKey === "first_new_brand") return await processFirstNewBrand(sourceFile, file, context);
     if (sourceKey === "subject_to_price_disclosure") {
       return await processSubjectToPriceDisclosure(sourceFile, file, context);
@@ -1035,6 +1171,28 @@ export async function ingestPublishedFiles(ingestionRunId?: number): Promise<Pub
   const context = await loadContext();
   await ensurePbsSourceRegistry();
   const files = await Promise.all([
+    processSource(
+      "anniversary_indicative",
+      () =>
+        fetchSourceFile(
+          "anniversary_indicative",
+          PAGE_URLS.anniversaryPriceReductions,
+          anniversaryFileLinkMatches,
+        ),
+      context,
+      ingestionRunId,
+    ),
+    processSource(
+      "section_99acp",
+      () =>
+        fetchSourceFile(
+          "section_99acp",
+          PAGE_URLS.anniversaryPriceReductions,
+          section99acpFileLinkMatches,
+        ),
+      context,
+      ingestionRunId,
+    ),
     processSource(
       "first_new_brand",
       () =>
