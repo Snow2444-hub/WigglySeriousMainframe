@@ -1,0 +1,65 @@
+Full audit of the reduction-prediction logic against current PBS pricing rules,
+then STOP with a gap list before building. This is investigate-first: I want to
+see what's actually wrong before any code changes, because these are the numbers
+predictions are built from and a wrong formula produces plausible-but-incorrect
+figures, not visible breakage.
+
+=== PHASE 1 — AUDIT (read-only, report a gap list, then stop) ===
+
+For each of the four mechanisms, report what the code CURRENTLY does vs the
+current PBS rule, and whether there's a gap:
+
+1. ANNIVERSARY REDUCTIONS
+   Current PBS rules: 5yr = 5%, 10yr = 5%, 15yr = 26.1% RISING TO 30% on 1 April
+   2027; plus a SEPARATE section 99ACP 1.48% reduction applied on the drug's
+   actual 15th-anniversary day (not the flat 1 April date). Reductions applied
+   1 April annually; affected-drug indicative lists published 1 August the prior
+   year. Cap: 60% off the reference AEMP.
+   Report: what rates does the predictor encode? Are any hardcoded/stale (e.g. an
+   old 10% ten-year or 5% fifteen-year)? Does it handle the 2027 step-up to 30%?
+   Does it model the 1.48% s99ACP mechanism at all? Is the 60% cap applied?
+
+2. FIRST NEW BRAND
+   Current rule: "up to 25%" since 1 Oct 2018 — and it can be LESS than 25%
+   where the existing brand already has an effective price below AEMP.
+   Report: does the code apply a flat 25%, or does it account for the "up to"
+   ceiling / effective-price case? Flag if it will over-predict for effective-
+   priced brands.
+
+3. PRICE DISCLOSURE
+   Report: confirm the source it reads (indicative reports, post-WADP-deprecation
+   as previously fixed) and whether the ingestion still matches the published
+   file format. This is data-driven, so I mainly want confirmation it's not
+   silently stale, not a rule check.
+
+4. FLOW-ON TO COMBINATION ITEMS  (likely the real gap — not in the stated model)
+   Rule: when a PBS-listed component of a combination item takes an anniversary
+   or FNB SPR, the reduction flows on to the combination item on the SAME date,
+   by the regulation 65A formula — weighted by the component's share of the
+   combination AEMP, with the non-listed component reduced too, and special
+   handling when multiple components take different reductions. Indicative files
+   published (1 April 2027 file exists); anniversary flow-on lists published
+   1 August.
+   Report:
+   - Does the predictor model flow-on AT ALL? (Likely no.)
+   - CRITICAL DATA-SHAPE QUESTION: the predictor currently outputs a single
+     percentage per event. The flow-on formula needs per-component AEMPs and the
+     combination's AEMP. Does the schema/data store component-level pricing for
+     combination items, or only a single price per item? If it doesn't store
+     component data, building real flow-on predictions needs a data/schema change
+     FIRST — report exactly what's missing and what it would take, do NOT assume
+     an approximation.
+   - Note that the combination-matching work already done (any-component match)
+     identifies WHICH items are combinations — report whether that can feed a
+     flow-on predictor.
+
+STOP after the gap list. For each mechanism give: current behaviour, correct
+behaviour, gap yes/no, and for flow-on specifically the data-shape answer. Do
+NOT change any code or prediction logic yet. I'll approve the build scope after
+seeing what's actually broken.
+
+=== PHASE 2 — BUILD (after I approve, scoped to the gaps found) ===
+Do not start. After the audit I'll approve building the fixes, and flow-on only
+once its data-shape question is answered — a wrong flow-on formula produces
+plausible wrong dollar figures, so it needs the data in place before the calc,
+not an approximation.
