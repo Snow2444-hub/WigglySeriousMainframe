@@ -1,0 +1,55 @@
+New feature: cross-check predicted anniversary reductions against the PBS's own
+published indicative figures, and surface where they agree or differ. This adds a
+VERIFICATION LAYER on top of existing predictions — it does NOT change any
+prediction formula or predicted number. The published figures now sit in the
+audit rows from the anniversary_indicative feed (73 rows: per-drug "AEMP as at
+1 July 2026" and "Proposed AEMP as at 1 April 2027", split across the s99ACHB /
+s99ACJA / s99ACKB sheets for 5/10/15-year).
+
+Do this in two phases. PHASE 1 is investigation — report and stop before building
+the UI, because whether this works depends on whether the published rows join to
+our predictions.
+
+=== PHASE 1 — CAN THE PUBLISHED FIGURES JOIN TO OUR PREDICTIONS? (read-only) ===
+
+1. MATCH KEY
+   The indicative rows identify a drug by "F1 Legal Instrument Drug" + "Legal
+   Instrument Form" + "Brand Name" + "Responsible Person". Our predictions key
+   off PBS items / drugs. Report: what's the reliable join between an indicative
+   row and one of our predicted anniversary reductions? Item code? Drug + form +
+   brand text match? How clean is it — exact, fuzzy, or unreliable? Give the
+   match rate against our current predicted anniversary events.
+
+2. WHAT THE PUBLISHED FIGURE IMPLIES
+   Each indicative row gives old AEMP (1 Jul 2026) and proposed AEMP (1 Apr
+   2027). Compute the implied reduction % per row. Report how that compares to
+   the rate our predictor would apply for the same drug/anniversary
+   (5%/5%/26.1%->30%). Are they consistent, or are there drugs where the
+   published proposed AEMP implies a different % than our rate?
+
+3. COVERAGE
+   Of our predicted anniversary reductions for 1 Apr 2027, how many have a
+   matching published indicative row, and how many don't (we predict it, PBS
+   hasn't published it — or vice versa)? Both directions matter: a drug PBS
+   published that we didn't predict is as interesting as a mismatch.
+
+Report the join method + match rate, the %-agreement analysis, and the coverage
+in both directions. Do NOT build UI yet. I want to know if the data actually
+lines up before designing how to show it.
+
+=== PHASE 2 — SURFACE THE CROSS-CHECK (after I approve Phase 1) ===
+
+Do not build until approved. Planned shape:
+- For each predicted anniversary reduction, a verification state:
+  CONFIRMED (published figure matches our prediction within tolerance),
+  DIFFERS (published figure implies a materially different price/%),
+  UNPUBLISHED (we predict it, no published row found),
+  or PUBLISHED-ONLY (PBS published it, we didn't predict it).
+- Show the published old/new AEMP alongside our predicted figure where a match
+  exists, so the user can see PBS's own number next to ours.
+- Surface this on the prediction/upcoming-changes views without altering the
+  predicted values themselves — it's an annotation, not a recalculation.
+- A small tolerance for rounding (published AEMPs are rounded); report what
+  tolerance you'd use so trivial rounding differences don't show as DIFFERS.
+
+Report the Phase 1 findings first.
