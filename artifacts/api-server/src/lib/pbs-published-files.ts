@@ -16,7 +16,7 @@ import {
   scheduleChangesTable,
   type PbsPublishedFile,
 } from "@workspace/db";
-import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
+import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
 
 const PARSER_VERSION = "pbs-published-files-v1";
 const USER_AGENT = "pharmacy-pbs-manager/1.0";
@@ -34,7 +34,9 @@ type PublishedSourceKey =
   | "first_new_brand"
   | "subject_to_price_disclosure"
   | "indicative_non_efc"
-  | "indicative_efc";
+  | "indicative_efc"
+  | "confirmed_non_efc"
+  | "confirmed_efc";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -101,6 +103,43 @@ type SourceFile = {
   bytes: Buffer;
   workbook: XLSX.WorkBook;
 };
+
+export const PUBLISHED_REPORT_MAX_AGE_DAYS = 180;
+
+function sourcePageUrl(sourceKey: PublishedSourceKey): string {
+  return sourceKey === "first_new_brand"
+    ? PAGE_URLS.firstNewBrand
+    : sourceKey === "subject_to_price_disclosure"
+      ? PAGE_URLS.subjectToPriceDisclosure
+      : PAGE_URLS.currentPriceDisclosureCycle;
+}
+
+export function sourcePriority(sourceKey: string, confidence?: string | null): number {
+  if (sourceKey.startsWith("confirmed_") || confidence === "confirmed") return 2;
+  if (sourceKey.startsWith("indicative_") || confidence === "indicative") return 1;
+  return 0;
+}
+
+function dateOnly(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function ageInDays(asOf: string, today: string): number {
+  return Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000);
+}
+
+export function isPublishedReportFresh(
+  report: Pick<PbsPublishedFile, "status" | "parseHealth" | "retrievedAt" | "reportPublicationDate">,
+  today = new Date().toISOString().slice(0, 10),
+): boolean {
+  if (report.status !== "completed" || report.parseHealth !== "healthy") return false;
+  const asOf = report.reportPublicationDate ?? dateOnly(report.retrievedAt);
+  if (!asOf) return false;
+  const age = ageInDays(asOf, today);
+  return age >= 0 && age <= PUBLISHED_REPORT_MAX_AGE_DAYS;
+}
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -450,6 +489,10 @@ function watchedRow(
 
 async function upsertPublishedFile(sourceFile: SourceFile): Promise<PbsPublishedFile> {
   const fileSha256 = createHash("sha256").update(sourceFile.bytes).digest("hex");
+  await db
+    .update(pbsPublishedFilesTable)
+    .set({ isCurrent: false })
+    .where(eq(pbsPublishedFilesTable.sourceKey, sourceFile.sourceKey));
   const [file] = await db
     .insert(pbsPublishedFilesTable)
     .values({
@@ -460,30 +503,13 @@ async function upsertPublishedFile(sourceFile: SourceFile): Promise<PbsPublished
       contentType: sourceFile.contentType,
       fileSha256,
       rawContentBase64: sourceFile.bytes.toString("base64"),
+      reportPublicationDate: null,
+      effectiveDate: null,
       parserVersion: PARSER_VERSION,
       status: "processing",
+      parseHealth: "processing",
       metadata: { sheetNames: sourceFile.workbook.SheetNames },
       isCurrent: true,
-    })
-    .onConflictDoUpdate({
-      target: pbsPublishedFilesTable.sourceKey,
-      set: {
-        pageUrl: sourceFile.pageUrl,
-        fileUrl: sourceFile.fileUrl,
-        fileName: sourceFile.fileName,
-        contentType: sourceFile.contentType,
-        fileSha256,
-        rawContentBase64: sourceFile.bytes.toString("base64"),
-        parserVersion: PARSER_VERSION,
-        retrievedAt: new Date(),
-        status: "processing",
-        totalRows: 0,
-        matchedRows: 0,
-        watchlistUnmatchedRows: 0,
-        errorMessage: null,
-        metadata: { sheetNames: sourceFile.workbook.SheetNames },
-        isCurrent: true,
-      },
     })
     .returning();
   if (!file) throw new Error(`Unable to persist ${sourceFile.sourceKey} file metadata`);
@@ -508,16 +534,26 @@ async function clearFileRows(fileId: number): Promise<void> {
 async function finishPublishedFile(
   fileId: number,
   result: Omit<PublishedFileReport, "sourceKey" | "fileUrl" | "fileName" | "status">,
+  provenance: { reportPublicationDate: string | null; effectiveDate: string | null },
 ): Promise<void> {
+  const parseHealth = result.totalRows > 0 && result.matchedRows > 0 ? "healthy" : "rejected";
   await db
     .update(pbsPublishedFilesTable)
     .set({
       status: "completed",
+      parseHealth,
+      reportPublicationDate: provenance.reportPublicationDate,
+      effectiveDate: provenance.effectiveDate,
       totalRows: result.totalRows,
       matchedRows: result.matchedRows,
+      rejectedRows: Math.max(0, result.totalRows - result.matchedRows),
       watchlistUnmatchedRows: result.watchlistUnmatchedRows,
       errorMessage: null,
-      metadata: { watchlistFailures: result.watchlistFailures },
+      metadata: {
+        watchlistFailures: result.watchlistFailures,
+        parseHealth,
+        rejectedRows: Math.max(0, result.totalRows - result.matchedRows),
+      },
     })
     .where(eq(pbsPublishedFilesTable.id, fileId));
 }
@@ -525,8 +561,38 @@ async function finishPublishedFile(
 async function failPublishedFile(fileId: number, message: string): Promise<void> {
   await db
     .update(pbsPublishedFilesTable)
-    .set({ status: "failed", errorMessage: message.slice(0, 2_000) })
+    .set({
+      status: "failed",
+      parseHealth: "rejected",
+      rejectedRows: 0,
+      errorMessage: message.slice(0, 2_000),
+      metadata: { parseHealth: "rejected", failure: message.slice(0, 2_000) },
+    })
     .where(eq(pbsPublishedFilesTable.id, fileId));
+}
+
+async function recordFailedPublishedFile(sourceKey: PublishedSourceKey, message: string): Promise<void> {
+  await db
+    .update(pbsPublishedFilesTable)
+    .set({ isCurrent: false })
+    .where(eq(pbsPublishedFilesTable.sourceKey, sourceKey));
+  const pageUrl = sourcePageUrl(sourceKey);
+  const fileSha256 = createHash("sha256").update(`${sourceKey}:${message}`).digest("hex");
+  await db.insert(pbsPublishedFilesTable).values({
+    sourceKey,
+    pageUrl,
+    fileUrl: pageUrl,
+    fileName: `${sourceKey}-unavailable`,
+    contentType: null,
+    fileSha256,
+    rawContentBase64: "",
+    parserVersion: PARSER_VERSION,
+    status: "failed",
+    parseHealth: "rejected",
+    errorMessage: message.slice(0, 2_000),
+    metadata: { parseHealth: "rejected", failure: message.slice(0, 2_000) },
+    isCurrent: true,
+  });
 }
 
 async function persistFileRow(input: {
@@ -573,8 +639,6 @@ async function processFirstNewBrand(
   });
   let matchedRows = 0;
   const watchlistFailures: PublishedMatchFailure[] = [];
-  const affectedDrugIds = new Set<number>();
-
   for (const row of dataRows) {
     const sourceDrugName = textValue(recordValue(row.record, /^drug$/i));
     const sourceMoa = textValue(recordValue(row.record, /manner of administration/i));
@@ -586,7 +650,6 @@ async function processFirstNewBrand(
     const isWatched = watchedRow(context, { drugName: sourceDrugName, moa: sourceMoa, itemCode: null });
     if (isMatched) {
       matchedRows += 1;
-      affectedDrugIds.add(match.drugId as number);
       await db.insert(pbsFnbReductionsTable).values({
         fileId: file.id,
         sourceRowNumber: row.rowNumber,
@@ -649,16 +712,16 @@ async function processFirstNewBrand(
     }
   }
 
-  for (const drugId of affectedDrugIds) {
-    await recalculatePredictedReductionsForDrug(drugId);
-  }
   const result = {
     totalRows: dataRows.length,
     matchedRows,
     watchlistUnmatchedRows: watchlistFailures.length,
     watchlistFailures,
   };
-  await finishPublishedFile(file.id, result);
+  await finishPublishedFile(file.id, result, {
+    reportPublicationDate: dateOnly(file.retrievedAt),
+    effectiveDate: result.totalRows > 0 ? dataRows.map((row) => dateValue(recordValue(row.record, /date of effect/i))).find(Boolean) ?? null : null,
+  });
   return {
     sourceKey: sourceFile.sourceKey,
     status: "completed",
@@ -749,7 +812,10 @@ async function processSubjectToPriceDisclosure(
     watchlistUnmatchedRows: watchlistFailures.length,
     watchlistFailures,
   };
-  await finishPublishedFile(file.id, result);
+  await finishPublishedFile(file.id, result, {
+    reportPublicationDate: dateOnly(file.retrievedAt),
+    effectiveDate: cycleHeaders.map((header) => `${header.cycle.cycleCode}-01`).sort()[0] ?? null,
+  });
   return {
     sourceKey: sourceFile.sourceKey,
     status: "completed",
@@ -765,6 +831,16 @@ function indicativeDate(parsed: WorkbookRows): string {
     extractReductionDate(parsed.headers.find((header) => /new .*aemp/i.test(header)) ?? "");
   if (!date) throw new Error("Could not determine the indicative reduction date from workbook headers");
   return date;
+}
+
+function reportPublicationDate(parsed: WorkbookRows, file: PbsPublishedFile): string | null {
+  const reportDate = [parsed.title, ...parsed.headers]
+    .map((value) => value.match(
+      /\b(?:publication|published|report)\s*(?:date|on)?\s*:?\s*(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})\b/i,
+    )?.[1])
+    .map((value) => (value ? dateValue(value) : null))
+    .find((value): value is string => value !== null);
+  return reportDate ?? dateOnly(file.retrievedAt);
 }
 
 async function processIndicativePrices(
@@ -783,10 +859,10 @@ async function processIndicativePrices(
     throw new Error("Indicative workbook is missing one or more required row-2 headers");
   }
   const predictedDate = indicativeDate(parsed);
+  const confidence = sourceFile.sourceKey.startsWith("confirmed_") ? "confirmed" : "indicative";
+  const priority = sourcePriority(sourceFile.sourceKey, confidence);
   let matchedRows = 0;
   const watchlistFailures: PublishedMatchFailure[] = [];
-  const affectedDrugIds = new Set<number>();
-
   for (const row of parsed.rows) {
     const sourceItemCode = textValue(row.record[itemCodeHeader]);
     const sourceDrugName = textValue(row.record[drugHeader]);
@@ -818,7 +894,6 @@ async function processIndicativePrices(
     });
     if (isMatched) {
       matchedRows += 1;
-      affectedDrugIds.add(matchedDrugId as number);
       const percentage =
         currentAemp && currentAemp > 0
           ? Number((((currentAemp - (newAemp as number)) / currentAemp) * 100).toFixed(3))
@@ -836,7 +911,8 @@ async function processIndicativePrices(
           currentAemp: currentAemp as number,
           newAemp: newAemp as number,
           predictedDate,
-          confidence: "indicative",
+          confidence,
+          sourcePriority: priority,
         });
       }
     }
@@ -864,16 +940,16 @@ async function processIndicativePrices(
       });
     }
   }
-  for (const drugId of affectedDrugIds) {
-    await recalculatePredictedReductionsForDrug(drugId);
-  }
   const result = {
     totalRows: parsed.rows.length,
     matchedRows,
     watchlistUnmatchedRows: watchlistFailures.length,
     watchlistFailures,
   };
-  await finishPublishedFile(file.id, result);
+  await finishPublishedFile(file.id, result, {
+    reportPublicationDate: reportPublicationDate(parsed, file),
+    effectiveDate: predictedDate,
+  });
   return {
     sourceKey: sourceFile.sourceKey,
     status: "completed",
@@ -901,7 +977,11 @@ async function processSource(
     return await processIndicativePrices(sourceFile, file, context);
   } catch (error) {
     const message = errorMessage(error);
-    if (file) await failPublishedFile(file.id, message);
+    if (file) {
+      await failPublishedFile(file.id, message);
+    } else {
+      await recordFailedPublishedFile(sourceKey, message);
+    }
     return {
       sourceKey,
       status: "failed",
@@ -957,7 +1037,28 @@ export async function ingestPublishedFiles(): Promise<PublishedIngestionReport> 
         ),
       context,
     ),
+    processSource(
+      "confirmed_non_efc",
+      () =>
+        fetchSourceFile(
+          "confirmed_non_efc",
+          PAGE_URLS.currentPriceDisclosureCycle,
+          (link) => /confirmed prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+        ),
+      context,
+    ),
+    processSource(
+      "confirmed_efc",
+      () =>
+        fetchSourceFile(
+          "confirmed_efc",
+          PAGE_URLS.currentPriceDisclosureCycle,
+          (link) => /confirmed prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+        ),
+      context,
+    ),
   ]);
+  await recalculatePredictedReductionsForAllDrugs();
   return { fetchedAt: new Date().toISOString(), files };
 }
 

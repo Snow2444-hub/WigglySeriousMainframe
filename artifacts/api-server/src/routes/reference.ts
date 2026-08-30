@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, ilike, inArray, isNull, lte, not, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -245,6 +245,16 @@ function predictedReductionSignificance(
   return priceChangeSignificance(-Math.abs(predictedPercentage), thresholds);
 }
 
+function freshPredictionCondition(asOf: string) {
+  return or(
+    and(
+      isNull(predictedReductionsTable.sourceValidUntil),
+      not(eq(predictedReductionsTable.reductionType, "price_disclosure")),
+    ),
+    gte(predictedReductionsTable.sourceValidUntil, asOf),
+  );
+}
+
 router.get("/medicine-directory", async (req, res): Promise<void> => {
   const parsed = ListMedicineDirectoryQueryParams.safeParse(req.query);
   if (!parsed.success) {
@@ -267,7 +277,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
         subjectToMinisterialDiscretion: predictedReductionsTable.subjectToMinisterialDiscretion,
       })
       .from(predictedReductionsTable)
-      .where(gte(predictedReductionsTable.predictedDate, today)),
+      .where(and(gte(predictedReductionsTable.predictedDate, today), freshPredictionCondition(today))),
     db
       .select({ drugId: scheduleChangesTable.drugId })
       .from(scheduleChangesTable)
@@ -403,6 +413,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
         and(
           eq(predictedReductionsTable.drugId, parsed.data.id),
           gte(predictedReductionsTable.predictedDate, today),
+          freshPredictionCondition(today),
         ),
       ),
     getPriceChangeThresholds(),
@@ -509,6 +520,7 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
         and(
           eq(predictedReductionsTable.drugId, parsed.data.id),
           gte(predictedReductionsTable.predictedDate, today),
+          freshPredictionCondition(today),
         ),
       ),
     getPriceChangeThresholds(),
@@ -583,6 +595,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
         gte(predictedReductionsTable.predictedDate, from),
         to ? lte(predictedReductionsTable.predictedDate, to) : undefined,
         parsed.data.confidence ? eq(predictedReductionsTable.confidence, parsed.data.confidence) : undefined,
+        freshPredictionCondition(from),
       ),
     ),
     getPriceChangeThresholds(),
@@ -810,11 +823,18 @@ router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promis
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const today = new Date().toISOString().slice(0, 10);
   const [rows, thresholds] = await Promise.all([
     db
     .select()
     .from(predictedReductionsTable)
-    .where(eq(predictedReductionsTable.itemCode, parsed.data.itemCode))
+    .where(
+      and(
+        eq(predictedReductionsTable.itemCode, parsed.data.itemCode),
+        gte(predictedReductionsTable.predictedDate, today),
+        freshPredictionCondition(today),
+      ),
+    )
     .orderBy(asc(predictedReductionsTable.predictedDate)),
     getPriceChangeThresholds(),
   ]);

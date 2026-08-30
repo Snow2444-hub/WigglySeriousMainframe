@@ -2002,13 +2002,23 @@ components:
         retrievedAt:
           type: string
           format: date-time
+        reportPublicationDate:
+          type: ["string", "null"]
+          format: date
+        effectiveDate:
+          type: ["string", "null"]
+          format: date
         parserVersion:
           type: string
         status:
           type: string
+        parseHealth:
+          type: string
         totalRows:
           type: integer
         matchedRows:
+          type: integer
+        rejectedRows:
           type: integer
         watchlistUnmatchedRows:
           type: integer
@@ -2018,7 +2028,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PublishedFileMatchFailure"
-      required: [id, sourceKey, pageUrl, fileUrl, fileName, contentType, fileSha256, retrievedAt, parserVersion, status, totalRows, matchedRows, watchlistUnmatchedRows, errorMessage, watchlistFailures]
+      required: [id, sourceKey, pageUrl, fileUrl, fileName, contentType, fileSha256, retrievedAt, reportPublicationDate, effectiveDate, parserVersion, status, parseHealth, totalRows, matchedRows, rejectedRows, watchlistUnmatchedRows, errorMessage, watchlistFailures]
     PublishedFileMatchFailure:
       type: object
       properties:

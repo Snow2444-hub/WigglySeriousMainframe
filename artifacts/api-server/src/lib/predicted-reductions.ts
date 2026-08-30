@@ -4,6 +4,7 @@ import {
   pbsItemsTable,
   priceDisclosureSettingsTable,
   pbsFnbReductionsTable,
+  pbsPublishedFilesTable,
   pbsPublishedPricesTable,
   priceHistoryTable,
   predictedReductionsTable,
@@ -30,6 +31,8 @@ const FIRST_NEW_BRAND_ELIGIBILITY_DATE = "2018-10-01";
 const FIFTEEN_YEAR_STEP_UP_DATE = "2027-04-01";
 const REFERENCE_AEMP_DATE = "2016-01-01";
 const SECTION_99ACP_PERCENTAGE = 1.48;
+const PUBLISHED_REPORT_MAX_AGE_DAYS = 180;
+const LEGACY_WADP_MAX_AGE_DAYS = 90;
 
 const DEFAULT_PRICE_DISCLOSURE_SETTINGS = [
   {
@@ -145,6 +148,12 @@ function configuredReductionDate(
     : `${year + 1}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+function addDays(date: string, days: number): string {
+  const result = new Date(`${date}T00:00:00Z`);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
 export async function recalculatePredictedReductionsForDrug(
   drugId: number,
   today = new Date().toISOString().slice(0, 10),
@@ -160,6 +169,7 @@ export async function recalculatePredictedReductionsForDrug(
       currentPrice: pbsItemsTable.currentAemp,
       determinedPrice: pbsItemsTable.determinedPrice,
       firstListedDate: pbsItemsTable.firstListedDate,
+      lastUpdated: pbsItemsTable.lastUpdated,
       weightedAvgDisclosedPrice: pbsItemsTable.weightedAvgDisclosedPrice,
       formulary: pbsItemsTable.formulary,
     })
@@ -329,25 +339,41 @@ export async function recalculatePredictedReductionsForDrug(
         ) {
           return [];
         }
-        const gap = Number(
+        const rawGap = Number(
           (((item.determinedPrice - item.weightedAvgDisclosedPrice) / item.determinedPrice) * 100)
             .toFixed(3),
         );
         const { setting, predictedDate } = nextDisclosureSetting;
-        if (gap < setting.minimumGapPercentage) {
+        const wadpAsOf = item.lastUpdated;
+        const wadpAge = Math.floor(
+          (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${wadpAsOf}T00:00:00Z`)) / 86_400_000,
+        );
+        const maxWadpAgeDays = LEGACY_WADP_MAX_AGE_DAYS;
+        const maxWadpReduction = 30;
+        const disclosureLeadDays = Math.floor(
+          (Date.parse(`${predictedDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+        );
+        if (
+          rawGap < setting.minimumGapPercentage ||
+          wadpAge < 0 ||
+          wadpAge > maxWadpAgeDays ||
+          disclosureLeadDays > 366
+        ) {
           return [];
         }
-        const confidence = gap >= setting.highConfidenceGapPercentage ? "high" : "conditional";
+        const gap = Math.min(rawGap, maxWadpReduction);
+        const wadpWasCapped = rawGap > maxWadpReduction;
         return [{
           itemCode: item.itemCode,
           drugId,
           predictedDate,
           reductionType: "price_disclosure",
           predictedPercentage: gap,
-          predictedNewPrice: item.weightedAvgDisclosedPrice,
-          confidence,
+          predictedNewPrice: Number((item.determinedPrice * (1 - gap / 100)).toFixed(4)),
+          confidence: "indicative",
            subjectToMinisterialDiscretion: false,
-          sourceNote: `WADP is ${gap.toFixed(3)}% below determined price; configured minimum is ${setting.minimumGapPercentage.toFixed(3)}%, while PBS documentation states a 10% or 30% threshold applies depending on the item`,
+          sourceValidUntil: addDays(wadpAsOf, maxWadpAgeDays),
+          sourceNote: `Legacy WADP signal from PBS /items, snapshot as of ${wadpAsOf}; indicative only and accepted for at most ${maxWadpAgeDays} days. WADP is ${rawGap.toFixed(3)}% below determined price${wadpWasCapped ? `; displayed estimate bounded at ${maxWadpReduction.toFixed(3)}%` : ""}. Configured minimum is ${setting.minimumGapPercentage.toFixed(3)}%; PBS documentation states a 10% or 30% threshold applies depending on the item.`,
         }];
       })
     : [];
@@ -358,16 +384,52 @@ export async function recalculatePredictedReductionsForDrug(
       currentAemp: pbsPublishedPricesTable.currentAemp,
       newAemp: pbsPublishedPricesTable.newAemp,
       confidence: pbsPublishedPricesTable.confidence,
+      sourcePriority: pbsPublishedPricesTable.sourcePriority,
+      sourceRowNumber: pbsPublishedPricesTable.sourceRowNumber,
+      sourceKey: pbsPublishedFilesTable.sourceKey,
+      fileId: pbsPublishedFilesTable.id,
+      fileStatus: pbsPublishedFilesTable.status,
+      parseHealth: pbsPublishedFilesTable.parseHealth,
+      reportPublicationDate: pbsPublishedFilesTable.reportPublicationDate,
+      retrievedAt: pbsPublishedFilesTable.retrievedAt,
+      reportEffectiveDate: pbsPublishedFilesTable.effectiveDate,
     })
     .from(pbsPublishedPricesTable)
-    .where(eq(pbsPublishedPricesTable.drugId, drugId));
-  const publishedPriceByItemDate = new Map<string, typeof publishedPrices[number]>();
-  for (const price of publishedPrices) {
+    .innerJoin(pbsPublishedFilesTable, eq(pbsPublishedPricesTable.fileId, pbsPublishedFilesTable.id))
+    .where(
+      and(
+        eq(pbsPublishedPricesTable.drugId, drugId),
+        eq(pbsPublishedFilesTable.isCurrent, true),
+        eq(pbsPublishedFilesTable.status, "completed"),
+      ),
+    );
+  const freshPublishedPrices = publishedPrices.filter((price) => {
+    if (price.parseHealth !== "healthy") return false;
+    const asOf = price.reportPublicationDate ?? price.retrievedAt.toISOString().slice(0, 10);
+    const age = Math.floor(
+      (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000,
+    );
+    return (
+      age >= 0 &&
+      age <= 180 &&
+      (!price.reportEffectiveDate || price.reportEffectiveDate === price.predictedDate)
+    );
+  });
+  const publishedPriceByItemDate = new Map<string, typeof freshPublishedPrices[number]>();
+  for (const price of freshPublishedPrices) {
     const key = `${price.itemCode}:${price.predictedDate}`;
     const existing = publishedPriceByItemDate.get(key);
-    const rank = price.confidence === "confirmed" ? 2 : 1;
-    const existingRank = existing?.confidence === "confirmed" ? 2 : 1;
-    if (!existing || rank > existingRank) publishedPriceByItemDate.set(key, price);
+    const rank = price.sourcePriority || (price.confidence === "confirmed" ? 2 : 1);
+    const existingRank = existing
+      ? existing.sourcePriority || (existing.confidence === "confirmed" ? 2 : 1)
+      : -1;
+    if (
+      !existing ||
+      rank > existingRank ||
+      (rank === existingRank && price.retrievedAt > existing.retrievedAt)
+    ) {
+      publishedPriceByItemDate.set(key, price);
+    }
   }
   const publishedRows = [...publishedPriceByItemDate.values()].flatMap((price) => {
     if (price.currentAemp <= 0) return [];
@@ -383,10 +445,13 @@ export async function recalculatePredictedReductionsForDrug(
       predictedNewPrice: price.newAemp,
       confidence: price.confidence,
       subjectToMinisterialDiscretion: false,
-      sourceNote:
-        price.confidence === "confirmed"
-          ? "Confirmed Prices Report: future AEMP published by PBS; supersedes any indicative price for this item and date."
-          : "Indicative Prices Report: future AEMP estimate published by PBS; will be superseded when confirmed prices are published.",
+       sourceValidUntil: addDays(
+         price.reportPublicationDate ?? price.retrievedAt.toISOString().slice(0, 10),
+         PUBLISHED_REPORT_MAX_AGE_DAYS,
+       ),
+       sourceFileId: price.fileId,
+       sourceRowNumber: price.sourceRowNumber,
+       sourceNote: `${price.confidence === "confirmed" ? "Confirmed" : "Indicative"} Prices Report (${price.sourceKey}), file observation ${price.fileId}, source row ${price.sourceRowNumber}; ${price.confidence === "confirmed" ? "supersedes indicative evidence." : "will be superseded when confirmed prices are published."}`,
     }];
   });
   const publishedKeys = new Set(publishedRows.map((row) => `${row.itemCode}:${row.predictedDate}`));
@@ -399,6 +464,17 @@ export async function recalculatePredictedReductionsForDrug(
     await db.insert(predictedReductionsTable).values(rows);
   }
   return rows.length;
+}
+
+export async function recalculatePredictedReductionsForAllDrugs(
+  today = new Date().toISOString().slice(0, 10),
+): Promise<number> {
+  const drugs = await db.select({ id: drugsTable.id }).from(drugsTable).orderBy(asc(drugsTable.id));
+  let total = 0;
+  for (const drug of drugs) {
+    total += await recalculatePredictedReductionsForDrug(drug.id, today);
+  }
+  return total;
 }
 
 type JsonRecord = Record<string, unknown>;

@@ -1,8 +1,16 @@
 # PBS reduction prediction design proposals
 
-This document records the two deferred design areas from the PBS reduction audit. They are proposals only; the current implementation does not claim to calculate either area.
+This document records the two design areas from the PBS reduction audit. Price-disclosure hardening is implemented below; combination flow-on remains intentionally uncalculated.
 
 ## Price-disclosure hardening
+
+### Implemented safeguards
+
+- Every fetched or failed report is retained as a file observation. Older observations are no longer overwritten; only the latest observation for a source is current.
+- Confirmed and indicative price reports are stored with report publication date, covered effective date, parser health, row counts, source row, file identity, and an explicit precedence (confirmed over indicative).
+- Completed reports must have healthy parsing and be no more than 180 days old. Failed, rejected, mismatched-cycle, and stale observations cannot create predictions.
+- Legacy nullable WADP is optional, explicitly labelled indicative, limited to a 90-day item snapshot, and bounded to a 30% displayed reduction.
+- A failed or recovered source triggers reconciliation for every drug. Expired predictions are removed from storage and API queries also exclude rows past their source validity date.
 
 ### Recommended phases
 

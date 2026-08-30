@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, not, or, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   db,
@@ -93,6 +93,13 @@ async function getUserExposure(userId: string) {
           and(
             inArray(predictedReductionsTable.itemCode, itemCodes),
             gte(predictedReductionsTable.predictedDate, today),
+            or(
+              and(
+                isNull(predictedReductionsTable.sourceValidUntil),
+                not(eq(predictedReductionsTable.reductionType, "price_disclosure")),
+              ),
+              gte(predictedReductionsTable.sourceValidUntil, today),
+            ),
           ),
         )
         .orderBy(asc(predictedReductionsTable.predictedDate), asc(predictedReductionsTable.id))
@@ -274,6 +281,13 @@ async function getDashboardSummary(database: typeof db, userId: string) {
         and(
           gte(predictedReductionsTable.predictedDate, today),
           lte(predictedReductionsTable.predictedDate, dateMonthsAgo(today, -12)),
+          or(
+            and(
+              isNull(predictedReductionsTable.sourceValidUntil),
+              not(eq(predictedReductionsTable.reductionType, "price_disclosure")),
+            ),
+            gte(predictedReductionsTable.sourceValidUntil, today),
+          ),
         ),
       ),
     database

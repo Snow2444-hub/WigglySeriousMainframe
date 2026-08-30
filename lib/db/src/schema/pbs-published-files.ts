@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { boolean, date, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, date, index, integer, jsonb, pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export const pbsPublishedFilesTable = pgTable(
@@ -14,17 +14,21 @@ export const pbsPublishedFilesTable = pgTable(
     fileSha256: text("file_sha256").notNull(),
     rawContentBase64: text("raw_content_base64").notNull(),
     retrievedAt: timestamp("retrieved_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+    reportPublicationDate: date("report_publication_date", { mode: "string" }),
+    effectiveDate: date("effective_date", { mode: "string" }),
     parserVersion: text("parser_version").notNull(),
     status: text("status").notNull(),
+    parseHealth: text("parse_health").notNull().default("healthy"),
     totalRows: integer("total_rows").notNull().default(0),
     matchedRows: integer("matched_rows").notNull().default(0),
+    rejectedRows: integer("rejected_rows").notNull().default(0),
     watchlistUnmatchedRows: integer("watchlist_unmatched_rows").notNull().default(0),
     errorMessage: text("error_message"),
     metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
     isCurrent: boolean("is_current").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex("pbs_published_files_source_key_idx").on(table.sourceKey)],
+  (table) => [index("pbs_published_files_source_current_idx").on(table.sourceKey, table.isCurrent)],
 );
 
 export const insertPbsPublishedFileSchema = createInsertSchema(pbsPublishedFilesTable).omit({ id: true });

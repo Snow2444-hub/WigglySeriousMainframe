@@ -17,10 +17,16 @@ export interface AdminPublishedFile {
   contentType: string | null;
   fileSha256: string;
   retrievedAt: Date;
+  /** @nullable */
+  reportPublicationDate: Date | null;
+  /** @nullable */
+  effectiveDate: Date | null;
   parserVersion: string;
   status: string;
+  parseHealth: string;
   totalRows: number;
   matchedRows: number;
+  rejectedRows: number;
   watchlistUnmatchedRows: number;
   /** @nullable */
   errorMessage: string | null;

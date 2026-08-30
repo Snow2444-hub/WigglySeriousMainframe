@@ -21,6 +21,7 @@ export const pbsPublishedPricesTable = pgTable(
     newAemp: numeric("new_aemp", { precision: 12, scale: 4, mode: "number" }).notNull(),
     predictedDate: date("predicted_date", { mode: "string" }).notNull(),
     confidence: text("confidence").notNull(),
+    sourcePriority: integer("source_priority").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
   },
   (table) => [
