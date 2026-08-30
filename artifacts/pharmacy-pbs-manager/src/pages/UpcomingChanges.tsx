@@ -160,6 +160,12 @@ export function UpcomingChangesPage() {
                   </button>
                   {expanded && (
                     <div className="border-t border-border bg-muted/15 px-3 py-3 md:px-5">
+                       <div className="mb-2 flex items-center justify-between gap-3 px-1 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">
+                         <span>Brands and listings</span>
+                         <span className="flex items-center gap-1" title="Confidence in the prediction, not the size of the reduction">
+                           <Info className="h-3 w-3 text-info" /> Confidence
+                         </span>
+                       </div>
                        <div className="space-y-2">
                          {event.brands.map((brand) => {
                            const brandKey = `${eventKey}:${brand.brandName}`;
