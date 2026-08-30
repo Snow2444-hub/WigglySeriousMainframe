@@ -25,3 +25,4 @@
 - [Ingestion heartbeat recovery](ingestion-heartbeat-recovery.md) — Retire silent in-process hangs instead of concurrently resuming the same run; restart recovery alone may safely replay staged pages.
 - [Reference AEMP availability](reference-aemp-availability.md) — Current development history may not reach statutory reference dates; mark resulting predictions conditional and do not imply the cap was verified.
 - [PBS anniversary workbook feeds](pbs-anniversary-workbook-feeds.md) — Current annual links are label-discovered; 1 April and 99ACP workbooks use separate sheets and publish from 1 August.
+- [Anniversary catalogue joins](anniversary-catalogue-joins.md) — Drug, legal form, and brand identify one product concept, but often map to multiple PBS codes across programs.
