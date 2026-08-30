@@ -1,13 +1,26 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import * as XLSX from "xlsx";
+import { desc, eq } from "drizzle-orm";
 import {
   anniversaryFileLinkMatches,
+  ingestPublishedFiles,
   inspectAnniversaryWorkbook,
   isPublishedReportFresh,
   section99acpFileLinkMatches,
   sourcePriority,
 } from "./pbs-published-files";
+import {
+  db,
+  drugsTable,
+  pbsFnbReductionsTable,
+  pbsItemsTable,
+  pbsPublishedFileRowsTable,
+  pbsPublishedFilesTable,
+  pool,
+  predictedReductionsTable,
+  scheduleChangesTable,
+} from "@workspace/db";
 
 function report(overrides: Partial<{
   status: string;
@@ -133,4 +146,153 @@ test("anniversary workbook inspection derives 99ACP publication and sheet dates"
     inspected.sheets.map((sheet) => sheet.effectiveDate),
     ["2027-08-01", "2027-10-01", "2027-12-01"],
   );
+});
+
+function responseWithUrl(body: string | Buffer, url: string, init?: ResponseInit): Response {
+  const response = new Response(body, init);
+  Object.defineProperty(response, "url", { value: url });
+  return response;
+}
+
+test("re-ingesting the same first-new-brand workbook updates its existing reduction", async () => {
+  const token = `published_file_${process.pid}_${Date.now()}`;
+  const itemCode = `${token}_ITEM`;
+  const ingredient = `${token} ingredient`;
+  const drugId = 1_850_000_000 + (process.pid % 100_000);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    workbook,
+    XLSX.utils.aoa_to_sheet([
+      ["Drug", "Manner of Administration", "Date of effect"],
+      [ingredient, "Injection", "2026-04-01"],
+    ]),
+    "First New Brand",
+  );
+  const workbookBytes = Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+  const originalFetch = globalThis.fetch;
+  const pageUrl = "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand-price-reductions";
+  const fileUrl = "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand.xlsx";
+  const createdFileIds: number[] = [];
+
+  try {
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: ingredient,
+      activeIngredient: ingredient,
+      sponsor: "Published-file regression test",
+      firstPbsListingDate: "2020-01-01",
+    });
+    await db.insert(pbsItemsTable).values({
+      itemCode,
+      pbsCode: `PBS-${itemCode}`,
+      liItemId: itemCode,
+      scheduleCode: 990_001,
+      drugId,
+      brandName: `${token} brand`,
+      strength: "40 mg",
+      form: "Injection",
+      packSize: "1",
+      pricingQuantity: null,
+      benefitTypeCode: "S",
+      maximumQuantityUnits: 1,
+      liForm: "Injection 40 mg",
+      programCode: "GE",
+      formulary: "F2",
+      currentAemp: 100,
+      currentDpmq: null,
+      lastUpdated: "2026-01-01",
+      firstListedDate: "2020-01-01",
+      weightedAvgDisclosedPrice: null,
+      originatorBrandIndicator: null,
+      brandSubstitutionGroupId: null,
+      advancedNoticeDate: null,
+      nonEffectiveDate: null,
+      determinedPrice: 100,
+      claimedPrice: null,
+      proportionalPrice: null,
+      therapeuticGroupId: null,
+      innovatorIndicator: null,
+    });
+
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url === pageUrl) {
+        return responseWithUrl(
+          `<a href="${fileUrl}">First New Brand price reductions workbook</a>`,
+          pageUrl,
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }
+      if (url === fileUrl) {
+        return responseWithUrl(workbookBytes, fileUrl, {
+          status: 200,
+          headers: { "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+        });
+      }
+      throw new Error(`Unexpected published-file fixture request: ${url}`);
+    };
+
+    const firstReport = await ingestPublishedFiles(undefined, { sourceKeys: ["first_new_brand"] });
+    const firstFnb = firstReport.files.find((file) => file.sourceKey === "first_new_brand");
+    assert.equal(firstFnb?.status, "completed");
+    assert.equal(firstFnb?.matchedRows, 1);
+
+    const [firstFile] = await db
+      .select({ id: pbsPublishedFilesTable.id })
+      .from(pbsPublishedFilesTable)
+      .where(eq(pbsPublishedFilesTable.sourceKey, "first_new_brand"))
+      .orderBy(desc(pbsPublishedFilesTable.id))
+      .limit(1);
+    assert.ok(firstFile);
+    createdFileIds.push(firstFile.id);
+
+    const secondReport = await ingestPublishedFiles(undefined, { sourceKeys: ["first_new_brand"] });
+    const secondFnb = secondReport.files.find((file) => file.sourceKey === "first_new_brand");
+    assert.equal(secondFnb?.status, "completed");
+    assert.equal(secondFnb?.matchedRows, 1);
+
+    const [latestFile] = await db
+      .select({ id: pbsPublishedFilesTable.id })
+      .from(pbsPublishedFilesTable)
+      .where(eq(pbsPublishedFilesTable.sourceKey, "first_new_brand"))
+      .orderBy(desc(pbsPublishedFilesTable.id))
+      .limit(1);
+    assert.ok(latestFile);
+    createdFileIds.push(latestFile.id);
+
+    const reductions = await db
+      .select({
+        fileId: pbsFnbReductionsTable.fileId,
+        sourceRowNumber: pbsFnbReductionsTable.sourceRowNumber,
+        drugId: pbsFnbReductionsTable.drugId,
+        effectDate: pbsFnbReductionsTable.effectDate,
+      })
+      .from(pbsFnbReductionsTable)
+      .where(eq(pbsFnbReductionsTable.drugId, drugId));
+
+    assert.notEqual(firstFile.id, latestFile.id);
+    assert.deepEqual(reductions, [{
+      fileId: latestFile.id,
+      sourceRowNumber: 2,
+      drugId,
+      effectDate: "2026-04-01",
+    }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await db.delete(predictedReductionsTable).where(eq(predictedReductionsTable.drugId, drugId));
+    await db.delete(scheduleChangesTable).where(eq(scheduleChangesTable.drugId, drugId));
+    await db.delete(pbsFnbReductionsTable).where(eq(pbsFnbReductionsTable.drugId, drugId));
+    if (createdFileIds.length > 0) {
+      await db.delete(pbsPublishedFileRowsTable).where(eq(pbsPublishedFileRowsTable.fileId, createdFileIds[0]!));
+      await db.delete(pbsPublishedFileRowsTable).where(eq(pbsPublishedFileRowsTable.fileId, createdFileIds[1]!));
+      await db.delete(pbsPublishedFilesTable).where(eq(pbsPublishedFilesTable.id, createdFileIds[0]!));
+      await db.delete(pbsPublishedFilesTable).where(eq(pbsPublishedFilesTable.id, createdFileIds[1]!));
+    }
+    await db.delete(pbsItemsTable).where(eq(pbsItemsTable.itemCode, itemCode));
+    await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+  }
+});
+
+after(async () => {
+  await pool.end();
 });

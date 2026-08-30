@@ -1,0 +1,42 @@
+Three fixes from the source-health diagnosis. Do 1 now (real bug). 2 and 3 are
+related and I'll take the recommended approach — build them together.
+
+1. FNB DUPLICATE-KEY FIX (real bug — re-ingesting the same workbook fails)
+   processFirstNewBrand does a plain insert and hits a unique violation on
+   (drug_id, manner_of_administration, effect_date) when the same workbook is
+   re-ingested, because clearFileRows only clears the new file's rows, not
+   equivalent entries from an earlier successful ingestion.
+   Fix: make the FNB insert an upsert — ON CONFLICT on that business key, DO
+   UPDATE with the new file's values (so re-ingestion updates rather than
+   collides). Confirm re-running the same workbook now succeeds. Add a test that
+   ingests the same FNB file twice and asserts the second run succeeds.
+
+2. ZERO-MATCH SHOULD NOT BE "FAILED" (check this first, it may change everything)
+   The EFC indicative file is marked FAILED because it parsed 36 rows and matched
+   ZERO watchlisted drugs. Question: is zero-match actually a failure, or is it a
+   legitimate "this file has no drugs on our watchlist this cycle"? Report which.
+   - If a file that fetches and parses cleanly but matches no watchlisted drugs
+     is a legitimate no-op, it should NOT be FAILED — it should be OK (or a
+     distinct "no relevant rows") with a clear message, not a red failure.
+   - Also fix the display contradiction regardless: the badge (latest status) and
+     the message ("Source is healthy" from an older success) must derive from the
+     same truth so they can't disagree. And a parse rejection that sets
+     parseStatus=failed must attach an explanatory errorMessage, not null.
+
+3. HONEST SOURCE STATES (Option B — machine-readable, not string-matching)
+   Implement the machine-readable publication state you proposed:
+   - AWAITING_PUBLICATION: page fetched successfully AND source is inside its
+     known pre-publication window (e.g. confirmed-price files before the Oct
+     cycle). NOT inferred from the error string alone.
+   - FAILED: downloaded files that fail parse/insert, network failures, page-
+     structure failures, AND sources overdue past their grace period (a file
+     still missing after it should have published escalates from awaiting to
+     failed — this is the safeguard against hiding real breakage).
+   - NOT_MONITORED: combination flow-on, which is registered but has no ingestion
+     adapter — it's not awaiting anything, it was never attempted. Label it
+     honestly.
+   Update the status type, regenerate clients, update badges/counts, add
+   regression tests for each state including the awaiting->failed escalation at
+   the grace boundary. No prediction formulas change.
+
+Report cause confirmation for 2 before applying, then the diffs.

@@ -744,15 +744,30 @@ async function processFirstNewBrand(
     const isWatched = watchedRow(context, { drugName: sourceDrugName, moa: sourceMoa, itemCode: null });
     if (isMatched) {
       matchedRows += 1;
-      await db.insert(pbsFnbReductionsTable).values({
-        fileId: file.id,
-        sourceRowNumber: row.rowNumber,
-        drugId: match.drugId as number,
-        sourceDrugName: sourceDrugName as string,
-        mannerOfAdministration: sourceMoa as string,
-        effectDate: effectDate as string,
-        isNewEntry,
-      });
+      await db
+        .insert(pbsFnbReductionsTable)
+        .values({
+          fileId: file.id,
+          sourceRowNumber: row.rowNumber,
+          drugId: match.drugId as number,
+          sourceDrugName: sourceDrugName as string,
+          mannerOfAdministration: sourceMoa as string,
+          effectDate: effectDate as string,
+          isNewEntry,
+        })
+        .onConflictDoUpdate({
+          target: [
+            pbsFnbReductionsTable.drugId,
+            pbsFnbReductionsTable.mannerOfAdministration,
+            pbsFnbReductionsTable.effectDate,
+          ],
+          set: {
+            fileId: file.id,
+            sourceRowNumber: row.rowNumber,
+            sourceDrugName: sourceDrugName as string,
+            isNewEntry,
+          },
+        });
       if (isNewEntry) {
         await db
           .insert(scheduleChangesTable)
@@ -1167,97 +1182,145 @@ async function processSource(
   }
 }
 
-export async function ingestPublishedFiles(ingestionRunId?: number): Promise<PublishedIngestionReport> {
+export type PublishedIngestionOptions = {
+  sourceKeys?: readonly PublishedSourceKey[];
+};
+
+export async function ingestPublishedFiles(
+  ingestionRunId?: number,
+  options: PublishedIngestionOptions = {},
+): Promise<PublishedIngestionReport> {
   const context = await loadContext();
   await ensurePbsSourceRegistry();
-  const files = await Promise.all([
-    processSource(
-      "anniversary_indicative",
-      () =>
-        fetchSourceFile(
+  const sourceProcessors: Array<{
+    sourceKey: PublishedSourceKey;
+    run: () => Promise<PublishedFileReport>;
+  }> = [
+    {
+      sourceKey: "anniversary_indicative",
+      run: () =>
+        processSource(
           "anniversary_indicative",
-          PAGE_URLS.anniversaryPriceReductions,
-          anniversaryFileLinkMatches,
+          () =>
+            fetchSourceFile(
+              "anniversary_indicative",
+              PAGE_URLS.anniversaryPriceReductions,
+              anniversaryFileLinkMatches,
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "section_99acp",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "section_99acp",
+      run: () =>
+        processSource(
           "section_99acp",
-          PAGE_URLS.anniversaryPriceReductions,
-          section99acpFileLinkMatches,
+          () =>
+            fetchSourceFile(
+              "section_99acp",
+              PAGE_URLS.anniversaryPriceReductions,
+              section99acpFileLinkMatches,
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "first_new_brand",
-      () =>
-        fetchSourceFile("first_new_brand", PAGE_URLS.firstNewBrand, (link) =>
-          /first new brand|price reductions/i.test(`${link.text} ${link.href}`),
+    },
+    {
+      sourceKey: "first_new_brand",
+      run: () =>
+        processSource(
+          "first_new_brand",
+          () =>
+            fetchSourceFile("first_new_brand", PAGE_URLS.firstNewBrand, (link) =>
+              /first new brand|price reductions/i.test(`${link.text} ${link.href}`),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "subject_to_price_disclosure",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "subject_to_price_disclosure",
+      run: () =>
+        processSource(
           "subject_to_price_disclosure",
-          PAGE_URLS.subjectToPriceDisclosure,
-          (link) => /subject to price disclosure/i.test(`${link.text} ${link.href}`),
+          () =>
+            fetchSourceFile(
+              "subject_to_price_disclosure",
+              PAGE_URLS.subjectToPriceDisclosure,
+              (link) => /subject to price disclosure/i.test(`${link.text} ${link.href}`),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "indicative_non_efc",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "indicative_non_efc",
+      run: () =>
+        processSource(
           "indicative_non_efc",
-          PAGE_URLS.currentPriceDisclosureCycle,
-          (link) => /indicative prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+          () =>
+            fetchSourceFile(
+              "indicative_non_efc",
+              PAGE_URLS.currentPriceDisclosureCycle,
+              (link) => /indicative prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "indicative_efc",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "indicative_efc",
+      run: () =>
+        processSource(
           "indicative_efc",
-          PAGE_URLS.currentPriceDisclosureCycle,
-          (link) => /indicative prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+          () =>
+            fetchSourceFile(
+              "indicative_efc",
+              PAGE_URLS.currentPriceDisclosureCycle,
+              (link) => /indicative prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "confirmed_non_efc",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "confirmed_non_efc",
+      run: () =>
+        processSource(
           "confirmed_non_efc",
-          PAGE_URLS.currentPriceDisclosureCycle,
-          (link) => /confirmed prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+          () =>
+            fetchSourceFile(
+              "confirmed_non_efc",
+              PAGE_URLS.currentPriceDisclosureCycle,
+              (link) => /confirmed prices report/i.test(link.text) && /excluding efc/i.test(link.text),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-    processSource(
-      "confirmed_efc",
-      () =>
-        fetchSourceFile(
+    },
+    {
+      sourceKey: "confirmed_efc",
+      run: () =>
+        processSource(
           "confirmed_efc",
-          PAGE_URLS.currentPriceDisclosureCycle,
-          (link) => /confirmed prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+          () =>
+            fetchSourceFile(
+              "confirmed_efc",
+              PAGE_URLS.currentPriceDisclosureCycle,
+              (link) => /confirmed prices report/i.test(link.text) && /efc drugs only/i.test(link.text),
+            ),
+          context,
+          ingestionRunId,
         ),
-      context,
-      ingestionRunId,
-    ),
-  ]);
+    },
+  ];
+  const selectedSources = options.sourceKeys ? new Set(options.sourceKeys) : null;
+  const files = await Promise.all(
+    selectedSources
+      ? sourceProcessors.filter((processor) => selectedSources.has(processor.sourceKey)).map((processor) => processor.run())
+      : sourceProcessors.map((processor) => processor.run()),
+  );
   await refreshPbsSourceRegistryStatus();
   await recalculatePredictedReductionsForAllDrugs();
   return { fetchedAt: new Date().toISOString(), files };
