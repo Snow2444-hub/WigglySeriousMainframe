@@ -10,8 +10,10 @@ import {
   predictedReductionsTable,
   reductionSettingsTable,
   scheduleChangesTable,
+  ingestionRunsTable,
+  runtimeAuthorityScope,
 } from "@workspace/db";
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { CANONICAL_PUBLISHED_SOURCE_KEYS } from "./pbs-source-status";
 
 const DEFAULT_ANNIVERSARY_SETTINGS = [
@@ -158,10 +160,23 @@ function addDays(date: string, days: number): string {
 export async function recalculatePredictedReductionsForDrug(
   drugId: number,
   today = new Date().toISOString().slice(0, 10),
+  authorityRunId?: number,
 ): Promise<number> {
   await ensureDefaultReductionSettings();
+  const authorityScope = runtimeAuthorityScope();
+  const [authorityRun] = authorityRunId === undefined
+    ? await db
+        .select({ id: ingestionRunsTable.id })
+        .from(ingestionRunsTable)
+        .where(eq(ingestionRunsTable.authorityScope, authorityScope))
+        .orderBy(asc(ingestionRunsTable.id))
+        .limit(1)
+    : [{ id: authorityRunId }];
+  if (!authorityRun) {
+    throw new Error("Predicted reductions require an authoritative ingestion run.");
+  }
 
-  const [drug] = await db.select().from(drugsTable).where(eq(drugsTable.id, drugId)).limit(1);
+  const [drug] = await db.select().from(drugsTable).where(and(eq(drugsTable.id, drugId), eq(drugsTable.authorityScope, authorityScope))).limit(1);
   if (!drug) return 0;
 
   const items = await db
@@ -175,7 +190,7 @@ export async function recalculatePredictedReductionsForDrug(
       formulary: pbsItemsTable.formulary,
     })
     .from(pbsItemsTable)
-    .where(eq(pbsItemsTable.drugId, drugId));
+    .where(and(eq(pbsItemsTable.drugId, drugId), eq(pbsItemsTable.authorityScope, authorityScope)));
   const settings = await db
     .select()
     .from(reductionSettingsTable)
@@ -185,7 +200,10 @@ export async function recalculatePredictedReductionsForDrug(
     .from(priceDisclosureSettingsTable)
     .orderBy(asc(priceDisclosureSettingsTable.reductionMonth));
 
-  await db.delete(predictedReductionsTable).where(eq(predictedReductionsTable.drugId, drugId));
+  await db.delete(predictedReductionsTable).where(and(
+    eq(predictedReductionsTable.drugId, drugId),
+    sql`EXISTS (SELECT 1 FROM ${ingestionRunsTable} WHERE ${ingestionRunsTable.id} = ${predictedReductionsTable.authorityRunId} AND ${ingestionRunsTable.authorityScope} = ${authorityScope})`,
+  ));
   if (items.length === 0) return 0;
 
   const f1Items = items.filter((item) => item.formulary === "F1");
@@ -274,6 +292,7 @@ export async function recalculatePredictedReductionsForDrug(
               eq(scheduleChangesTable.drugId, drugId),
               eq(scheduleChangesTable.changeType, "new_brand"),
               eq(scheduleChangesTable.significance, "high"),
+              sql`EXISTS (SELECT 1 FROM ${ingestionRunsTable} WHERE ${ingestionRunsTable.id} = ${scheduleChangesTable.authorityRunId} AND ${ingestionRunsTable.authorityScope} = ${authorityScope})`,
             ),
           )
           .orderBy(asc(scheduleChangesTable.effectiveDate))
@@ -467,7 +486,8 @@ export async function recalculatePredictedReductionsForDrug(
   const filteredDisclosureRows = disclosureRows.filter(
     (row) => !publishedKeys.has(`${row.itemCode}:${row.predictedDate}`),
   );
-  const rows = [...statutoryRows, ...section99AcpRows, ...firstNewBrandRows, ...filteredDisclosureRows, ...publishedRows];
+  const rows = [...statutoryRows, ...section99AcpRows, ...firstNewBrandRows, ...filteredDisclosureRows, ...publishedRows]
+    .map((row) => ({ ...row, authorityRunId: authorityRun.id }));
 
   if (rows.length > 0) {
     await db.insert(predictedReductionsTable).values(rows);
@@ -477,11 +497,12 @@ export async function recalculatePredictedReductionsForDrug(
 
 export async function recalculatePredictedReductionsForAllDrugs(
   today = new Date().toISOString().slice(0, 10),
+  authorityRunId?: number,
 ): Promise<number> {
-  const drugs = await db.select({ id: drugsTable.id }).from(drugsTable).orderBy(asc(drugsTable.id));
+  const drugs = await db.select({ id: drugsTable.id }).from(drugsTable).where(eq(drugsTable.authorityScope, runtimeAuthorityScope())).orderBy(asc(drugsTable.id));
   let total = 0;
   for (const drug of drugs) {
-    total += await recalculatePredictedReductionsForDrug(drug.id, today);
+    total += await recalculatePredictedReductionsForDrug(drug.id, today, authorityRunId);
   }
   return total;
 }

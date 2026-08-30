@@ -9,6 +9,7 @@
   },
   "scripts": {
     "authority:apply": "node ./scripts/apply-authority-rls.mjs",
+    "authority:backfill": "psql \"$DATABASE_URL\" --no-psqlrc --file ./sql/backfill-authority.sql",
     "authority:verify": "node ./scripts/verify-authority-rls.mjs",
     "push": "drizzle-kit push --config ./drizzle.config.ts",
     "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"

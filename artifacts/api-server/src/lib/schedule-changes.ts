@@ -8,8 +8,9 @@ import {
   type ScheduleChangeAffectedItem,
   scheduleChangesTable,
   scheduleChangeSettingsTable,
+  runtimeAuthorityScope,
 } from "@workspace/db";
-import { and, asc, eq, gt, inArray, like, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 import {
   isAuthoritativeStagedSnapshot,
@@ -191,7 +192,10 @@ export async function recalculatePriceChangeSignificance(): Promise<number> {
         significance: scheduleChangesTable.significance,
       })
       .from(scheduleChangesTable)
-      .where(eq(scheduleChangesTable.changeType, "price_change")),
+    .where(and(
+      eq(scheduleChangesTable.changeType, "price_change"),
+      sql`EXISTS (SELECT 1 FROM ${ingestionRunsTable} WHERE ${ingestionRunsTable.id} = ${scheduleChangesTable.authorityRunId} AND ${ingestionRunsTable.authorityScope} = ${runtimeAuthorityScope()})`,
+    )),
   ]);
   let updated = 0;
   for (const change of changes) {
@@ -260,7 +264,10 @@ export async function recalculateNewBrandSignificance(): Promise<number> {
       significance: scheduleChangesTable.significance,
     })
     .from(scheduleChangesTable)
-    .where(eq(scheduleChangesTable.changeType, "new_brand"));
+    .where(and(
+      eq(scheduleChangesTable.changeType, "new_brand"),
+      sql`EXISTS (SELECT 1 FROM ${ingestionRunsTable} WHERE ${ingestionRunsTable.id} = ${scheduleChangesTable.authorityRunId} AND ${ingestionRunsTable.authorityScope} = ${runtimeAuthorityScope()})`,
+    ));
 
   const affectedDrugIds = new Set<number>();
   let updated = 0;
@@ -433,7 +440,7 @@ async function loadStagedSnapshots(
         asc(pbsItemPremiumHistoryTable.scheduleEffectiveDate),
         asc(pbsItemPremiumHistoryTable.dispensingRuleReference),
       ),
-    db.select({ id: ingestionRunsTable.id, status: ingestionRunsTable.status }).from(ingestionRunsTable),
+    db.select({ id: ingestionRunsTable.id, status: ingestionRunsTable.status }).from(ingestionRunsTable).where(eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())),
   ]);
   const ingestionRunIds = new Set(ingestionRuns.map((run) => run.id));
   const cancelledIngestionRunIds = new Set(
@@ -978,9 +985,12 @@ export function compareScheduleSnapshots(
   return changes;
 }
 
-export async function syncScheduleChangesFromStagedData(options: { scheduleCodes?: number[] } = {}): Promise<number> {
+export async function syncScheduleChangesFromStagedData(options: { scheduleCodes?: number[]; authorityRunId?: number } = {}): Promise<number> {
+  if (options.authorityRunId === undefined) {
+    throw new Error("Schedule changes require an authoritative ingestion run.");
+  }
   const [drugs, thresholds] = await Promise.all([
-    db.select({ id: drugsTable.id, activeIngredient: drugsTable.activeIngredient }).from(drugsTable),
+    db.select({ id: drugsTable.id, activeIngredient: drugsTable.activeIngredient }).from(drugsTable).where(eq(drugsTable.authorityScope, runtimeAuthorityScope())),
     getPriceChangeThresholds(),
   ]);
   const scheduleCodes = options.scheduleCodes ? new Set(options.scheduleCodes) : undefined;
@@ -999,14 +1009,14 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
   const legacyNewBrandRows = await db
     .select()
     .from(scheduleChangesTable)
-    .where(eq(scheduleChangesTable.changeType, "new_brand"));
+    .where(and(eq(scheduleChangesTable.changeType, "new_brand"), sql`EXISTS (SELECT 1 FROM ${ingestionRunsTable} WHERE ${ingestionRunsTable.id} = ${scheduleChangesTable.authorityRunId} AND ${ingestionRunsTable.authorityScope} = ${runtimeAuthorityScope()})`));
   const regularChanges = changes.filter((change) => change.changeType !== "new_brand");
   let insertedCount = 0;
 
   if (regularChanges.length > 0) {
     const inserted = await db
       .insert(scheduleChangesTable)
-      .values(regularChanges)
+      .values(regularChanges.map((change) => ({ ...change, authorityRunId: options.authorityRunId! })))
       .onConflictDoNothing()
       .returning({ id: scheduleChangesTable.id });
     insertedCount += inserted.length;
@@ -1026,7 +1036,7 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
     if (existing[0]) {
       await db
         .update(scheduleChangesTable)
-        .set(change)
+        .set({ ...change, authorityRunId: options.authorityRunId })
         .where(eq(scheduleChangesTable.id, existing[0].id));
       if (existing.length > 1) {
         await db
@@ -1034,13 +1044,13 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
           .where(inArray(scheduleChangesTable.id, existing.slice(1).map((row) => row.id)));
       }
     } else {
-      const [inserted] = await db.insert(scheduleChangesTable).values(change).returning({ id: scheduleChangesTable.id });
+      const [inserted] = await db.insert(scheduleChangesTable).values({ ...change, authorityRunId: options.authorityRunId }).returning({ id: scheduleChangesTable.id });
       if (inserted) insertedCount += 1;
     }
     affectedDrugIds.add(change.drugId);
   }
 
-  await Promise.all([...affectedDrugIds].map((drugId) => recalculatePredictedReductionsForDrug(drugId)));
+  await Promise.all([...affectedDrugIds].map((drugId) => recalculatePredictedReductionsForDrug(drugId, undefined, options.authorityRunId)));
   return insertedCount;
 }
 

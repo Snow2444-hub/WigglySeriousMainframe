@@ -3,6 +3,7 @@ import {
   db,
   ingestionRunsTable,
   pbsWatchlistTable,
+  runtimeAuthorityScope,
 } from "@workspace/db";
 import { logger } from "./logger";
 import { fetchSchedule } from "./pbs-ingestion";
@@ -82,6 +83,7 @@ export async function executeCurrentIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "queued"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -117,7 +119,7 @@ export async function executeCurrentIngestionRun(
       await db
         .update(ingestionRunsTable)
         .set({ pagesFetched, lastProgressAt: new Date(), requestUrls: [...requestUrls], recordsProcessed })
-        .where(eq(ingestionRunsTable.id, runId));
+        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     };
     const handlePage = async (page: { endpoint: string; url: string; records: number }) => {
       requestUrls.add(page.url);
@@ -210,6 +212,7 @@ export async function executeCurrentIngestionRun(
                   { data: matched },
                   scheduleDate,
                   scheduleEffectiveDate,
+                    { authorityRunId: runId },
                 );
                 for (const [itemId, metadata] of itemScheduleMetadataFromPayload({ data: matched })) {
                   itemMetadata.set(itemId, metadata);
@@ -273,7 +276,7 @@ export async function executeCurrentIngestionRun(
     let changesRecorded = 0;
     if (!pageCapReached) {
       await beginIngestionChangeDetection(runId);
-      changesRecorded = await syncScheduleChangesImpl();
+      changesRecorded = await syncScheduleChangesImpl({ authorityRunId: runId });
     }
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the page cap was reached");
@@ -302,6 +305,7 @@ export async function executeCurrentIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "running"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -333,6 +337,7 @@ export async function executeCurrentIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "running"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),

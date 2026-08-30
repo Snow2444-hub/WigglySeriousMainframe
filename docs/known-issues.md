@@ -17,6 +17,16 @@ and `prunes invalid future snapshots without sacrificing the newest valid real s
 
 ## Deferred
 
+### Application role can be reset by the managed superuser session
+
+Application queries assume the non-bypass `pbs_app` role, and forced RLS
+protects against accidental raw protected-table access and table-owner bypass,
+which are the bug classes this boundary addresses. Because the provider-managed
+bootstrap session remains a PostgreSQL superuser, deliberately executing
+`RESET ROLE` would escape the application role. Fully closing that path requires
+a provider-issued non-superuser database login and is a separate provisioning
+question.
+
 ### No source-run provenance on materialised tables
 
 `pbs_items` and `schedule_changes` do not store the source ingestion-run ID.

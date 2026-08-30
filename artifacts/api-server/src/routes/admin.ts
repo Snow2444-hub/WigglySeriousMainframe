@@ -9,6 +9,8 @@ import {
   ingestionRunsTable,
   pbsItemsTable,
   pbsWatchlistTable,
+  productionMasterScope,
+  runtimeAuthorityScope,
 } from "@workspace/db";
 import {
   CreatePbsWatchlistEntryBody,
@@ -159,6 +161,7 @@ export async function executeBackfillIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "queued"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -200,7 +203,7 @@ export async function executeBackfillIngestionRun(
           totalSchedules,
           schedulesProcessed,
         })
-        .where(eq(ingestionRunsTable.id, runId));
+        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     };
 
     const schedulePages = await fetchScheduleImpl({
@@ -314,6 +317,7 @@ export async function executeBackfillIngestionRun(
                     {
                       scheduleCode: schedule.scheduleCode,
                       updateCurrentItem: schedule.effectiveDate === latestEffectiveDate,
+                      authorityRunId: runId,
                     },
                   );
                   for (const [itemId, metadata] of itemScheduleMetadataFromPayload({ data: matched })) {
@@ -378,7 +382,7 @@ export async function executeBackfillIngestionRun(
     let changesRecorded = 0;
     if (!pageCapReached) {
       await beginIngestionChangeDetection(runId);
-      changesRecorded = await syncScheduleChangesImpl();
+      changesRecorded = await syncScheduleChangesImpl({ authorityRunId: runId });
     }
     if (pageCapReached) {
       logger.warn({ runId, maxPages }, "Skipped schedule-change detection because the backfill page cap was reached");
@@ -405,6 +409,7 @@ export async function executeBackfillIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "running"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -439,6 +444,7 @@ export async function executeBackfillIngestionRun(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "running"),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -451,6 +457,7 @@ router.get("/admin/ingestion-runs", requireAdmin, async (_req, res): Promise<voi
   const runs = await db
     .select()
     .from(ingestionRunsTable)
+    .where(productionMasterScope(ingestionRunsTable.authorityScope))
     .orderBy(desc(ingestionRunsTable.startedAt))
     .limit(25);
 
@@ -461,7 +468,7 @@ router.get("/admin/ingestion-runs/current", requireAdmin, async (_req, res): Pro
   const [run] = await db
     .select()
     .from(ingestionRunsTable)
-    .where(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES))
+    .where(and(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), productionMasterScope(ingestionRunsTable.authorityScope)))
     .orderBy(desc(ingestionRunsTable.startedAt))
     .limit(1);
 
@@ -531,14 +538,15 @@ router.post(
           name: drugsTable.name,
           activeIngredient: drugsTable.activeIngredient,
         })
-        .from(drugsTable);
+        .from(drugsTable)
+        .where(productionMasterScope(drugsTable.authorityScope));
       const parsed = parseArtgExport(upload, sourceFileName, drugs);
       const drugIds = [...new Set(parsed.records.map((record) => record.matchedDrugId))];
       const pbsBrands = drugIds.length
         ? await db
           .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
           .from(pbsItemsTable)
-          .where(inArray(pbsItemsTable.drugId, drugIds))
+            .where(and(inArray(pbsItemsTable.drugId, drugIds), productionMasterScope(pbsItemsTable.authorityScope)))
         : [];
       const brandsByDrug = new Map<number, string[]>();
       for (const row of pbsBrands) {

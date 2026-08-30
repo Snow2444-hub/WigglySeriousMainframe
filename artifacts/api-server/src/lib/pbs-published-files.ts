@@ -15,6 +15,7 @@ import {
   pbsWatchlistTable,
   scheduleChangesTable,
   type PbsPublishedFile,
+  runtimeAuthorityScope,
 } from "@workspace/db";
 import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
 import {
@@ -529,10 +530,12 @@ export function publishedFileErrorMessage(error: unknown): string {
 }
 
 async function loadContext(): Promise<DrugContext> {
+  const authorityScope = runtimeAuthorityScope();
   const [drugs, items, watchlist] = await Promise.all([
     db
       .select({ id: drugsTable.id, name: drugsTable.name, activeIngredient: drugsTable.activeIngredient })
       .from(drugsTable)
+      .where(eq(drugsTable.authorityScope, authorityScope))
       .orderBy(asc(drugsTable.id)),
     db
       .select({
@@ -546,6 +549,7 @@ async function loadContext(): Promise<DrugContext> {
         formulary: pbsItemsTable.formulary,
       })
       .from(pbsItemsTable)
+      .where(eq(pbsItemsTable.authorityScope, authorityScope))
       .orderBy(asc(pbsItemsTable.itemCode)),
     db
       .select({
@@ -797,6 +801,7 @@ async function processFirstNewBrand(
   sourceFile: SourceFile,
   file: PbsPublishedFile,
   context: DrugContext,
+  authorityRunId?: number,
 ): Promise<PublishedFileReport> {
   const parsed = workbookRows(sourceFile.workbook, sourceFile.bytes, 0);
   const dataRows = parsed.rows.filter(({ record }) => {
@@ -863,6 +868,7 @@ async function processFirstNewBrand(
             affectedItems: null,
             significance: "normal",
             notes: "New row highlighted in the PBS First New Brand Price Reductions register.",
+            authorityRunId: authorityRunId ?? file.ingestionRunId ?? undefined,
           })
           .onConflictDoNothing();
       }
@@ -1228,7 +1234,7 @@ async function processSource(
     if (sourceKey === "anniversary_indicative" || sourceKey === "section_99acp") {
       return await processAnniversaryIndicative(sourceFile, file, context);
     }
-    if (sourceKey === "first_new_brand") return await processFirstNewBrand(sourceFile, file, context);
+    if (sourceKey === "first_new_brand") return await processFirstNewBrand(sourceFile, file, context, ingestionRunId);
     if (sourceKey === "subject_to_price_disclosure") {
       return await processSubjectToPriceDisclosure(sourceFile, file, context);
     }
@@ -1262,6 +1268,9 @@ export async function ingestPublishedFiles(
   ingestionRunId?: number,
   options: PublishedIngestionOptions = {},
 ): Promise<PublishedIngestionReport> {
+  if (ingestionRunId === undefined) {
+    throw new Error("Published-file ingestion requires an authoritative ingestion run.");
+  }
   const context = await loadContext();
   await ensurePbsSourceRegistry();
   const sourceProcessors: Array<{
@@ -1394,7 +1403,7 @@ export async function ingestPublishedFiles(
       : sourceProcessors.map((processor) => processor.run()),
   );
   await refreshPbsSourceRegistryStatus();
-  await recalculatePredictedReductionsForAllDrugs();
+  await recalculatePredictedReductionsForAllDrugs(undefined, ingestionRunId);
   return { fetchedAt: new Date().toISOString(), files };
 }
 

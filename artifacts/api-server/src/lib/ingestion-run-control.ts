@@ -7,6 +7,7 @@ import {
   isAuthoritativeStagedSnapshot,
   stagedRunIdFromRequestKey,
 } from "./staged-snapshot-validity";
+import { runtimeAuthorityScope } from "@workspace/db";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
@@ -61,6 +62,7 @@ type IngestionRunOptions = {
 export async function acquireIngestionRun(options: IngestionRunOptions = {}): Promise<IngestionRunAcquisition> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
+    const authorityScope = runtimeAuthorityScope();
 
     let recoveredRunIds: number[] = [];
     const cancellationRequestedRuns = await tx
@@ -69,6 +71,7 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
       .where(
         and(
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          eq(ingestionRunsTable.authorityScope, authorityScope),
           isNotNull(ingestionRunsTable.cancelRequestedAt),
         ),
       );
@@ -89,6 +92,7 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
           and(
             eq(ingestionRunsTable.id, run.id),
             inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            eq(ingestionRunsTable.authorityScope, authorityScope),
             isNotNull(ingestionRunsTable.cancelRequestedAt),
           ),
         );
@@ -104,6 +108,7 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
         .where(
           and(
             inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            eq(ingestionRunsTable.authorityScope, authorityScope),
             isNull(ingestionRunsTable.cancelRequestedAt),
             lt(
               sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
@@ -121,9 +126,10 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
     const activeRunPredicate = options.excludeActiveRunIds?.length
       ? and(
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          eq(ingestionRunsTable.authorityScope, authorityScope),
           not(inArray(ingestionRunsTable.id, options.excludeActiveRunIds)),
         )
-      : inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES);
+      : and(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), eq(ingestionRunsTable.authorityScope, authorityScope));
     const [activeRun] = await tx
       .select()
       .from(ingestionRunsTable)
@@ -137,6 +143,7 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
       .insert(ingestionRunsTable)
       .values({
         status: "queued",
+        authorityScope,
         mode: options.mode ?? "current",
         ...(options.scheduleDate === undefined ? {} : { scheduleDate: options.scheduleDate }),
         ...(options.maxPages === undefined ? {} : { maxPages: options.maxPages }),
@@ -148,14 +155,15 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
 }
 
 export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promise<IngestionRun[]> {
+  const authorityScope = runtimeAuthorityScope();
   const runIdFilter = runIds && runIds.length > 0 ? inArray(ingestionRunsTable.id, runIds) : undefined;
   const cancellationRequestedRuns = await db
     .select({ id: ingestionRunsTable.id })
     .from(ingestionRunsTable)
     .where(
       runIdFilter
-        ? and(runIdFilter, inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt))
-        : and(inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt)),
+        ? and(runIdFilter, eq(ingestionRunsTable.authorityScope, authorityScope), inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt))
+        : and(eq(ingestionRunsTable.authorityScope, authorityScope), inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES), isNotNull(ingestionRunsTable.cancelRequestedAt)),
     );
   for (const run of cancellationRequestedRuns) {
     await finalizeCancelledIngestionRun(run.id);
@@ -168,7 +176,7 @@ export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promis
   const interruptedRuns = await db
     .select()
     .from(ingestionRunsTable)
-    .where(runIdFilter ? and(runIdFilter, interruptedState) : interruptedState)
+    .where(runIdFilter ? and(runIdFilter, eq(ingestionRunsTable.authorityScope, authorityScope), interruptedState) : and(eq(ingestionRunsTable.authorityScope, authorityScope), interruptedState))
     .orderBy(asc(ingestionRunsTable.startedAt));
 
   const recoveredRuns: IngestionRun[] = [];
@@ -193,7 +201,7 @@ export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promis
         errorMessage: null,
         scheduleDate,
       })
-      .where(eq(ingestionRunsTable.id, run.id))
+      .where(and(eq(ingestionRunsTable.id, run.id), eq(ingestionRunsTable.authorityScope, authorityScope)))
       .returning();
     if (recoveredRun) recoveredRuns.push(recoveredRun);
   }
@@ -213,12 +221,14 @@ export async function recoverStaleIngestionRuns(
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${INGESTION_RUN_LOCK_KEY})`);
     const recoveredAt = new Date();
+    const authorityScope = runtimeAuthorityScope();
     const cancellationRequestedRuns = await tx
       .select()
       .from(ingestionRunsTable)
       .where(
         and(
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+          eq(ingestionRunsTable.authorityScope, authorityScope),
           isNotNull(ingestionRunsTable.cancelRequestedAt),
         ),
       );
@@ -238,6 +248,7 @@ export async function recoverStaleIngestionRuns(
         .where(
           and(
             eq(ingestionRunsTable.id, run.id),
+            eq(ingestionRunsTable.authorityScope, authorityScope),
             inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
             isNotNull(ingestionRunsTable.cancelRequestedAt),
           ),
@@ -254,6 +265,7 @@ export async function recoverStaleIngestionRuns(
       .where(
         and(
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
+            eq(ingestionRunsTable.authorityScope, authorityScope),
             isNull(ingestionRunsTable.cancelRequestedAt),
           lt(
             sql`coalesce(${ingestionRunsTable.lastProgressAt}, ${ingestionRunsTable.startedAt})`,
@@ -282,7 +294,7 @@ export async function isIngestionRunCancelRequested(runId: number): Promise<bool
   const [run] = await db
     .select({ cancelRequestedAt: ingestionRunsTable.cancelRequestedAt, status: ingestionRunsTable.status })
     .from(ingestionRunsTable)
-    .where(eq(ingestionRunsTable.id, runId))
+    .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())))
     .limit(1);
   return Boolean(run?.cancelRequestedAt) || run?.status === "cancelled";
 }
@@ -300,6 +312,7 @@ export async function beginIngestionChangeDetection(runId: number): Promise<void
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           eq(ingestionRunsTable.status, "running"),
           isNull(ingestionRunsTable.cancelRequestedAt),
           isNull(ingestionRunsTable.changeDetectionStartedAt),
@@ -316,7 +329,7 @@ export async function finalizeCancelledIngestionRun(runId: number): Promise<Inge
     const [run] = await tx
       .select()
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, runId))
+      .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())))
       .limit(1);
     if (!run) return undefined;
     if (run.status === "cancelled") return run;
@@ -338,6 +351,7 @@ export async function finalizeCancelledIngestionRun(runId: number): Promise<Inge
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
           isNotNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -360,7 +374,7 @@ export async function requestIngestionRunCancellation(
     const [run] = await tx
       .select()
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, runId))
+      .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())))
       .limit(1);
     if (!run) return undefined;
     if (run.status === "cancelled" || run.status === "completed" || run.status === "failed") {
@@ -380,7 +394,7 @@ export async function requestIngestionRunCancellation(
           errorMessage: INGESTION_CANCELLED_ERROR,
           snapshotComplete: false,
         })
-        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.status, "queued")))
+        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()), eq(ingestionRunsTable.status, "queued")))
         .returning();
       if (cancelledRun) return { kind: "cancelled", run: cancelledRun };
     }
@@ -390,6 +404,7 @@ export async function requestIngestionRunCancellation(
       .where(
         and(
           eq(ingestionRunsTable.id, runId),
+          eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope()),
           inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
           isNull(ingestionRunsTable.cancelRequestedAt),
         ),
@@ -399,7 +414,7 @@ export async function requestIngestionRunCancellation(
     const [currentRun] = await tx
       .select()
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, runId))
+      .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())))
       .limit(1);
     return currentRun ? { kind: currentRun.status === "cancelled" ? "cancelled" : "requested", run: currentRun } : undefined;
   });
@@ -436,6 +451,7 @@ export async function pruneRawScheduleStaging(
   const retentionHours = options.retentionHours ?? configuredStagingRetentionHours();
   const now = options.now ?? new Date();
   const cutoff = new Date(now.getTime() - retentionHours * 60 * 60 * 1000);
+  const authorityScope = runtimeAuthorityScope();
 
   const ingestionRuns = await db
     .select({
@@ -443,7 +459,8 @@ export async function pruneRawScheduleStaging(
       status: ingestionRunsTable.status,
       errorMessage: ingestionRunsTable.errorMessage,
     })
-    .from(ingestionRunsTable);
+    .from(ingestionRunsTable)
+    .where(eq(ingestionRunsTable.authorityScope, authorityScope));
   const ingestionRunIds = new Set(ingestionRuns.map((run) => run.id));
   const protectedRunIds = new Set(
     ingestionRuns

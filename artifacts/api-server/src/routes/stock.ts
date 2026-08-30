@@ -9,6 +9,8 @@ import {
   pbsItemsTable,
   predictedReductionsTable,
   scheduleChangesTable,
+  productionAuthorityRun,
+  productionMasterScope,
 } from "@workspace/db";
 import {
   CreateStockBody,
@@ -70,7 +72,7 @@ async function getUserStock(userId: string) {
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(eq(pharmacyStockTable.userId, userId))
+    .where(and(eq(pharmacyStockTable.userId, userId), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)))
     .orderBy(desc(pharmacyStockTable.purchaseDate), desc(pharmacyStockTable.id));
 }
 
@@ -92,6 +94,7 @@ async function getUserExposure(userId: string) {
         .where(
           and(
             inArray(predictedReductionsTable.itemCode, itemCodes),
+            productionAuthorityRun(predictedReductionsTable.authorityRunId),
             gte(predictedReductionsTable.predictedDate, today),
             or(
               and(
@@ -228,6 +231,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
       .where(
         and(
           eq(ingestionRunsTable.status, "completed"),
+          productionMasterScope(ingestionRunsTable.authorityScope),
           eq(ingestionRunsTable.snapshotComplete, true),
           isNotNull(ingestionRunsTable.scheduleCode),
           isNotNull(ingestionRunsTable.scheduleEffectiveDate),
@@ -238,7 +242,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
     database
       .select({ id: ingestionRunsTable.id })
       .from(ingestionRunsTable)
-      .where(inArray(ingestionRunsTable.status, ["queued", "running"]))
+      .where(and(inArray(ingestionRunsTable.status, ["queued", "running"]), productionMasterScope(ingestionRunsTable.authorityScope)))
       .limit(1),
   ]);
   const completed = currentRun[0];
@@ -265,7 +269,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
         affectedItems: scheduleChangesTable.affectedItems,
       })
       .from(scheduleChangesTable)
-      .where(gte(scheduleChangesTable.effectiveDate, twelveMonthsAgo)),
+      .where(and(gte(scheduleChangesTable.effectiveDate, twelveMonthsAgo), productionAuthorityRun(scheduleChangesTable.authorityRunId))),
     database
       .select({
         drugId: predictedReductionsTable.drugId,
@@ -279,6 +283,8 @@ async function getDashboardSummary(database: typeof db, userId: string) {
       .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
       .where(
         and(
+          productionAuthorityRun(predictedReductionsTable.authorityRunId),
+          productionMasterScope(pbsItemsTable.authorityScope),
           gte(predictedReductionsTable.predictedDate, today),
           lte(predictedReductionsTable.predictedDate, dateMonthsAgo(today, -12)),
           or(
@@ -306,7 +312,8 @@ async function getDashboardSummary(database: typeof db, userId: string) {
       ),
     database
       .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
-      .from(pbsItemsTable),
+      .from(pbsItemsTable)
+      .where(productionMasterScope(pbsItemsTable.authorityScope)),
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(userId);
   const visibleChanges = (changeRows as DashboardChange[]).filter((change) =>
@@ -380,7 +387,7 @@ router.get("/dashboard", authMiddleware, async (req, res): Promise<void> => {
     ? await database
         .select({ itemCode: pbsItemsTable.itemCode, formulary: pbsItemsTable.formulary })
         .from(pbsItemsTable)
-        .where(sql`${pbsItemsTable.itemCode} in (${sql.join([...itemCodes].map((code) => sql`${code}`), sql`, `)})`)
+        .where(and(sql`${pbsItemsTable.itemCode} in (${sql.join([...itemCodes].map((code) => sql`${code}`), sql`, `)})`, productionMasterScope(pbsItemsTable.authorityScope)))
     : [];
   const formularyBreakdown = itemDetails.reduce(
     (breakdown, item) => {
@@ -415,7 +422,7 @@ router.post("/stock", authMiddleware, async (req, res): Promise<void> => {
   const [item] = await database
     .select({ itemCode: pbsItemsTable.itemCode })
     .from(pbsItemsTable)
-    .where(eq(pbsItemsTable.itemCode, parsed.data.itemCode));
+    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), productionMasterScope(pbsItemsTable.authorityScope)));
   if (!item) {
     res.status(400).json({ error: "PBS item code not found" });
     return;
@@ -434,7 +441,7 @@ router.post("/stock", authMiddleware, async (req, res): Promise<void> => {
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(and(eq(pharmacyStockTable.id, created.id), eq(pharmacyStockTable.userId, req.userId!)));
+    .where(and(eq(pharmacyStockTable.id, created.id), eq(pharmacyStockTable.userId, req.userId!), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)));
   res.status(201).json(CreateStockResponse.parse(row));
 });
 
@@ -453,7 +460,7 @@ router.patch("/stock/:id", authMiddleware, async (req, res): Promise<void> => {
     const [item] = await database
       .select({ itemCode: pbsItemsTable.itemCode })
       .from(pbsItemsTable)
-      .where(eq(pbsItemsTable.itemCode, parsed.data.itemCode));
+    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), productionMasterScope(pbsItemsTable.authorityScope)));
     if (!item) {
       res.status(400).json({ error: "PBS item code not found" });
       return;
@@ -486,7 +493,7 @@ router.patch("/stock/:id", authMiddleware, async (req, res): Promise<void> => {
     .from(pharmacyStockTable)
     .innerJoin(pbsItemsTable, eq(pharmacyStockTable.itemCode, pbsItemsTable.itemCode))
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(and(eq(pharmacyStockTable.id, updated.id), eq(pharmacyStockTable.userId, req.userId!)));
+    .where(and(eq(pharmacyStockTable.id, updated.id), eq(pharmacyStockTable.userId, req.userId!), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)));
   res.json(UpdateStockResponse.parse(row));
 });
 

@@ -1,4 +1,4 @@
-import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistoryTable } from "@workspace/db";
+import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistoryTable, runtimeAuthorityScope } from "@workspace/db";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
@@ -139,13 +139,14 @@ async function resolveDrugId(input: {
       firstPbsListingDate: drugsTable.firstPbsListingDate,
     })
     .from(drugsTable)
-    .where(eq(drugsTable.activeIngredient, input.activeIngredient))
+    .where(and(eq(drugsTable.activeIngredient, input.activeIngredient), eq(drugsTable.authorityScope, runtimeAuthorityScope())))
     .limit(1);
   if (existing) {
     await db
       .update(drugsTable)
       .set({
         ...input,
+        authorityScope: runtimeAuthorityScope(),
         firstPbsListingDate:
           existing.firstPbsListingDate <= input.firstPbsListingDate
             ? existing.firstPbsListingDate
@@ -162,7 +163,7 @@ async function resolveDrugId(input: {
     .from(drugsTable);
   const [created] = await db
     .insert(drugsTable)
-    .values({ ...input, id: (latest?.id ?? 999_999) + 1 })
+    .values({ ...input, id: (latest?.id ?? 999_999) + 1, authorityScope: runtimeAuthorityScope() })
     .onConflictDoNothing()
     .returning({ id: drugsTable.id });
   if (!created) throw new Error("Could not create PBS drug reference");
@@ -247,7 +248,7 @@ export async function upsertPbsItemsFromPayload(
   payload: unknown,
   scheduleDate: string,
   scheduleEffectiveDate = scheduleDate,
-  options: { scheduleCode?: number; updateCurrentItem?: boolean } = {},
+  options: { scheduleCode?: number; updateCurrentItem?: boolean; authorityRunId?: number } = {},
 ): Promise<number> {
   let processed = 0;
   const affectedDrugIds = new Set<number>();
@@ -316,6 +317,7 @@ export async function upsertPbsItemsFromPayload(
         proportionalPrice: numberField(record, "proportional_price"),
         therapeuticGroupId: stringField(record, "therapeutic_group_id"),
         innovatorIndicator: stringField(record, "innovator_indicator"),
+        authorityScope: runtimeAuthorityScope(),
       };
     if (updateCurrentItem) {
       await db
@@ -340,7 +342,7 @@ export async function upsertPbsItemsFromPayload(
   }
 
   for (const drugId of affectedDrugIds) {
-    await recalculatePredictedReductionsForDrug(drugId);
+    await recalculatePredictedReductionsForDrug(drugId, undefined, options.authorityRunId);
   }
   return processed;
 }

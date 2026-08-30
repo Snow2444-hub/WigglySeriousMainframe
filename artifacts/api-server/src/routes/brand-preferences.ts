@@ -6,6 +6,7 @@ import {
   pbsItemsTable,
   pbsWatchlistTable,
   pharmacyBrandPreferencesTable,
+  productionMasterScope,
 } from "@workspace/db";
 import {
   ClearPharmacyBrandPreferencesResponse,
@@ -72,7 +73,8 @@ async function getPreferenceCatalogue(): Promise<PreferenceCatalogueBrand[]> {
         innovatorIndicator: pbsItemsTable.innovatorIndicator,
       })
       .from(pbsItemsTable)
-      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)),
+      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
+      .where(and(productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
   ]);
   const brands = new Map<string, PreferenceCatalogueBrand>();
   for (const item of items) {
