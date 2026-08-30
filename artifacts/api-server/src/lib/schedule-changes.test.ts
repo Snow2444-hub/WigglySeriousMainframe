@@ -4,6 +4,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   drugsTable,
+  ingestionRunsTable,
   pbsItemsTable,
   rawScheduleStagingTable,
   scheduleChangesTable,
@@ -16,6 +17,7 @@ import {
   type ScheduleSnapshot,
   type SnapshotItem,
 } from "./schedule-changes";
+import { isAuthoritativeStagedSnapshot } from "./staged-snapshot-validity";
 
 const thresholds: PriceChangeThresholds = {
   mediumReductionPercentage: 10,
@@ -146,6 +148,66 @@ const fixtureItems = [
   },
 ];
 
+async function createFixtureIngestionRun(status: string): Promise<number> {
+  const [run] = await db
+    .insert(ingestionRunsTable)
+    .values({ status, mode: "current", scheduleDate: "2026-08-30" })
+    .returning({ id: ingestionRunsTable.id });
+  if (!run) throw new Error("Could not create schedule-change fixture ingestion run");
+  return run.id;
+}
+
+test("snapshot provenance rejects missing suffixes and allows every real run status", async () => {
+  const statuses = [
+    { status: "queued", errorMessage: null },
+    { status: "running", errorMessage: null },
+    { status: "completed", errorMessage: null },
+    { status: "failed", errorMessage: null },
+    { status: "failed", errorMessage: "Ingestion interrupted by an API server restart" },
+  ];
+  const runIds: number[] = [];
+
+  try {
+    const runs = await db
+      .insert(ingestionRunsTable)
+      .values(statuses.map((status) => ({ ...status, mode: "current", scheduleDate: "2026-08-30" })))
+      .returning({ id: ingestionRunsTable.id });
+    runIds.push(...runs.map((run) => run.id));
+    const ingestionRunIds = new Set(runIds);
+
+    for (const runId of runIds) {
+      assert.equal(
+        isAuthoritativeStagedSnapshot({
+          requestKey: `items-snapshot:schedule-123456:run-${runId}`,
+          effectiveDate: "2026-08-01",
+          ingestionRunIds,
+        }),
+        true,
+      );
+    }
+    assert.equal(
+      isAuthoritativeStagedSnapshot({
+        requestKey: "items-snapshot:schedule-123456",
+        effectiveDate: "2026-08-01",
+        ingestionRunIds: new Set([0, ...runIds]),
+      }),
+      false,
+    );
+    assert.equal(
+      isAuthoritativeStagedSnapshot({
+        requestKey: "items-snapshot:schedule-123456:run-not-a-number",
+        effectiveDate: "2026-08-01",
+        ingestionRunIds: new Set([0, ...runIds]),
+      }),
+      false,
+    );
+  } finally {
+    if (runIds.length > 0) {
+      await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    }
+  }
+});
+
 async function stageFixtureSchedule(input: {
   scheduleCode: number;
   effectiveDate: string;
@@ -218,9 +280,12 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
     const currentScheduleCode = previousScheduleCode + 1;
     const drugId = fixtureBase + scenarioIndex;
     const scheduleDate = `${2090 + ((Date.now() + process.pid) % 1000)}-0${scenarioIndex + 1}-01`;
-    const effectiveDates = [`2091-0${scenarioIndex + 1}-01`, `2091-0${scenarioIndex + 1}-02`];
+    const effectiveDates = [`2026-0${scenarioIndex + 1}-01`, `2026-0${scenarioIndex + 1}-02`];
+    const runIds: number[] = [];
 
     try {
+      runIds.push(await createFixtureIngestionRun("completed"));
+      runIds.push(await createFixtureIngestionRun("completed"));
       await db.insert(drugsTable).values({
         id: drugId,
         name: "Task 32 fixture drug",
@@ -234,6 +299,7 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
         scheduleDate,
         items: fixtureItems,
         coverage: "complete",
+        stagingRunId: runIds[0],
       });
       await stageFixtureSchedule({
         scheduleCode: currentScheduleCode,
@@ -241,6 +307,7 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
         scheduleDate,
         items: [fixtureItems[1]],
         coverage: scenario.coverage,
+        stagingRunId: runIds[1],
       });
 
       await syncScheduleChangesFromStagedData({
@@ -274,6 +341,9 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
         .where(inArray(rawScheduleStagingTable.scheduleDate, [scheduleDate]));
       await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
       await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+      if (runIds.length > 0) {
+        await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+      }
     }
   }
 });
@@ -283,11 +353,15 @@ test("interrupted schedule-wide staging stays incomplete when a later run uses t
   const currentScheduleCode = previousScheduleCode + 1;
   const drugId = previousScheduleCode;
   const scheduleDate = `${2092 + ((Date.now() + process.pid) % 1000)}-01-01`;
-  const effectiveDates = ["2092-01-01", "2092-02-01"];
-  const interruptedRunId = previousScheduleCode + 10;
-  const laterRunId = interruptedRunId + 1;
+  const effectiveDates = ["2026-04-01", "2026-05-01"];
+  const runIds: number[] = [];
 
   try {
+    runIds.push(await createFixtureIngestionRun("failed"));
+    runIds.push(await createFixtureIngestionRun("running"));
+    const [interruptedRunId, laterRunId] = runIds;
+    assert.ok(interruptedRunId);
+    assert.ok(laterRunId);
     await db.insert(drugsTable).values({
       id: drugId,
       name: "Task 33 fixture drug",
@@ -367,5 +441,183 @@ test("interrupted schedule-wide staging stays incomplete when a later run uses t
     await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
     await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
     await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    if (runIds.length > 0) {
+      await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    }
+  }
+});
+
+test("ignores complete staged snapshots whose run does not exist", async () => {
+  const fixtureBase = 1_700_000_000 + ((Date.now() + process.pid) % 100_000_000);
+  const previousScheduleCode = fixtureBase;
+  const currentScheduleCode = fixtureBase + 1;
+  const nonexistentRunId = fixtureBase + 100;
+  const drugId = fixtureBase;
+  const scheduleDate = `${3090 + ((Date.now() + process.pid) % 500)}-06-01`;
+  let previousRunId: number | undefined;
+
+  try {
+    previousRunId = await createFixtureIngestionRun("completed");
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: "Missing run fixture drug",
+      activeIngredient: "Task 32 fixture ingredient",
+      sponsor: "Schedule change tests",
+      firstPbsListingDate: "2020-01-01",
+    });
+    await stageFixtureSchedule({
+      scheduleCode: previousScheduleCode,
+      effectiveDate: "2026-06-01",
+      scheduleDate,
+      items: fixtureItems,
+      coverage: "complete",
+      stagingRunId: previousRunId,
+    });
+    await stageFixtureSchedule({
+      scheduleCode: currentScheduleCode,
+      effectiveDate: "2026-07-01",
+      scheduleDate,
+      items: [fixtureItems[1]],
+      coverage: "complete",
+      stagingRunId: nonexistentRunId,
+    });
+
+    assert.equal(
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, currentScheduleCode],
+      }),
+      0,
+    );
+    const changes = await db
+      .select({ id: scheduleChangesTable.id })
+      .from(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    assert.equal(changes.length, 0);
+  } finally {
+    await db
+      .delete(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
+    await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
+    await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    if (previousRunId !== undefined) {
+      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, previousRunId));
+    }
+  }
+});
+
+test("ignores implausibly future complete snapshots even when their run exists", async () => {
+  const fixtureBase = 1_750_000_000 + ((Date.now() + process.pid) % 100_000_000);
+  const previousScheduleCode = fixtureBase;
+  const currentScheduleCode = fixtureBase + 1;
+  const drugId = fixtureBase;
+  const scheduleDate = `${3590 + ((Date.now() + process.pid) % 300)}-07-01`;
+  const runIds: number[] = [];
+
+  try {
+    runIds.push(await createFixtureIngestionRun("completed"));
+    runIds.push(await createFixtureIngestionRun("completed"));
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: "Future schedule fixture drug",
+      activeIngredient: "Task 32 fixture ingredient",
+      sponsor: "Schedule change tests",
+      firstPbsListingDate: "2020-01-01",
+    });
+    await stageFixtureSchedule({
+      scheduleCode: previousScheduleCode,
+      effectiveDate: "2026-08-01",
+      scheduleDate,
+      items: fixtureItems,
+      coverage: "complete",
+      stagingRunId: runIds[0],
+    });
+    await stageFixtureSchedule({
+      scheduleCode: currentScheduleCode,
+      effectiveDate: "2092-01-01",
+      scheduleDate,
+      items: [fixtureItems[1]],
+      coverage: "complete",
+      stagingRunId: runIds[1],
+    });
+
+    assert.equal(
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, currentScheduleCode],
+      }),
+      0,
+    );
+  } finally {
+    await db
+      .delete(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
+    await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
+    await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    if (runIds.length > 0) {
+      await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    }
+  }
+});
+
+test("accepts complete staged snapshots from a currently running ingestion run", async () => {
+  const fixtureBase = 1_800_000_000 + ((Date.now() + process.pid) % 100_000_000);
+  const previousScheduleCode = fixtureBase;
+  const currentScheduleCode = fixtureBase + 1;
+  const drugId = fixtureBase;
+  const scheduleDate = `${3890 + ((Date.now() + process.pid) % 100)}-08-01`;
+  const runIds: number[] = [];
+
+  try {
+    runIds.push(await createFixtureIngestionRun("completed"));
+    runIds.push(await createFixtureIngestionRun("running"));
+    await db.insert(drugsTable).values({
+      id: drugId,
+      name: "Running run fixture drug",
+      activeIngredient: "Task 32 fixture ingredient",
+      sponsor: "Schedule change tests",
+      firstPbsListingDate: "2020-01-01",
+    });
+    await stageFixtureSchedule({
+      scheduleCode: previousScheduleCode,
+      effectiveDate: "2026-08-01",
+      scheduleDate,
+      items: fixtureItems,
+      coverage: "complete",
+      stagingRunId: runIds[0],
+    });
+    await stageFixtureSchedule({
+      scheduleCode: currentScheduleCode,
+      effectiveDate: "2026-09-01",
+      scheduleDate,
+      items: [fixtureItems[1]],
+      coverage: "complete",
+      stagingRunId: runIds[1],
+    });
+
+    assert.equal(
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, currentScheduleCode],
+      }),
+      1,
+    );
+    const changes = await db
+      .select({
+        changeType: scheduleChangesTable.changeType,
+        liItemId: scheduleChangesTable.liItemId,
+      })
+      .from(scheduleChangesTable)
+      .where(eq(scheduleChangesTable.scheduleCode, currentScheduleCode));
+    assert.deepEqual(changes, [{ changeType: "delisted", liItemId: "task-32-removed" }]);
+  } finally {
+    await db
+      .delete(scheduleChangesTable)
+      .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, currentScheduleCode]));
+    await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
+    await db.delete(pbsItemsTable).where(eq(pbsItemsTable.drugId, drugId));
+    await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    if (runIds.length > 0) {
+      await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    }
   }
 });

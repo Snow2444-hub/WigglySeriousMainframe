@@ -3,6 +3,18 @@
 These are deferred technical-debt items. They are documented here without
 changing the affected production paths.
 
+## Resolved safeguards
+
+Fixture-leak recurrence is now guarded at both the staged-snapshot read path
+and the pruner: complete schedule snapshots require a real `ingestion_runs`
+record, implausibly future snapshots are rejected, and invalid pages cannot
+receive newest-snapshot protection. Regression coverage is provided by
+`ignores complete staged snapshots whose run does not exist`,
+`ignores implausibly future complete snapshots even when their run exists`,
+`accepts complete staged snapshots from a currently running ingestion run`,
+`snapshot provenance rejects missing suffixes and allows every real run status`,
+and `prunes invalid future snapshots without sacrificing the newest valid real snapshot`.
+
 ## Deferred
 
 ### No source-run provenance on materialised tables
@@ -27,11 +39,11 @@ dates; it matters if metadata arrives out of order or from a different run.
 ### Staging pruning protects by effective date, not canonical run
 
 `pruneRawScheduleStaging()` in
-`artifacts/api-server/src/lib/ingestion-run-control.ts` protects complete
+`artifacts/api-server/src/lib/ingestion-run-control.ts` protects valid complete
 snapshots by the latest effective date rather than selecting one canonical run.
-This is currently harmless because downstream staged readers select the
-highest run, but duplicate complete runs for the newest date remain available
-and can mislead any run-blind reader.
+Invalid or future-dated pages are no longer protected, but duplicate complete
+real runs for the newest date remain available and can mislead any run-blind
+reader.
 
 ### Overview chooses most recently finished run
 

@@ -3,6 +3,10 @@ import { and, asc, desc, eq, inArray, like, lt, not, or, sql } from "drizzle-orm
 import { logger } from "./logger";
 import { numberField, recordsFromPayload, stringField } from "./pbs-item-mapping";
 import { scheduleCodeFromRequestKey } from "./schedule-changes";
+import {
+  isAuthoritativeStagedSnapshot,
+  stagedRunIdFromRequestKey,
+} from "./staged-snapshot-validity";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
@@ -198,13 +202,6 @@ export function configuredStagingRetentionHours(): number {
   return DEFAULT_STAGING_RETENTION_HOURS;
 }
 
-function runIdFromRequestKey(requestKey: string): number | undefined {
-  const match = /:run-(\d+)$/.exec(requestKey);
-  if (!match) return undefined;
-  const value = Number(match[1]);
-  return Number.isInteger(value) ? value : undefined;
-}
-
 /**
  * Deletes raw PBS staging pages that are no longer needed: not part of an
  * active or restart-recoverable run, past the retention grace period, and
@@ -214,21 +211,34 @@ function runIdFromRequestKey(requestKey: string): number | undefined {
  * effective_date for whatever snapshots are retained.
  */
 export async function pruneRawScheduleStaging(
-  options: { retentionHours?: number; now?: Date } = {},
+  options: {
+    retentionHours?: number;
+    now?: Date;
+    futureHorizonMonths?: number;
+    scheduleCodes?: number[];
+  } = {},
 ): Promise<{ deletedRows: number }> {
   const retentionHours = options.retentionHours ?? configuredStagingRetentionHours();
-  const cutoff = new Date((options.now ?? new Date()).getTime() - retentionHours * 60 * 60 * 1000);
+  const now = options.now ?? new Date();
+  const cutoff = new Date(now.getTime() - retentionHours * 60 * 60 * 1000);
 
-  const protectedRuns = await db
-    .select({ id: ingestionRunsTable.id })
-    .from(ingestionRunsTable)
-    .where(
-      or(
-        inArray(ingestionRunsTable.status, ACTIVE_INGESTION_STATUSES),
-        and(eq(ingestionRunsTable.status, "failed"), eq(ingestionRunsTable.errorMessage, RESTART_INTERRUPTED_ERROR)),
-      ),
-    );
-  const protectedRunIds = new Set(protectedRuns.map((run) => run.id));
+  const ingestionRuns = await db
+    .select({
+      id: ingestionRunsTable.id,
+      status: ingestionRunsTable.status,
+      errorMessage: ingestionRunsTable.errorMessage,
+    })
+    .from(ingestionRunsTable);
+  const ingestionRunIds = new Set(ingestionRuns.map((run) => run.id));
+  const protectedRunIds = new Set(
+    ingestionRuns
+      .filter(
+        (run) =>
+          ACTIVE_INGESTION_STATUSES.includes(run.status as (typeof ACTIVE_INGESTION_STATUSES)[number])
+          || (run.status === "failed" && run.errorMessage === RESTART_INTERRUPTED_ERROR),
+      )
+      .map((run) => run.id),
+  );
 
   const scheduleRows = await db
     .select({ payload: rawScheduleStagingTable.payload })
@@ -245,6 +255,11 @@ export async function pruneRawScheduleStaging(
     }
   }
 
+  const scheduleCodeFilter = options.scheduleCodes?.length
+    ? or(...options.scheduleCodes.map((scheduleCode) =>
+        like(rawScheduleStagingTable.requestKey, `%schedule-${scheduleCode}%`)
+      ))
+    : undefined;
   const candidateRows = await db
     .select({
       id: rawScheduleStagingTable.id,
@@ -255,7 +270,11 @@ export async function pruneRawScheduleStaging(
       fetchedAt: rawScheduleStagingTable.fetchedAt,
     })
     .from(rawScheduleStagingTable)
-    .where(not(eq(rawScheduleStagingTable.endpoint, "schedules")));
+    .where(
+      scheduleCodeFilter
+        ? and(not(eq(rawScheduleStagingTable.endpoint, "schedules")), scheduleCodeFilter)
+        : not(eq(rawScheduleStagingTable.endpoint, "schedules")),
+    );
 
   const latestEffectiveDateByEndpoint = new Map<string, string>();
   for (const row of candidateRows) {
@@ -263,20 +282,40 @@ export async function pruneRawScheduleStaging(
     const scheduleCode = scheduleCodeFromRequestKey(row.requestKey);
     const effectiveDate = scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode);
     if (!effectiveDate) continue;
+    if (
+      !isAuthoritativeStagedSnapshot({
+        requestKey: row.requestKey,
+        effectiveDate,
+        ingestionRunIds,
+        now,
+        futureHorizonMonths: options.futureHorizonMonths,
+      })
+    ) {
+      continue;
+    }
     const current = latestEffectiveDateByEndpoint.get(row.endpoint);
     if (!current || effectiveDate > current) latestEffectiveDateByEndpoint.set(row.endpoint, effectiveDate);
   }
 
   const idsToDelete: number[] = [];
   for (const row of candidateRows) {
-    const runId = runIdFromRequestKey(row.requestKey);
+    const runId = stagedRunIdFromRequestKey(row.requestKey);
     if (runId !== undefined && protectedRunIds.has(runId)) continue;
     if (row.fetchedAt >= cutoff) continue;
     if (row.coverageScope === "schedule" && row.coverageComplete) {
       const scheduleCode = scheduleCodeFromRequestKey(row.requestKey);
       const effectiveDate = scheduleCode === undefined ? undefined : effectiveDates.get(scheduleCode);
       const latest = latestEffectiveDateByEndpoint.get(row.endpoint);
-      if (effectiveDate && latest && effectiveDate === latest) continue;
+      const authoritative =
+        effectiveDate !== undefined
+        && isAuthoritativeStagedSnapshot({
+          requestKey: row.requestKey,
+          effectiveDate,
+          ingestionRunIds,
+          now,
+          futureHorizonMonths: options.futureHorizonMonths,
+        });
+      if (authoritative && latest && effectiveDate === latest) continue;
     }
     idsToDelete.push(row.id);
   }

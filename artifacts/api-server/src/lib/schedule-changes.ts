@@ -1,6 +1,7 @@
 import {
   db,
   drugsTable,
+  ingestionRunsTable,
   pbsItemPremiumHistoryTable,
   rawScheduleStagingTable,
   reductionSettingsTable,
@@ -10,6 +11,10 @@ import {
 } from "@workspace/db";
 import { and, asc, eq, gt, inArray, like, or } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
+import {
+  isAuthoritativeStagedSnapshot,
+  stagedRunIdFromRequestKey,
+} from "./staged-snapshot-validity";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -408,7 +413,7 @@ async function loadStagedSnapshots(
         ]),
       )
     : undefined;
-  const [schedulePages, premiumRows] = await Promise.all([
+  const [schedulePages, premiumRows, ingestionRuns] = await Promise.all([
     db
       .select({
         endpoint: rawScheduleStagingTable.endpoint,
@@ -428,7 +433,9 @@ async function loadStagedSnapshots(
         asc(pbsItemPremiumHistoryTable.scheduleEffectiveDate),
         asc(pbsItemPremiumHistoryTable.dispensingRuleReference),
       ),
+    db.select({ id: ingestionRunsTable.id }).from(ingestionRunsTable),
   ]);
+  const ingestionRunIds = new Set(ingestionRuns.map((run) => run.id));
 
   const effectiveDates = new Map<number, string>();
   for (const page of schedulePages) {
@@ -499,9 +506,22 @@ async function loadStagedSnapshots(
       ) {
         continue;
       }
+      // Run existence, rather than completion status, is intentional. The
+      // current ingestion calls change detection while its real run row is
+      // still "running"; fixture run numbers have no row and are rejected.
+      if (
+        !isAuthoritativeStagedSnapshot({
+          requestKey: page.requestKey,
+          effectiveDate,
+          ingestionRunIds,
+        })
+      ) {
+        continue;
+      }
 
       const key = snapshotKey(scheduleCode, effectiveDate);
-      const sourceRunId = Number.parseInt(/:run-(\d+)$/.exec(page.requestKey)?.[1] ?? "0", 10);
+      const sourceRunId = stagedRunIdFromRequestKey(page.requestKey);
+      if (sourceRunId === undefined) continue;
       const previousSource = snapshotSources.get(key);
       if (previousSource && sourceRunId < previousSource.runId) continue;
       if (previousSource && page.requestKey !== previousSource.source && sourceRunId > previousSource.runId) {
