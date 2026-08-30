@@ -10,9 +10,12 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-if (process.env.NODE_ENV === "test" && !process.env.TEST_ISOLATION_SCHEMA) {
+if (
+  process.env.NODE_ENV === "test" &&
+  (!process.env.TEST_ISOLATION_SCHEMA || !process.env.TEST_ISOLATION_DATABASE)
+) {
   throw new Error(
-    "Tests must run through the isolated test runner; TEST_ISOLATION_SCHEMA is missing.",
+    "Tests must run through the isolated test runner; isolated database markers are missing.",
   );
 }
 

@@ -3,20 +3,26 @@ import { globSync } from "node:fs";
 import process from "node:process";
 
 const apiServerRoot = new URL("..", import.meta.url).pathname;
-const baseDatabaseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
+const developmentDatabaseUrl = process.env.DATABASE_URL;
+const dedicatedTestDatabaseUrl = process.env.TEST_DATABASE_URL;
 
-if (!baseDatabaseUrl) {
+if (!developmentDatabaseUrl && !dedicatedTestDatabaseUrl) {
   throw new Error(
     "Isolated API tests require TEST_DATABASE_URL or DATABASE_URL so a per-run schema can be provisioned.",
   );
 }
 
-if (process.env.TEST_DATABASE_URL && process.env.DATABASE_URL) {
-  const testUrl = new URL(process.env.TEST_DATABASE_URL);
-  const developmentUrl = new URL(process.env.DATABASE_URL);
-  if (testUrl.toString() === developmentUrl.toString()) {
+function databaseTarget(databaseUrl) {
+  const url = new URL(databaseUrl);
+  return [url.protocol, url.hostname, url.port, url.pathname, url.username].join("|");
+}
+
+if (
+  dedicatedTestDatabaseUrl &&
+  developmentDatabaseUrl &&
+  databaseTarget(dedicatedTestDatabaseUrl) === databaseTarget(developmentDatabaseUrl)
+) {
     throw new Error("TEST_DATABASE_URL must not be the shared development DATABASE_URL.");
-  }
 }
 
 function quoteIdentifier(identifier) {
@@ -29,6 +35,7 @@ function quoteIdentifier(identifier) {
 function isolatedDatabaseUrl(databaseUrl, schema) {
   const url = new URL(databaseUrl);
   url.searchParams.set("options", `-c search_path=${schema},public`);
+  url.search = `?${url.searchParams.toString().replaceAll("+", "%20")}`;
   return url.toString();
 }
 
@@ -50,14 +57,74 @@ function run(command, args, env) {
   });
 }
 
-const schema = `test_${process.pid}_${Date.now()}`.slice(0, 55);
-const quotedSchema = quoteIdentifier(schema);
-const isolatedUrl = isolatedDatabaseUrl(baseDatabaseUrl, schema);
+function runCapture(command, args, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: apiServerRoot,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      resolve({ code: code ?? 1, signal, stdout, stderr });
+    });
+  });
+}
+
+function runSchemaClone(sourceUrl, targetUrl, schema, env) {
+  return new Promise((resolve, reject) => {
+    const dump = spawn(
+      "pg_dump",
+      ["--schema-only", "--no-owner", "--no-privileges", "--schema=public", sourceUrl],
+      { cwd: apiServerRoot, env, stdio: ["ignore", "pipe", "inherit"] },
+    );
+    const restore = spawn(
+      "psql",
+      [targetUrl, "--quiet", "--no-psqlrc", "--set", "ON_ERROR_STOP=1"],
+      { cwd: apiServerRoot, env, stdio: ["pipe", "inherit", "inherit"] },
+    );
+
+    dump.stdout.on("data", (chunk) => {
+      const rewritten = chunk
+        .toString()
+        .replaceAll("CREATE SCHEMA public;", `CREATE SCHEMA IF NOT EXISTS "${schema}";`)
+        .replaceAll("public.", `"${schema}".`);
+      restore.stdin.write(rewritten);
+    });
+    dump.stdout.on("end", () => restore.stdin.end());
+
+    let settled = false;
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      resolve(code);
+    };
+    dump.once("error", reject);
+    restore.once("error", reject);
+    dump.once("exit", (code) => {
+      if ((code ?? 1) !== 0) restore.stdin.destroy();
+    });
+    restore.once("exit", (code, signal) => finish(signal ? 1 : code ?? 1));
+  });
+}
+
+const useDedicatedTestDatabase = Boolean(dedicatedTestDatabaseUrl);
+const baseDatabaseUrl = dedicatedTestDatabaseUrl ?? developmentDatabaseUrl;
+const schema = useDedicatedTestDatabase ? null : `test_${process.pid}_${Date.now()}`.slice(0, 55);
+const quotedSchema = schema ? quoteIdentifier(schema) : null;
+const isolatedUrl = schema ? isolatedDatabaseUrl(baseDatabaseUrl, schema) : baseDatabaseUrl;
 const childEnv = {
   ...process.env,
   DATABASE_URL: isolatedUrl,
   NODE_ENV: "test",
-  TEST_ISOLATION_SCHEMA: schema,
 };
 const testFiles = process.argv.slice(2).length
   ? process.argv.slice(2)
@@ -67,28 +134,61 @@ let exitCode = 1;
 let schemaCreated = false;
 
 try {
-  exitCode = await run(
+  if (useDedicatedTestDatabase) {
+    childEnv.TEST_ISOLATION_SCHEMA = "public";
+    childEnv.TEST_ISOLATION_DATABASE = "dedicated";
+    exitCode = await run(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "push"],
+      { ...process.env, DATABASE_URL: isolatedUrl, CI: "true" },
+    );
+    if (exitCode !== 0) throw new Error("Could not provision TEST_DATABASE_URL.");
+  } else {
+    childEnv.TEST_ISOLATION_SCHEMA = schema;
+    childEnv.TEST_ISOLATION_DATABASE = "per-run-schema";
+    exitCode = await run(
+      "psql",
+      [
+        baseDatabaseUrl,
+        "--quiet",
+        "--no-psqlrc",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--command",
+        `CREATE SCHEMA ${quotedSchema}`,
+      ],
+      process.env,
+    );
+    if (exitCode !== 0) {
+      throw new Error(
+        "Could not create a per-run test schema. Set TEST_DATABASE_URL to a dedicated database and rerun; refusing the shared development database.",
+      );
+    }
+    schemaCreated = true;
+
+    exitCode = await runSchemaClone(baseDatabaseUrl, isolatedUrl, schema, process.env);
+    if (exitCode !== 0) throw new Error("Could not provision the isolated test schema.");
+  }
+
+  const schemaCheck = await runCapture(
     "psql",
     [
-      baseDatabaseUrl,
-      "--quiet",
+      isolatedUrl,
+      "--tuples-only",
+      "--no-align",
       "--no-psqlrc",
       "--set",
       "ON_ERROR_STOP=1",
       "--command",
-      `CREATE SCHEMA ${quotedSchema}`,
+      `SELECT CASE WHEN current_schema() = '${schema ?? "public"}' AND to_regclass('${schema ?? "public"}.drugs') IS NOT NULL AND to_regclass('${schema ?? "public"}.ingestion_runs') IS NOT NULL THEN 'ok' ELSE 'not_ok' END`,
     ],
     process.env,
   );
-  if (exitCode !== 0) throw new Error("Could not create the isolated test schema.");
-  schemaCreated = true;
-
-  exitCode = await run(
-    "pnpm",
-    ["--filter", "@workspace/db", "run", "push"],
-    { ...process.env, DATABASE_URL: isolatedUrl, CI: "true" },
-  );
-  if (exitCode !== 0) throw new Error("Could not provision the isolated test schema.");
+  if (schemaCheck.code !== 0 || schemaCheck.stdout.trim() !== "ok") {
+    throw new Error(
+      `Isolated database verification failed; refusing to run tests outside ${schema ?? "the dedicated test database"}.`,
+    );
+  }
 
   exitCode = await run(
     "../../scripts/node_modules/.bin/tsx",
