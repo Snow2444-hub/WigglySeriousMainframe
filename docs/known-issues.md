@@ -47,3 +47,22 @@ The published-FNB importer stores `scheduleCode: 0` as a sentinel for “no
 schedule code.” The UI now translates that value to “FNB register,” but the
 proper fix is to make the schedule code nullable rather than using `0`.
 This remains deferred with no production-path change for now.
+
+### ARTG import candidate set ignores watchlist enabled state
+
+The ARTG importer currently loads all 76 rows from `drugsTable` as candidate
+drugs in `artifacts/api-server/src/routes/admin.ts:458-465`, rather than
+restricting candidates to enabled `pbs_watchlist` rows. This is currently
+harmless because all enabled watchlist drugs are present in the catalogue, but
+disabling a watchlist entry does not stop its ARTG rows being imported because
+the importer never checks `enabled`. Changing this would be a stricter
+behaviour change and remains deferred.
+
+### ARTG combination with only a blank parent row
+
+A combination product would be missed if its watched ingredient appeared only
+on a blank parent/composite row and no parseable component row exposed that
+ingredient in `Active Ingredients`. This edge case is not present in the
+current data: AREXVY, the teduglutide packs, and ZetaVast Duo all expose
+usable component rows. Keep this deferred until a real example requires a
+targeted fix; do not split or rewrite the current matcher speculatively.
