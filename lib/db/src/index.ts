@@ -10,6 +10,12 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+if (process.env.NODE_ENV === "test" && !process.env.TEST_ISOLATION_SCHEMA) {
+  throw new Error(
+    "Tests must run through the isolated test runner; TEST_ISOLATION_SCHEMA is missing.",
+  );
+}
+
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
 

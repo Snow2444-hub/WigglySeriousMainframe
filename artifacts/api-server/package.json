@@ -9,7 +9,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "backfill-staged-premiums": "pnpm run build && node --enable-source-maps ./dist/backfill-staged-premiums.mjs",
     "scheduled-ingestion": "pnpm run build && node --enable-source-maps ./dist/scheduled-ingestion.mjs",
-    "test": "NODE_ENV=test ../../scripts/node_modules/.bin/tsx --test --test-concurrency=1 src/routes/*.test.ts src/lib/*.test.ts",
+    "test": "node ./scripts/run-isolated-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
