@@ -116,7 +116,24 @@ function runSchemaClone(sourceUrl, targetUrl, schema, env) {
   });
 }
 
-async function configureIsolatedSchemaRole(databaseUrl, quotedSchema) {
+function sqlStringLiteral(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
+  const testAuthorityScope = `test:${schema}`;
+  const testAuthorityScopeLiteral = sqlStringLiteral(testAuthorityScope);
+  const authorityScopePredicate =
+    `(authority_scope IS NULL OR authority_scope = 'production' OR authority_scope = ${testAuthorityScopeLiteral})`;
+  const authorityRunPredicate = `(authority_run_id IS NULL OR EXISTS (
+    SELECT 1
+    FROM ${quotedSchema}.ingestion_runs authority_run
+    WHERE authority_run.id = authority_run_id
+      AND (authority_run.authority_scope IS NULL
+        OR authority_run.authority_scope = 'production'
+        OR authority_run.authority_scope = ${testAuthorityScopeLiteral})
+  ))`;
+
   return run(
     "psql",
     [
@@ -135,6 +152,26 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema) {
         `GRANT USAGE ON SCHEMA ${quotedSchema} TO pbs_app`,
         `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quotedSchema} TO pbs_app`,
         `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${quotedSchema} TO pbs_app`,
+        `DROP POLICY IF EXISTS ingestion_runs_authority_policy ON ${quotedSchema}.ingestion_runs`,
+        `CREATE POLICY ingestion_runs_authority_policy ON ${quotedSchema}.ingestion_runs
+          USING (${authorityScopePredicate})
+          WITH CHECK (${authorityScopePredicate})`,
+        `DROP POLICY IF EXISTS drugs_authority_policy ON ${quotedSchema}.drugs`,
+        `CREATE POLICY drugs_authority_policy ON ${quotedSchema}.drugs
+          USING (${authorityScopePredicate})
+          WITH CHECK (${authorityScopePredicate})`,
+        `DROP POLICY IF EXISTS pbs_items_authority_policy ON ${quotedSchema}.pbs_items`,
+        `CREATE POLICY pbs_items_authority_policy ON ${quotedSchema}.pbs_items
+          USING (${authorityScopePredicate})
+          WITH CHECK (${authorityScopePredicate})`,
+        `DROP POLICY IF EXISTS predicted_reductions_authority_policy ON ${quotedSchema}.predicted_reductions`,
+        `CREATE POLICY predicted_reductions_authority_policy ON ${quotedSchema}.predicted_reductions
+          USING (${authorityRunPredicate})
+          WITH CHECK (${authorityRunPredicate})`,
+        `DROP POLICY IF EXISTS schedule_changes_authority_policy ON ${quotedSchema}.schedule_changes`,
+        `CREATE POLICY schedule_changes_authority_policy ON ${quotedSchema}.schedule_changes
+          USING (${authorityRunPredicate})
+          WITH CHECK (${authorityRunPredicate})`,
       ].join("; "),
     ],
     process.env,
@@ -174,6 +211,8 @@ try {
       { ...process.env, DATABASE_URL: isolatedUrl },
     );
     if (exitCode !== 0) throw new Error("Could not apply authority RLS to TEST_DATABASE_URL.");
+    exitCode = await configureIsolatedSchemaRole(baseDatabaseUrl, quoteIdentifier("public"), "public");
+    if (exitCode !== 0) throw new Error("Could not configure the isolated test application role.");
   } else {
     childEnv.TEST_ISOLATION_SCHEMA = schema;
     childEnv.TEST_ISOLATION_DATABASE = "per-run-schema";
@@ -199,7 +238,7 @@ try {
 
     exitCode = await runSchemaClone(baseDatabaseUrl, isolatedUrl, schema, process.env);
     if (exitCode !== 0) throw new Error("Could not provision the isolated test schema.");
-    exitCode = await configureIsolatedSchemaRole(baseDatabaseUrl, quotedSchema);
+    exitCode = await configureIsolatedSchemaRole(baseDatabaseUrl, quotedSchema, schema);
     if (exitCode !== 0) throw new Error("Could not configure the isolated test application role.");
   }
 
