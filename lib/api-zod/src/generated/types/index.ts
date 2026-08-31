@@ -9,7 +9,6 @@
 export * from './adminIngestionInput';
 export * from './adminIngestionInputMode';
 export * from './adminIngestionRun';
-export * from './adminIngestionRunMode';
 export * from './adminIngestionRunStatus';
 export * from './adminPbsSourceStatus';
 export * from './adminPbsSourceStatusCadenceType';

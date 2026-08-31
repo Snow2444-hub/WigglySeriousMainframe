@@ -864,14 +864,6 @@ export const AdminIngestionRunStatus = {
   cancelled: 'cancelled',
 } as const;
 
-export type AdminIngestionRunMode = typeof AdminIngestionRunMode[keyof typeof AdminIngestionRunMode];
-
-
-export const AdminIngestionRunMode = {
-  current: 'current',
-  backfill: 'backfill',
-} as const;
-
 export interface AdminIngestionRun {
   id: number;
   startedAt: string;
@@ -885,7 +877,8 @@ export interface AdminIngestionRun {
   requestUrls: string[];
   /** @nullable */
   errorMessage: string | null;
-  mode: AdminIngestionRunMode;
+  /** Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes. */
+  mode: string;
   /** @nullable */
   totalSchedules: number | null;
   schedulesProcessed: number;

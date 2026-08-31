@@ -1038,7 +1038,7 @@ export const ListAdminIngestionRunsResponseItem = zod.object({
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']),
+  "mode": zod.string().describe('Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes.'),
   "totalSchedules": zod.int().nullable(),
   "schedulesProcessed": zod.int()
 })
@@ -1068,7 +1068,7 @@ export const TriggerAdminIngestionResponse = zod.object({
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']),
+  "mode": zod.string().describe('Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes.'),
   "totalSchedules": zod.int().nullable(),
   "schedulesProcessed": zod.int()
 })
@@ -1088,7 +1088,7 @@ export const GetCurrentAdminIngestionRunResponse = zod.object({
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']),
+  "mode": zod.string().describe('Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes.'),
   "totalSchedules": zod.int().nullable(),
   "schedulesProcessed": zod.int()
 }),zod.null()])
@@ -1112,7 +1112,7 @@ export const CancelAdminIngestionRunResponse = zod.object({
   "pagesFetched": zod.int(),
   "requestUrls": zod.array(zod.string()),
   "errorMessage": zod.string().nullable(),
-  "mode": zod.enum(['current', 'backfill']),
+  "mode": zod.string().describe('Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes.'),
   "totalSchedules": zod.int().nullable(),
   "schedulesProcessed": zod.int()
 })

@@ -5,7 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import type { AdminIngestionRunMode } from './adminIngestionRunMode';
 import type { AdminIngestionRunStatus } from './adminIngestionRunStatus';
 
 export interface AdminIngestionRun {
@@ -21,7 +20,8 @@ export interface AdminIngestionRun {
   requestUrls: string[];
   /** @nullable */
   errorMessage: string | null;
-  mode: AdminIngestionRunMode;
+  /** Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes. */
+  mode: string;
   /** @nullable */
   totalSchedules: number | null;
   schedulesProcessed: number;
