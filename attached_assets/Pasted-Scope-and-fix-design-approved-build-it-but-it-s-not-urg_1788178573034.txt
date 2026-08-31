@@ -1,0 +1,35 @@
+Scope and fix design approved — build it, but it's not urgent (current harm is ~2
+stale predictions + directory display; 0 stock, 0 confirmed-bad shortage matches),
+so do it carefully rather than fast. Structural fix is right: catalogue_status
+field + one shared active-items condition for all current-catalogue readers.
+
+Three guards the build must get right:
+
+1. CANONICAL-SNAPSHOT-ONLY LIFECYCLE (ingestion point 4). Current status must be
+   driven ONLY by the latest complete current PBS snapshot — a historical
+   backfill of an older schedule must NOT reactivate a delisted item just because
+   it appeared then. This is the same canonical-snapshot discipline as the run-
+   selection/2092 work; use it. Confirm backfills can't resurrect delisted items.
+
+2. RELISTING FLIPS BOTH WAYS. None of the 68 relisted, so the reverse flow
+   (delisted -> reappears in a later complete snapshot -> active again) is
+   untested by current data. Implement it AND add a test: an item that's delisted
+   then reappears in a later complete current snapshot returns to active.
+
+3. REPAIR REPORTS BEFORE IT CHANGES. The repair reconciles the WHOLE catalogue
+   against the current snapshot (not just the 68), which is right for catching
+   others — but it's where a bad comparison could wrongly mark a real active item
+   delisted. Before applying: report exactly which rows it will mark delisted and
+   the count, and confirm it's the 68 plus only genuinely-absent items — the
+   active-item count must not drop by more than the truly-delisted set. Don't
+   over-mark and hide real current drugs. Export the to-be-marked rows first.
+
+Then: shared active-items condition routes through directory, /pbs-items, item
+detail, prediction generation, upcoming reductions, anniversary verification,
+shortage matching, ARTG PBS-listed flag. Schedule-change history KEEPS showing
+delisted items (historical evidence). Stock retains delisted records for audit
+but excludes them from "current PBS" calcs and displays them as delisted.
+Regenerate predictions for affected drugs after the repair. Full suite +
+boundary check green.
+
+Report the repair's to-be-changed rows BEFORE applying, then the diff.
