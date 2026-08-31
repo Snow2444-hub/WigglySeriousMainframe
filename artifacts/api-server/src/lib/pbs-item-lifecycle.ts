@@ -1,10 +1,12 @@
-import { and, asc, desc, eq, inArray, isNotNull, notInArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray } from "drizzle-orm";
 import {
   db,
   ingestionRunsTable,
   pbsItemsTable,
   PRODUCTION_AUTHORITY_SCOPE,
+  productionAuthorityRun,
   rawScheduleStagingTable,
+  scheduleChangesTable,
   runtimeAuthorityScope,
   type PbsItem,
 } from "@workspace/db";
@@ -53,6 +55,8 @@ export async function reconcilePbsItemCatalogueStatus(input: {
       itemCode: pbsItemsTable.itemCode,
       drugId: pbsItemsTable.drugId,
       catalogueStatus: pbsItemsTable.catalogueStatus,
+      delistedAt: pbsItemsTable.delistedAt,
+      delistedScheduleCode: pbsItemsTable.delistedScheduleCode,
     })
     .from(pbsItemsTable)
     .where(eq(pbsItemsTable.authorityScope, authorityScope));
@@ -67,7 +71,11 @@ export async function reconcilePbsItemCatalogueStatus(input: {
   if (delisted.length > 0) {
     await db
       .update(pbsItemsTable)
-      .set({ catalogueStatus: DELISTED_PBS_ITEM_STATUS })
+      .set({
+        catalogueStatus: DELISTED_PBS_ITEM_STATUS,
+        delistedAt: input.effectiveDate,
+        delistedScheduleCode: input.scheduleCode,
+      })
       .where(and(
         eq(pbsItemsTable.authorityScope, authorityScope),
         eq(pbsItemsTable.catalogueStatus, ACTIVE_PBS_ITEM_STATUS),
@@ -77,7 +85,11 @@ export async function reconcilePbsItemCatalogueStatus(input: {
   if (reactivated.length > 0) {
     await db
       .update(pbsItemsTable)
-      .set({ catalogueStatus: ACTIVE_PBS_ITEM_STATUS })
+      .set({
+        catalogueStatus: ACTIVE_PBS_ITEM_STATUS,
+        delistedAt: null,
+        delistedScheduleCode: null,
+      })
       .where(and(
         eq(pbsItemsTable.authorityScope, authorityScope),
         eq(pbsItemsTable.catalogueStatus, DELISTED_PBS_ITEM_STATUS),
@@ -203,6 +215,120 @@ export type PbsCatalogueRepairReport = {
   proposedChangeCount: number;
   rows: PbsCatalogueRepairReportRow[];
 };
+
+export type PbsDelistingDateBackfillRow = {
+  itemCode: string;
+  liItemId: string | null;
+  pbsCode: string | null;
+  brandName: string;
+  currentDelistedAt: string | null;
+  currentDelistedScheduleCode: number | null;
+  proposedDelistedAt: string | null;
+  proposedDelistedScheduleCode: number | null;
+  scheduleChangeId: number | null;
+};
+
+export type PbsDelistingDateBackfillReport = {
+  generatedAt: string;
+  delistedItemCount: number;
+  matchedItemCount: number;
+  unmatchedItemCount: number;
+  rows: PbsDelistingDateBackfillRow[];
+};
+
+export async function buildPbsDelistingDateBackfillReport(): Promise<PbsDelistingDateBackfillReport> {
+  const [items, changes] = await Promise.all([
+    db
+      .select({
+        itemCode: pbsItemsTable.itemCode,
+        liItemId: pbsItemsTable.liItemId,
+        pbsCode: pbsItemsTable.pbsCode,
+        brandName: pbsItemsTable.brandName,
+        delistedAt: pbsItemsTable.delistedAt,
+        delistedScheduleCode: pbsItemsTable.delistedScheduleCode,
+      })
+      .from(pbsItemsTable)
+      .where(and(
+        eq(pbsItemsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE),
+        eq(pbsItemsTable.catalogueStatus, DELISTED_PBS_ITEM_STATUS),
+      ))
+      .orderBy(asc(pbsItemsTable.itemCode)),
+    db
+      .select({
+        id: scheduleChangesTable.id,
+        liItemId: scheduleChangesTable.liItemId,
+        pbsCode: scheduleChangesTable.pbsCode,
+        effectiveDate: scheduleChangesTable.effectiveDate,
+        scheduleCode: scheduleChangesTable.scheduleCode,
+      })
+      .from(scheduleChangesTable)
+      .where(and(
+        eq(scheduleChangesTable.changeType, "delisted"),
+        productionAuthorityRun(scheduleChangesTable.authorityRunId),
+      ))
+      .orderBy(desc(scheduleChangesTable.effectiveDate), desc(scheduleChangesTable.id)),
+  ]);
+
+  const rows = items.map((item) => {
+    const exactIdentifiers = new Set([item.itemCode, item.liItemId].filter((value): value is string => Boolean(value)));
+    const exactMatches = changes.filter((change) => change.liItemId !== null && exactIdentifiers.has(change.liItemId));
+    const pbsMatches = changes.filter((change) =>
+      exactMatches.length === 0
+      && item.pbsCode !== null
+      && change.pbsCode === item.pbsCode,
+    );
+    const event = [...exactMatches, ...pbsMatches]
+      .sort((left, right) => right.effectiveDate.localeCompare(left.effectiveDate) || right.id - left.id)[0];
+    return {
+      itemCode: item.itemCode,
+      liItemId: item.liItemId,
+      pbsCode: item.pbsCode,
+      brandName: item.brandName,
+      currentDelistedAt: item.delistedAt,
+      currentDelistedScheduleCode: item.delistedScheduleCode,
+      proposedDelistedAt: event?.effectiveDate ?? null,
+      proposedDelistedScheduleCode: event?.scheduleCode ?? null,
+      scheduleChangeId: event?.id ?? null,
+    };
+  });
+  const matchedItemCount = rows.filter((row) => row.proposedDelistedAt !== null && row.proposedDelistedScheduleCode !== null).length;
+  return {
+    generatedAt: new Date().toISOString(),
+    delistedItemCount: rows.length,
+    matchedItemCount,
+    unmatchedItemCount: rows.length - matchedItemCount,
+    rows,
+  };
+}
+
+export async function applyPbsDelistingDateBackfill(
+  report: PbsDelistingDateBackfillReport,
+): Promise<number> {
+  if (report.unmatchedItemCount > 0 || report.rows.some((row) =>
+    row.proposedDelistedAt === null || row.proposedDelistedScheduleCode === null
+  )) {
+    throw new Error("Cannot apply PBS delisting date backfill while any delisted item lacks a matching schedule-change event.");
+  }
+  let updatedCount = 0;
+  await db.transaction(async (tx) => {
+    for (const row of report.rows) {
+      const [updated] = await tx
+        .update(pbsItemsTable)
+        .set({
+          delistedAt: row.proposedDelistedAt,
+          delistedScheduleCode: row.proposedDelistedScheduleCode,
+        })
+        .where(and(
+          eq(pbsItemsTable.itemCode, row.itemCode),
+          eq(pbsItemsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE),
+          eq(pbsItemsTable.catalogueStatus, DELISTED_PBS_ITEM_STATUS),
+        ))
+        .returning({ itemCode: pbsItemsTable.itemCode });
+      if (updated) updatedCount += 1;
+    }
+  });
+  return updatedCount;
+}
 
 export async function buildPbsCatalogueRepairReport(
   snapshot: CanonicalCurrentPbsSnapshot,

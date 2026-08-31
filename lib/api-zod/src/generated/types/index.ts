@@ -44,6 +44,7 @@ export * from './listArtgEntriesParams';
 export * from './listArtgEntriesPbs';
 export * from './listDrugsParams';
 export * from './listMedicineDirectoryParams';
+export * from './listPbsItemsCatalogueStatus';
 export * from './listPbsItemsFormulary';
 export * from './listPbsItemsParams';
 export * from './listScheduleChangesChangeType';

@@ -368,6 +368,13 @@ paths:
           schema:
             type: string
             enum: [F1, F2]
+        - name: catalogueStatus
+          in: query
+          schema:
+            type: string
+            enum: [active, delisted]
+            default: active
+          description: Catalogue lifecycle view. Defaults to active PBS items.
         - name: limit
           in: query
           schema:
@@ -1506,6 +1513,13 @@ components:
         catalogueStatus:
           type: string
           enum: [active, delisted]
+        delistedAt:
+          type: ["string", "null"]
+          format: date
+        delistedScheduleCode:
+          type: ["integer", "null"]
+        followed:
+          type: boolean
         currentAemp:
           type: number
         currentDpmq:
@@ -1538,7 +1552,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, originatorBrandName, activeIngredient, sponsor, formulary, catalogueStatus, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, originatorBrandName, activeIngredient, sponsor, formulary, catalogueStatus, delistedAt, delistedScheduleCode, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     MedicineBrandItemSummary:
       allOf:
         - $ref: "#/components/schemas/PbsItem"

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ListPbsItemsCatalogueStatus } from './listPbsItemsCatalogueStatus';
 import type { ListPbsItemsFormulary } from './listPbsItemsFormulary';
 
 export type ListPbsItemsParams = {
@@ -13,6 +14,10 @@ export type ListPbsItemsParams = {
  */
 search?: string;
 formulary?: ListPbsItemsFormulary;
+/**
+ * Catalogue lifecycle view. Defaults to active PBS items.
+ */
+catalogueStatus?: ListPbsItemsCatalogueStatus;
 /**
  * @minimum 1
  * @maximum 100

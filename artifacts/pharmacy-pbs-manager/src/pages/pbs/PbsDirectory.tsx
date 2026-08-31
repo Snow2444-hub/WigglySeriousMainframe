@@ -3,6 +3,7 @@ import {
   useListMedicineDirectory, getListMedicineDirectoryQueryKey,
   useListMedicineBrands, getListMedicineBrandsQueryKey,
   useListMedicineBrandItems, getListMedicineBrandItemsQueryKey,
+  useListPbsItems, getListPbsItemsQueryKey,
   type MedicineDrugSummary, type MedicineBrandSummary, type MedicineBrandItemSummary
 } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
@@ -63,6 +64,7 @@ type Tier =
   | { level: 'drugs' }
   | { level: 'brands', drug: MedicineDrugSummary }
   | { level: 'items', drugId: number, drugName: string, originatorBrandName: string | null, brand: MedicineBrandSummary | { brandName: string } };
+type DirectoryMode = 'active' | 'delisted';
 
 function tierFromParams(params: URLSearchParams): Tier {
   const drugId = Number(params.get('drugId'));
@@ -81,9 +83,10 @@ function tierFromParams(params: URLSearchParams): Tier {
   return { level: 'drugs' };
 }
 
-function directoryHref(tier: Tier, search: string, expandedStrengths: string[]): string {
+function directoryHref(tier: Tier, search: string, expandedStrengths: string[], mode: DirectoryMode = 'active'): string {
   const params = new URLSearchParams();
   if (search) params.set('search', search);
+  if (mode === 'delisted') params.set('catalogueStatus', mode);
   if (tier.level !== 'drugs') {
     params.set('drugId', String(tier.level === 'brands' ? tier.drug.drugId : tier.drugId));
     params.set('drugName', tier.level === 'brands' ? tier.drug.drugName : tier.drugName);
@@ -105,6 +108,9 @@ export function PbsDirectory() {
   const initialTier = useMemo(() => tierFromParams(initialParams), [initialParams]);
   const [search, setSearch] = useState(() => initialParams.get('search') ?? '');
   const [tier, setTier] = useState<Tier>(() => initialTier);
+  const [directoryMode, setDirectoryMode] = useState<DirectoryMode>(() =>
+    initialParams.get('catalogueStatus') === 'delisted' ? 'delisted' : 'active',
+  );
   const [expandedStrengths, setExpandedStrengths] = useState<string[]>(() => {
     const strength = initialParams.get('strength');
     return strength && initialTier.level === 'items'
@@ -114,7 +120,14 @@ export function PbsDirectory() {
 
   const drugParams = useMemo(() => ({ search: search || undefined }), [search]);
   const drugsQuery = useListMedicineDirectory(drugParams, {
-    query: { enabled: tier.level === 'drugs', queryKey: getListMedicineDirectoryQueryKey(drugParams) }
+    query: { enabled: tier.level === 'drugs' && directoryMode === 'active', queryKey: getListMedicineDirectoryQueryKey(drugParams) }
+  });
+  const delistedParams = useMemo(
+    () => ({ search: search || undefined, catalogueStatus: 'delisted' as const, limit: 100 }),
+    [search],
+  );
+  const delistedQuery = useListPbsItems(delistedParams, {
+    query: { enabled: tier.level === 'drugs' && directoryMode === 'delisted', queryKey: getListPbsItemsQueryKey(delistedParams) },
   });
 
   const activeDrugId = tier.level === 'brands' ? tier.drug.drugId : tier.level === 'items' ? tier.drugId : 0;
@@ -132,7 +145,15 @@ export function PbsDirectory() {
     const nextTier: Tier = { level: 'drugs' };
     if (tier.level !== 'drugs') setTier(nextTier);
     setExpandedStrengths([]);
-    setLocation(directoryHref(nextTier, val, []), { replace: true });
+    setLocation(directoryHref(nextTier, val, [], directoryMode), { replace: true });
+  };
+
+  const switchDirectoryMode = (mode: DirectoryMode) => {
+    const nextTier: Tier = { level: 'drugs' };
+    setDirectoryMode(mode);
+    setTier(nextTier);
+    setExpandedStrengths([]);
+    setLocation(directoryHref(nextTier, search, [], mode), { replace: true });
   };
 
   const clickDrug = (drug: MedicineDrugSummary) => {
@@ -171,7 +192,7 @@ export function PbsDirectory() {
         </div>
       )}
       
-      <div className={`flex flex-col rounded-2xl border border-border bg-card shadow-sm sm:flex-row ${tier.level === 'drugs' ? 'mb-6 gap-3 p-3' : 'mb-3 p-1.5'}`}>
+       <div className={`flex flex-col rounded-2xl border border-border bg-card shadow-sm sm:flex-row ${tier.level === 'drugs' ? 'mb-6 gap-3 p-3' : 'mb-3 p-1.5'}`}>
         <label className={`flex flex-1 items-center rounded-xl bg-muted/50 px-4 text-muted-foreground transition-all focus-within:bg-background focus-within:ring-2 focus-within:ring-primary/20 ${tier.level === 'drugs' ? 'min-h-12 gap-3' : 'min-h-9 gap-2'}`}>
           <Search className={tier.level === 'drugs' ? 'h-5 w-5 shrink-0' : 'h-4 w-4 shrink-0'} />
           <input 
@@ -182,6 +203,26 @@ export function PbsDirectory() {
             data-testid="input-pbs-search" 
           />
         </label>
+         {tier.level === 'drugs' && (
+           <div className="flex shrink-0 items-center gap-1 rounded-xl bg-muted/50 p-1">
+             <button
+               type="button"
+               onClick={() => switchDirectoryMode('active')}
+               aria-pressed={directoryMode === 'active'}
+               className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${directoryMode === 'active' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+             >
+               Active
+             </button>
+             <button
+               type="button"
+               onClick={() => switchDirectoryMode('delisted')}
+               aria-pressed={directoryMode === 'delisted'}
+               className={`rounded-lg px-3 py-2 text-xs font-bold transition-colors ${directoryMode === 'delisted' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+             >
+               Delisted
+             </button>
+           </div>
+         )}
       </div>
 
       {tier.level !== 'drugs' && (
@@ -221,7 +262,80 @@ export function PbsDirectory() {
       )}
 
        <div className={`overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${tier.level === 'drugs' ? 'min-h-[400px]' : ''}`}>
-        {tier.level === 'drugs' && (
+         {tier.level === 'drugs' && directoryMode === 'delisted' && (
+           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-6 py-4">
+               <div>
+                 <div className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">Historical PBS listings</div>
+                 <div className="mt-1 text-sm font-medium text-muted-foreground">Delisted medicines remain available for reference and stock history.</div>
+               </div>
+               <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                 {delistedQuery.data?.length || 0} results
+               </span>
+             </div>
+             {delistedQuery.isLoading ? <div className="p-6"><QueryState kind="loading" /></div> :
+              delistedQuery.isError ? <div className="p-6"><QueryState kind="error" onRetry={() => delistedQuery.refetch()} /></div> :
+              !delistedQuery.data?.length ? <div className="p-6"><QueryState kind="empty" /></div> : (
+                (() => {
+                  const followed = delistedQuery.data.filter((item) => item.followed);
+                  const other = delistedQuery.data.filter((item) => !item.followed);
+                  const renderRows = (rows: typeof delistedQuery.data) => (
+                    <div className="divide-y divide-border/70">
+                      {rows.map((item) => (
+                        <Link
+                          key={item.itemCode}
+                          href={`/pbs/${encodeURIComponent(item.itemCode)}`}
+                          className="grid gap-2 px-6 py-4 transition-colors hover:bg-secondary/20 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <span className="text-base font-bold tracking-tight text-foreground">{drugDisplayName(item.drugName, item.originatorBrandName)}</span>
+                              <span className="text-sm font-medium text-muted-foreground">· {item.brandName}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/75">
+                              <span>PBS {item.pbsCode || 'not supplied'}</span>
+                              <span>{item.strength || 'Strength not supplied'}</span>
+                              <span>{item.packSize ? `Pack of ${item.packSize}` : 'Pack not supplied'}</span>
+                            </div>
+                          </div>
+                          <div className="text-left md:text-right">
+                            <div className="font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/70">Delisted</div>
+                            <div className="mt-0.5 text-sm font-semibold text-foreground">
+                              {item.delistedAt ? shortDate(item.delistedAt) : 'Date not recorded'}
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                  return (
+                    <>
+                      {followed.length > 0 && (
+                        <section aria-label="Followed delisted medicines">
+                          <div className="flex items-center justify-between border-b border-border/70 bg-info/5 px-6 py-2">
+                            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-info">Followed medicines</span>
+                            <span className="font-mono text-[10px] font-bold text-muted-foreground">{followed.length}</span>
+                          </div>
+                          {renderRows(followed)}
+                        </section>
+                      )}
+                      <section aria-label="Other delisted medicines">
+                        <div className="flex items-center justify-between border-b border-border/70 bg-muted/20 px-6 py-2">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
+                            {followed.length > 0 ? 'All other delisted medicines' : 'Delisted medicines'}
+                          </span>
+                          <span className="font-mono text-[10px] font-bold text-muted-foreground">{other.length}</span>
+                        </div>
+                        {other.length > 0 ? renderRows(other) : <div className="px-6 py-4 text-sm text-muted-foreground">All delisted listings match your followed medicines.</div>}
+                      </section>
+                    </>
+                  );
+                })()
+              )}
+           </div>
+         )}
+
+         {tier.level === 'drugs' && directoryMode === 'active' && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="flex justify-between border-b border-border bg-muted/30 px-6 py-4 font-mono text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground">
               <span>Medicines & Matches</span>

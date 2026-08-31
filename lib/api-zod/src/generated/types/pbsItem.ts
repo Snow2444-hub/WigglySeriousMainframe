@@ -44,6 +44,11 @@ export interface PbsItem {
   sponsor: string;
   formulary: PbsItemFormulary;
   catalogueStatus: PbsItemCatalogueStatus;
+  /** @nullable */
+  delistedAt: Date | null;
+  /** @nullable */
+  delistedScheduleCode: number | null;
+  followed?: boolean;
   currentAemp: number;
   /** @nullable */
   currentDpmq: number | null;

@@ -414,6 +414,9 @@ export const ListMedicineBrandItemsResponseItem = zod.object({
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
   "catalogueStatus": zod.enum(['active', 'delisted']),
+  "delistedAt": zod.coerce.date().nullable(),
+  "delistedScheduleCode": zod.int().nullable(),
+  "followed": zod.boolean().optional(),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
@@ -561,6 +564,7 @@ export const ListAnniversaryVerificationResponse = zod.object({
 /**
  * @summary List PBS items
  */
+export const listPbsItemsQueryCatalogueStatusDefault = `active`;
 export const listPbsItemsQueryLimitDefault = 50;
 export const listPbsItemsQueryLimitMax = 100;
 
@@ -569,6 +573,7 @@ export const listPbsItemsQueryLimitMax = 100;
 export const ListPbsItemsQueryParams = zod.object({
   "search": zod.coerce.string().optional().describe('Tokenised search across item code, PBS code, brand name, drug name, active ingredient, and normalised strength'),
   "formulary": zod.enum(['F1', 'F2']).optional(),
+  "catalogueStatus": zod.enum(['active', 'delisted']).default(listPbsItemsQueryCatalogueStatusDefault).describe('Catalogue lifecycle view. Defaults to active PBS items.'),
   "limit": zod.coerce.number().int().min(1).max(listPbsItemsQueryLimitMax).default(listPbsItemsQueryLimitDefault)
 })
 
@@ -593,6 +598,9 @@ export const ListPbsItemsResponseItem = zod.object({
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
   "catalogueStatus": zod.enum(['active', 'delisted']),
+  "delistedAt": zod.coerce.date().nullable(),
+  "delistedScheduleCode": zod.int().nullable(),
+  "followed": zod.boolean().optional(),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
@@ -639,6 +647,9 @@ export const GetPbsItemResponse = zod.object({
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
   "catalogueStatus": zod.enum(['active', 'delisted']),
+  "delistedAt": zod.coerce.date().nullable(),
+  "delistedScheduleCode": zod.int().nullable(),
+  "followed": zod.boolean().optional(),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),

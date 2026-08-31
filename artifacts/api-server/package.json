@@ -12,6 +12,7 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "backfill-staged-premiums": "pnpm run build && node --enable-source-maps ./dist/backfill-staged-premiums.mjs",
     "repair-pbs-catalogue-status": "pnpm run build && node --enable-source-maps ./dist/repair-pbs-catalogue-status.mjs",
+    "repair-pbs-delisting-dates": "pnpm run build && node --enable-source-maps ./dist/repair-pbs-delisting-dates.mjs",
     "scheduled-ingestion": "pnpm run build && node --enable-source-maps ./dist/scheduled-ingestion.mjs",
     "test": "node ./scripts/run-isolated-tests.mjs",
     "typecheck": "pnpm run check:authority-boundary && tsc -p tsconfig.json --noEmit"

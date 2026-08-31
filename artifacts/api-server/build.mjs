@@ -19,6 +19,7 @@ async function buildAll() {
       index: path.resolve(artifactDir, "src/index.ts"),
       "backfill-staged-premiums": path.resolve(artifactDir, "src/scripts/backfill-staged-premiums.ts"),
       "repair-pbs-catalogue-status": path.resolve(artifactDir, "src/scripts/repair-pbs-catalogue-status.ts"),
+      "repair-pbs-delisting-dates": path.resolve(artifactDir, "src/scripts/repair-pbs-delisting-dates.ts"),
       "scheduled-ingestion": path.resolve(artifactDir, "src/scripts/scheduled-ingestion.ts"),
     },
     platform: "node",

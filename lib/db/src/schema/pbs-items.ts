@@ -26,6 +26,8 @@ export const pbsItemsTable = pgTable(
     programCode: text("program_code"),
     formulary: formularyEnum("formulary").notNull(),
     catalogueStatus: pbsItemCatalogueStatusEnum("catalogue_status").notNull().default("active"),
+    delistedAt: date("delisted_at", { mode: "string" }),
+    delistedScheduleCode: integer("delisted_schedule_code"),
     currentAemp: numeric("current_aemp", { precision: 10, scale: 2, mode: "number" }).notNull(),
     currentDpmq: numeric("current_dpmq", { precision: 10, scale: 2, mode: "number" }),
     lastUpdated: date("last_updated", { mode: "string" }).notNull(),
@@ -49,6 +51,7 @@ export const pbsItemsTable = pgTable(
   (table) => [
     index("pbs_items_authority_scope_idx").on(table.authorityScope),
     index("pbs_items_authority_catalogue_status_idx").on(table.authorityScope, table.catalogueStatus),
+    index("pbs_items_authority_delisted_at_idx").on(table.authorityScope, table.delistedAt),
     check(
       "pbs_items_authority_scope_check",
       sql`${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,

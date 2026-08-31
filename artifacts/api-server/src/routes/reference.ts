@@ -11,6 +11,7 @@ import {
   pbsItemsTable,
   pbsPublishedFileRowsTable,
   pbsPublishedFilesTable,
+  pbsWatchlistTable,
   predictedReductionsTable,
   priceHistoryTable,
   scheduleChangesTable,
@@ -65,6 +66,7 @@ import {
 import { isPublishedReportFresh } from "../lib/pbs-published-files";
 import { requireAuth } from "../middlewares/requireAuth";
 import { activePbsItemScope } from "../lib/pbs-item-lifecycle";
+import { ingredientContainsWholeWord } from "../lib/ingredient-normalisation";
 
 export function createReferenceRouter(
   database: typeof db = db,
@@ -147,10 +149,35 @@ const pbsSelect = {
   therapeuticGroupId: pbsItemsTable.therapeuticGroupId,
   innovatorIndicator: pbsItemsTable.innovatorIndicator,
   catalogueStatus: pbsItemsTable.catalogueStatus,
+  delistedAt: pbsItemsTable.delistedAt,
+  delistedScheduleCode: pbsItemsTable.delistedScheduleCode,
   drugName: drugsTable.name,
   activeIngredient: drugsTable.activeIngredient,
   sponsor: drugsTable.sponsor,
 };
+
+function pbsItemMatchesWatchlist(
+  row: { brandName: string; pbsCode: string | null; drugName: string; activeIngredient: string; formulary: string; programCode: string | null },
+  entry: { filterType: string; filterValue: string },
+): boolean {
+  const value = entry.filterValue.trim();
+  if (!value || entry.filterType === "atc_code") return false;
+  switch (entry.filterType) {
+    case "brand_name":
+      return row.brandName.toLocaleLowerCase() === value.toLocaleLowerCase();
+    case "drug_name":
+      return ingredientContainsWholeWord(row.activeIngredient, value)
+        || ingredientContainsWholeWord(row.drugName, value);
+    case "pbs_code":
+      return row.pbsCode?.toLocaleLowerCase() === value.toLocaleLowerCase();
+    case "formulary":
+      return row.formulary.toLocaleLowerCase() === value.toLocaleLowerCase();
+    case "program_code":
+      return row.programCode?.toLocaleLowerCase() === value.toLocaleLowerCase();
+    default:
+      return false;
+  }
+}
 
 async function enrichPbsItemRows<T extends { drugId: number }>(rows: T[]): Promise<Array<T & { originatorBrandName: string | null }>> {
   const drugIds = [...new Set(rows.map((row) => row.drugId))];
@@ -887,36 +914,54 @@ router.get("/pbs-items", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { search, formulary, limit = 50 } = parsed.data;
+  const { search, formulary, catalogueStatus = "active", limit = 50 } = parsed.data;
   const searchTokens = search
     ? [...new Set(search.toLocaleLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean))]
     : [];
   const normalizedStrength = sql<string>`regexp_replace(lower(coalesce(${pbsItemsTable.strength}, '')), '[^a-z0-9]+', '', 'g')`;
-  const rows = await db
-    .select(pbsSelect)
-    .from(pbsItemsTable)
-    .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(
-      and(
-         activePbsItemScope(),
-         productionMasterScope(pbsItemsTable.authorityScope),
-        productionMasterScope(drugsTable.authorityScope),
-        formulary ? eq(pbsItemsTable.formulary, formulary) : undefined,
-        ...searchTokens.map((token) =>
-          or(
-            ilike(pbsItemsTable.itemCode, `%${token}%`),
-            ilike(pbsItemsTable.pbsCode, `%${token}%`),
-            ilike(pbsItemsTable.brandName, `%${token}%`),
-            ilike(drugsTable.name, `%${token}%`),
-            ilike(drugsTable.activeIngredient, `%${token}%`),
-            ilike(normalizedStrength, `%${token}%`),
+  const [rows, watchlist] = await Promise.all([
+    db
+      .select(pbsSelect)
+      .from(pbsItemsTable)
+      .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
+      .where(
+        and(
+          eq(pbsItemsTable.catalogueStatus, catalogueStatus),
+          productionMasterScope(pbsItemsTable.authorityScope),
+          productionMasterScope(drugsTable.authorityScope),
+          formulary ? eq(pbsItemsTable.formulary, formulary) : undefined,
+          ...searchTokens.map((token) =>
+            or(
+              ilike(pbsItemsTable.itemCode, `%${token}%`),
+              ilike(pbsItemsTable.pbsCode, `%${token}%`),
+              ilike(pbsItemsTable.brandName, `%${token}%`),
+              ilike(drugsTable.name, `%${token}%`),
+              ilike(drugsTable.activeIngredient, `%${token}%`),
+              ilike(normalizedStrength, `%${token}%`),
+            ),
           ),
         ),
       ),
-    )
-    .orderBy(asc(pbsItemsTable.brandName))
-    .limit(limit);
-  res.json(ListPbsItemsResponse.parse(await enrichPbsItemRows(rows)));
+    catalogueStatus === "delisted"
+      ? db.select().from(pbsWatchlistTable).where(eq(pbsWatchlistTable.enabled, true))
+      : Promise.resolve([]),
+  ]);
+  const enrichedRows = await enrichPbsItemRows(rows);
+  if (catalogueStatus === "delisted") {
+    const ordered = enrichedRows.map((row) => ({
+      ...row,
+      followed: watchlist.some((entry) => pbsItemMatchesWatchlist(row, entry)),
+    })).sort((left, right) =>
+      Number(right.followed) - Number(left.followed)
+      || (right.delistedAt ?? "").localeCompare(left.delistedAt ?? "")
+      || (right.delistedScheduleCode ?? 0) - (left.delistedScheduleCode ?? 0)
+      || (left.pbsCode ?? left.itemCode).localeCompare(right.pbsCode ?? right.itemCode)
+      || left.itemCode.localeCompare(right.itemCode),
+    );
+    res.json(ListPbsItemsResponse.parse(ordered.slice(0, limit)));
+    return;
+  }
+  res.json(ListPbsItemsResponse.parse(enrichedRows.slice(0, limit)));
 });
 
 router.get("/pbs-items/:itemCode", async (req, res): Promise<void> => {
@@ -929,7 +974,11 @@ router.get("/pbs-items/:itemCode", async (req, res): Promise<void> => {
     .select(pbsSelect)
     .from(pbsItemsTable)
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-     .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)));
+     .where(and(
+       eq(pbsItemsTable.itemCode, parsed.data.itemCode),
+       productionMasterScope(pbsItemsTable.authorityScope),
+       productionMasterScope(drugsTable.authorityScope),
+     ));
   if (!row) {
     res.status(404).json({ error: "PBS item not found" });
     return;

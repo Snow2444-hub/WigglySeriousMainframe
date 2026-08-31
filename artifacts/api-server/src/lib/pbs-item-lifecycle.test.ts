@@ -114,7 +114,12 @@ test("reconciliation delists absent items and reactivates genuinely relisted ite
     assert.deepEqual(relistResult.reactivatedItemCodes, [itemCodes[1]]);
 
     const statuses = await db
-      .select({ itemCode: pbsItemsTable.itemCode, catalogueStatus: pbsItemsTable.catalogueStatus })
+      .select({
+        itemCode: pbsItemsTable.itemCode,
+        catalogueStatus: pbsItemsTable.catalogueStatus,
+        delistedAt: pbsItemsTable.delistedAt,
+        delistedScheduleCode: pbsItemsTable.delistedScheduleCode,
+      })
       .from(pbsItemsTable)
       .where(and(
         eq(pbsItemsTable.authorityScope, authorityScope),
@@ -124,7 +129,12 @@ test("reconciliation delists absent items and reactivates genuinely relisted ite
       statuses.sort((left, right) => left.itemCode.localeCompare(right.itemCode)),
       itemCodes
         .sort()
-        .map((itemCode) => ({ itemCode, catalogueStatus: "active" as const })),
+        .map((itemCode) => ({
+          itemCode,
+          catalogueStatus: "active" as const,
+          delistedAt: null,
+          delistedScheduleCode: null,
+        })),
     );
   } finally {
     await db.delete(pbsItemsTable).where(inArray(pbsItemsTable.itemCode, itemCodes));

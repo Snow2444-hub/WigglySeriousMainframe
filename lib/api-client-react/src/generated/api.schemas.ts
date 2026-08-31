@@ -240,6 +240,11 @@ export interface PbsItem {
   sponsor: string;
   formulary: PbsItemFormulary;
   catalogueStatus: PbsItemCatalogueStatus;
+  /** @nullable */
+  delistedAt: string | null;
+  /** @nullable */
+  delistedScheduleCode: number | null;
+  followed?: boolean;
   currentAemp: number;
   /** @nullable */
   currentDpmq: number | null;
@@ -1396,6 +1401,10 @@ export type ListPbsItemsParams = {
 search?: string;
 formulary?: ListPbsItemsFormulary;
 /**
+ * Catalogue lifecycle view. Defaults to active PBS items.
+ */
+catalogueStatus?: ListPbsItemsCatalogueStatus;
+/**
  * @minimum 1
  * @maximum 100
  */
@@ -1408,6 +1417,14 @@ export type ListPbsItemsFormulary = typeof ListPbsItemsFormulary[keyof typeof Li
 export const ListPbsItemsFormulary = {
   F1: 'F1',
   F2: 'F2',
+} as const;
+
+export type ListPbsItemsCatalogueStatus = typeof ListPbsItemsCatalogueStatus[keyof typeof ListPbsItemsCatalogueStatus];
+
+
+export const ListPbsItemsCatalogueStatus = {
+  active: 'active',
+  delisted: 'delisted',
 } as const;
 
 export type ListScheduleChangesParams = {
