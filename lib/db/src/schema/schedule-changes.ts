@@ -31,7 +31,7 @@ export const scheduleChangesTable = pgTable(
     significance: text("significance").notNull().default("normal"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-    authorityRunId: integer("authority_run_id").references(() => ingestionRunsTable.id),
+    authorityRunId: integer("authority_run_id").notNull().references(() => ingestionRunsTable.id),
   },
   (table) => [
     index("schedule_changes_authority_run_idx").on(table.authorityRunId),

@@ -16,6 +16,7 @@ import {
   scheduleChangesTable,
   type PbsPublishedFile,
   runtimeAuthorityScope,
+  withDerivedAuthority,
 } from "@workspace/db";
 import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
 import {
@@ -848,7 +849,7 @@ async function processFirstNewBrand(
       if (isNewEntry) {
         await db
           .insert(scheduleChangesTable)
-          .values({
+          .values(withDerivedAuthority(authorityRunId ?? file.ingestionRunId!, {
             scheduleCode: 0,
             effectiveDate: effectDate as string,
             changeType: "published_fnb_new",
@@ -868,8 +869,7 @@ async function processFirstNewBrand(
             affectedItems: null,
             significance: "normal",
             notes: "New row highlighted in the PBS First New Brand Price Reductions register.",
-            authorityRunId: authorityRunId ?? file.ingestionRunId ?? undefined,
-          })
+          }))
           .onConflictDoNothing();
       }
     }

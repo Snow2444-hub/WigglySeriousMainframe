@@ -7,7 +7,7 @@ import {
   isAuthoritativeStagedSnapshot,
   stagedRunIdFromRequestKey,
 } from "./staged-snapshot-validity";
-import { PRODUCTION_AUTHORITY_SCOPE, runtimeAuthorityScope } from "@workspace/db";
+import { PRODUCTION_AUTHORITY_SCOPE, runtimeAuthorityScope, withGlobalAuthority } from "@workspace/db";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
@@ -141,13 +141,12 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
 
     const [run] = await tx
       .insert(ingestionRunsTable)
-      .values({
+      .values(withGlobalAuthority({
         status: "queued",
-        authorityScope,
         mode: options.mode ?? "current",
         ...(options.scheduleDate === undefined ? {} : { scheduleDate: options.scheduleDate }),
         ...(options.maxPages === undefined ? {} : { maxPages: options.maxPages }),
-      })
+      }, authorityScope))
       .returning();
     if (!run) throw new Error("Unable to create an ingestion run");
     return { run, recoveredRunIds };
@@ -160,13 +159,12 @@ export async function createProductionRepairRun(
 ): Promise<number> {
   const [run] = await db
     .insert(ingestionRunsTable)
-    .values({
+    .values(withGlobalAuthority({
       status: "running",
       mode: "backfill",
       scheduleDate,
       totalSchedules,
-      authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-    })
+    }, PRODUCTION_AUTHORITY_SCOPE))
     .returning({ id: ingestionRunsTable.id });
   if (!run) throw new Error("Unable to create the PBS premium repair authority run");
   return run.id;

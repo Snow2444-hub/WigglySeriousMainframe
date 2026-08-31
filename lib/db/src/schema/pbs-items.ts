@@ -42,13 +42,13 @@ export const pbsItemsTable = pgTable(
     proportionalPrice: numeric("proportional_price", { precision: 12, scale: 4, mode: "number" }),
     therapeuticGroupId: text("therapeutic_group_id"),
     innovatorIndicator: text("innovator_indicator"),
-    authorityScope: text("authority_scope"),
+    authorityScope: text("authority_scope").notNull(),
   },
   (table) => [
     index("pbs_items_authority_scope_idx").on(table.authorityScope),
     check(
       "pbs_items_authority_scope_check",
-      sql`${table.authorityScope} IS NULL OR ${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
+      sql`${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
     ),
   ],
 );

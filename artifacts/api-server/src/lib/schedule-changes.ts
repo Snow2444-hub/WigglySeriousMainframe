@@ -9,6 +9,7 @@ import {
   scheduleChangesTable,
   scheduleChangeSettingsTable,
   runtimeAuthorityScope,
+  withDerivedAuthority,
 } from "@workspace/db";
 import { and, asc, eq, gt, inArray, like, or, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
@@ -1016,7 +1017,7 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
   if (regularChanges.length > 0) {
     const inserted = await db
       .insert(scheduleChangesTable)
-      .values(regularChanges.map((change) => ({ ...change, authorityRunId: options.authorityRunId! })))
+      .values(regularChanges.map((change) => withDerivedAuthority(options.authorityRunId!, change)))
       .onConflictDoNothing()
       .returning({ id: scheduleChangesTable.id });
     insertedCount += inserted.length;
@@ -1036,7 +1037,7 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
     if (existing[0]) {
       await db
         .update(scheduleChangesTable)
-        .set({ ...change, authorityRunId: options.authorityRunId })
+        .set(withDerivedAuthority(options.authorityRunId, change))
         .where(eq(scheduleChangesTable.id, existing[0].id));
       if (existing.length > 1) {
         await db
@@ -1044,7 +1045,10 @@ export async function syncScheduleChangesFromStagedData(options: { scheduleCodes
           .where(inArray(scheduleChangesTable.id, existing.slice(1).map((row) => row.id)));
       }
     } else {
-      const [inserted] = await db.insert(scheduleChangesTable).values({ ...change, authorityRunId: options.authorityRunId }).returning({ id: scheduleChangesTable.id });
+      const [inserted] = await db
+        .insert(scheduleChangesTable)
+        .values(withDerivedAuthority(options.authorityRunId, change))
+        .returning({ id: scheduleChangesTable.id });
       if (inserted) insertedCount += 1;
     }
     affectedDrugIds.add(change.drugId);

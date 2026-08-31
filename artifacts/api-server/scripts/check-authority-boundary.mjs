@@ -19,6 +19,15 @@ const protectedSqlTables = [
   "schedule_changes",
   "ingestion_runs",
 ];
+const globalAuthorityTables = new Set([
+  "drugsTable",
+  "pbsItemsTable",
+  "ingestionRunsTable",
+]);
+const derivedAuthorityTables = new Set([
+  "predictedReductionsTable",
+  "scheduleChangesTable",
+]);
 
 const approvedModules = new Set([
   "src/lib/ingestion-run-control.ts",
@@ -61,11 +70,39 @@ function isDatabaseModule(moduleSpecifier) {
   );
 }
 
+function authorityHelperUsed(node, helperName) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === helperName
+  ) {
+    return true;
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    return node.elements.length > 0 && node.elements.every((element) => authorityHelperUsed(element, helperName));
+  }
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression) &&
+    node.expression.name.text === "map"
+  ) {
+    const callback = node.arguments[0];
+    return Boolean(callback && authorityHelperUsed(callback, helperName));
+  }
+  if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) {
+    return authorityHelperUsed(node.body, helperName);
+  }
+  if (ts.isParenthesizedExpression(node)) {
+    return authorityHelperUsed(node.expression, helperName);
+  }
+  return false;
+}
+
 const violations = [];
 
 for (const filePath of listTypeScriptFiles(sourceRoot)) {
   const projectPath = relative(apiRoot, filePath).replaceAll("\\", "/");
-  if (isTestInfrastructure(projectPath) || approvedModules.has(projectPath)) continue;
+  if (isTestInfrastructure(projectPath)) continue;
 
   const sourceText = readFileSync(filePath, "utf8");
   const sourceFile = ts.createSourceFile(
@@ -78,6 +115,7 @@ for (const filePath of listTypeScriptFiles(sourceRoot)) {
 
   function visit(node) {
     if (
+      !approvedModules.has(projectPath) &&
       ts.isImportDeclaration(node) &&
       ts.isStringLiteral(node.moduleSpecifier) &&
       isDatabaseModule(node.moduleSpecifier.text)
@@ -99,6 +137,7 @@ for (const filePath of listTypeScriptFiles(sourceRoot)) {
     }
 
     if (
+      !approvedModules.has(projectPath) &&
       (ts.isStringLiteral(node) ||
         ts.isNoSubstitutionTemplateLiteral(node) ||
         ts.isTemplateHead(node) ||
@@ -109,6 +148,30 @@ for (const filePath of listTypeScriptFiles(sourceRoot)) {
       violations.push(
         `${projectPath}:${sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1} contains raw SQL access to a protected table`,
       );
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === "values" &&
+      ts.isCallExpression(node.expression.expression) &&
+      ts.isPropertyAccessExpression(node.expression.expression.expression) &&
+      node.expression.expression.expression.name.text === "insert"
+    ) {
+      const tableArgument = node.expression.expression.arguments[0];
+      const valuesArgument = node.arguments[0];
+      if (tableArgument && ts.isIdentifier(tableArgument) && valuesArgument) {
+        const helperName = globalAuthorityTables.has(tableArgument.text)
+          ? "withGlobalAuthority"
+          : derivedAuthorityTables.has(tableArgument.text)
+            ? "withDerivedAuthority"
+            : undefined;
+        if (helperName && !authorityHelperUsed(valuesArgument, helperName)) {
+          violations.push(
+            `${projectPath}:${sourceFile.getLineAndCharacterOfPosition(node.getStart()).line + 1} inserts ${tableArgument.text} without ${helperName}`,
+          );
+        }
+      }
     }
 
     ts.forEachChild(node, visit);

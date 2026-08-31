@@ -7,4 +7,4 @@ Application database sessions must assume the non-superuser, non-bypass `pbs_app
 
 **Why:** The runtime-managed PostgreSQL login is a superuser with `BYPASSRLS`, which no forced policy can constrain directly. Running queries as the table-owning `pbs_app` role proves that ownership itself cannot bypass forced RLS.
 
-**How to apply:** Keep normal application pools role-scoped, reproduce ownership/grants in isolated test schemas, and verify raw SQL as `pbs_app` cannot see test-scoped root, master, or derived rows. During nullable rollout, policies may retain legacy NULL rows until baseline-backed backfill removes that compatibility path.
+**How to apply:** Keep normal application pools role-scoped, reproduce ownership/grants in isolated test schemas, and verify raw SQL as `pbs_app` cannot see test-scoped root, master, or derived rows. Authority fields are mandatory; do not restore NULL-compatible policies or reader fallbacks.

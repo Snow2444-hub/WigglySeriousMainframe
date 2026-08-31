@@ -26,58 +26,54 @@ ALTER TABLE public.schedule_changes OWNER TO pbs_app;
 
 DROP POLICY IF EXISTS ingestion_runs_authority_policy ON public.ingestion_runs;
 CREATE POLICY ingestion_runs_authority_policy ON public.ingestion_runs
-  USING (authority_scope IS NULL OR authority_scope = 'production')
-  WITH CHECK (authority_scope IS NULL OR authority_scope = 'production');
+  USING (authority_scope = 'production')
+  WITH CHECK (authority_scope = 'production');
 
 DROP POLICY IF EXISTS drugs_authority_policy ON public.drugs;
 CREATE POLICY drugs_authority_policy ON public.drugs
-  USING (authority_scope IS NULL OR authority_scope = 'production')
-  WITH CHECK (authority_scope IS NULL OR authority_scope = 'production');
+  USING (authority_scope = 'production')
+  WITH CHECK (authority_scope = 'production');
 
 DROP POLICY IF EXISTS pbs_items_authority_policy ON public.pbs_items;
 CREATE POLICY pbs_items_authority_policy ON public.pbs_items
-  USING (authority_scope IS NULL OR authority_scope = 'production')
-  WITH CHECK (authority_scope IS NULL OR authority_scope = 'production');
+  USING (authority_scope = 'production')
+  WITH CHECK (authority_scope = 'production');
 
 DROP POLICY IF EXISTS predicted_reductions_authority_policy ON public.predicted_reductions;
 CREATE POLICY predicted_reductions_authority_policy ON public.predicted_reductions
   USING (
-    authority_run_id IS NULL
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.ingestion_runs authority_run
       WHERE authority_run.id = predicted_reductions.authority_run_id
-        AND (authority_run.authority_scope IS NULL OR authority_run.authority_scope = 'production')
+        AND authority_run.authority_scope = 'production'
     )
   )
   WITH CHECK (
-    authority_run_id IS NULL
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.ingestion_runs authority_run
       WHERE authority_run.id = predicted_reductions.authority_run_id
-        AND (authority_run.authority_scope IS NULL OR authority_run.authority_scope = 'production')
+        AND authority_run.authority_scope = 'production'
     )
   );
 
 DROP POLICY IF EXISTS schedule_changes_authority_policy ON public.schedule_changes;
 CREATE POLICY schedule_changes_authority_policy ON public.schedule_changes
   USING (
-    authority_run_id IS NULL
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.ingestion_runs authority_run
       WHERE authority_run.id = schedule_changes.authority_run_id
-        AND (authority_run.authority_scope IS NULL OR authority_run.authority_scope = 'production')
+        AND authority_run.authority_scope = 'production'
     )
   )
   WITH CHECK (
-    authority_run_id IS NULL
-    OR EXISTS (
+    EXISTS (
       SELECT 1
       FROM public.ingestion_runs authority_run
       WHERE authority_run.id = schedule_changes.authority_run_id
-        AND (authority_run.authority_scope IS NULL OR authority_run.authority_scope = 'production')
+        AND authority_run.authority_scope = 'production'
     )
   );
 

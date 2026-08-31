@@ -23,7 +23,7 @@ export const predictedReductionsTable = pgTable(
     sourceRowNumber: integer("source_row_number"),
     sourceValidUntil: date("source_valid_until", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
-    authorityRunId: integer("authority_run_id").references(() => ingestionRunsTable.id),
+    authorityRunId: integer("authority_run_id").notNull().references(() => ingestionRunsTable.id),
   },
   (table) => [index("predicted_reductions_authority_run_idx").on(table.authorityRunId)],
 );

@@ -25,13 +25,13 @@ export const ingestionRunsTable = pgTable(
     scheduleEffectiveDate: date("schedule_effective_date", { mode: "string" }),
     snapshotComplete: boolean("snapshot_complete").notNull().default(false),
     changeDetectionStartedAt: timestamp("change_detection_started_at", { withTimezone: true, mode: "date" }),
-    authorityScope: text("authority_scope"),
+    authorityScope: text("authority_scope").notNull(),
   },
   (table) => [
     index("ingestion_runs_authority_scope_idx").on(table.authorityScope),
     check(
       "ingestion_runs_authority_scope_check",
-      sql`${table.authorityScope} IS NULL OR ${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
+      sql`${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
     ),
   ],
 );

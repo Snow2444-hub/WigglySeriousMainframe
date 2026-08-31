@@ -1,89 +1,82 @@
 import { db } from "@workspace/db";
 import {
-  PRODUCTION_AUTHORITY_SCOPE,
   drugsTable,
   pbsItemsTable,
   priceHistoryTable,
+  withGlobalAuthority,
 } from "@workspace/db";
 
 export async function seedReferenceData(): Promise<void> {
   await db
     .insert(drugsTable)
     .values([
-      {
+      withGlobalAuthority({
         id: 1,
         name: "Rosuvastatin",
         activeIngredient: "Rosuvastatin calcium",
         sponsor: "AstraZeneca Australia",
         firstPbsListingDate: "2007-06-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
-      {
+      }),
+      withGlobalAuthority({
         id: 2,
         name: "Apixaban",
         activeIngredient: "Apixaban",
         sponsor: "Bristol-Myers Squibb Australia",
         firstPbsListingDate: "2013-08-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
-      {
+      }),
+      withGlobalAuthority({
         id: 3,
         name: "Empagliflozin",
         activeIngredient: "Empagliflozin",
         sponsor: "Boehringer Ingelheim",
         firstPbsListingDate: "2014-09-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
+      }),
     ])
     .onConflictDoNothing();
 
   await db
     .insert(pbsItemsTable)
     .values([
-      {
+      withGlobalAuthority({
         itemCode: "1234K",
         liItemId: "seed-1234K",
         drugId: 1,
         brandName: "Crestor",
-        formulary: "F1",
+        formulary: "F1" as const,
         currentAemp: 18.42,
         currentDpmq: 22.31,
         lastUpdated: "2026-07-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
-      {
+      }),
+      withGlobalAuthority({
         itemCode: "5678R",
         liItemId: "seed-5678R",
         drugId: 2,
         brandName: "Eliquis",
-        formulary: "F1",
+        formulary: "F1" as const,
         currentAemp: 34.8,
         currentDpmq: 39.95,
         lastUpdated: "2026-07-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
-      {
+      }),
+      withGlobalAuthority({
         itemCode: "9012W",
         liItemId: "seed-9012W",
         drugId: 3,
         brandName: "Jardiance",
-        formulary: "F2",
+        formulary: "F2" as const,
         currentAemp: 26.15,
         currentDpmq: 30.2,
         lastUpdated: "2026-07-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
-      {
+      }),
+      withGlobalAuthority({
         itemCode: "3456B",
         liItemId: "seed-3456B",
         drugId: 1,
         brandName: "Rosuvastatin Generic",
-        formulary: "F2",
+        formulary: "F2" as const,
         currentAemp: 9.1,
         currentDpmq: 12.75,
         lastUpdated: "2026-07-01",
-        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
-      },
+      }),
     ])
     .onConflictDoNothing();
 

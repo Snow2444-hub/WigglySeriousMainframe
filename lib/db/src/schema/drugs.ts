@@ -11,13 +11,13 @@ export const drugsTable = pgTable(
     activeIngredient: text("active_ingredient").notNull(),
     sponsor: text("sponsor").notNull(),
     firstPbsListingDate: date("first_pbs_listing_date", { mode: "string" }).notNull(),
-    authorityScope: text("authority_scope"),
+    authorityScope: text("authority_scope").notNull(),
   },
   (table) => [
     index("drugs_authority_scope_idx").on(table.authorityScope),
     check(
       "drugs_authority_scope_check",
-      sql`${table.authorityScope} IS NULL OR ${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
+      sql`${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
     ),
   ],
 );

@@ -1,4 +1,4 @@
-import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistoryTable, runtimeAuthorityScope } from "@workspace/db";
+import { db, drugsTable, pbsItemPremiumHistoryTable, pbsItemsTable, priceHistoryTable, runtimeAuthorityScope, withGlobalAuthority } from "@workspace/db";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 
@@ -163,7 +163,7 @@ async function resolveDrugId(input: {
     .from(drugsTable);
   const [created] = await db
     .insert(drugsTable)
-    .values({ ...input, id: (latest?.id ?? 999_999) + 1, authorityScope: runtimeAuthorityScope() })
+    .values(withGlobalAuthority({ ...input, id: (latest?.id ?? 999_999) + 1 }))
     .onConflictDoNothing()
     .returning({ id: drugsTable.id });
   if (!created) throw new Error("Could not create PBS drug reference");
@@ -317,18 +317,17 @@ export async function upsertPbsItemsFromPayload(
         proportionalPrice: numberField(record, "proportional_price"),
         therapeuticGroupId: stringField(record, "therapeutic_group_id"),
         innovatorIndicator: stringField(record, "innovator_indicator"),
-        authorityScope: runtimeAuthorityScope(),
       };
     if (updateCurrentItem) {
       await db
         .insert(pbsItemsTable)
-        .values(itemValues)
+        .values(withGlobalAuthority(itemValues))
         .onConflictDoUpdate({
           target: pbsItemsTable.itemCode,
-          set: itemValues,
+          set: withGlobalAuthority(itemValues),
         });
     } else {
-      await db.insert(pbsItemsTable).values(itemValues).onConflictDoNothing();
+      await db.insert(pbsItemsTable).values(withGlobalAuthority(itemValues)).onConflictDoNothing();
     }
 
     await appendPriceHistoryIfChanged({

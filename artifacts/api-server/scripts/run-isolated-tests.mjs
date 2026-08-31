@@ -124,13 +124,12 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
   const testAuthorityScope = `test:${schema}`;
   const testAuthorityScopeLiteral = sqlStringLiteral(testAuthorityScope);
   const authorityScopePredicate =
-    `(authority_scope IS NULL OR authority_scope = 'production' OR authority_scope = ${testAuthorityScopeLiteral})`;
-  const authorityRunPredicate = `(authority_run_id IS NULL OR EXISTS (
+    `(authority_scope = 'production' OR authority_scope = ${testAuthorityScopeLiteral})`;
+  const authorityRunPredicate = `(EXISTS (
     SELECT 1
     FROM ${quotedSchema}.ingestion_runs authority_run
     WHERE authority_run.id = authority_run_id
-      AND (authority_run.authority_scope IS NULL
-        OR authority_run.authority_scope = 'production'
+      AND (authority_run.authority_scope = 'production'
         OR authority_run.authority_scope = ${testAuthorityScopeLiteral})
   ))`;
 

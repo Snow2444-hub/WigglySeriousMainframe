@@ -12,6 +12,7 @@ import {
   scheduleChangesTable,
   ingestionRunsTable,
   runtimeAuthorityScope,
+  withDerivedAuthority,
 } from "@workspace/db";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { CANONICAL_PUBLISHED_SOURCE_KEYS } from "./pbs-source-status";
@@ -486,11 +487,12 @@ export async function recalculatePredictedReductionsForDrug(
   const filteredDisclosureRows = disclosureRows.filter(
     (row) => !publishedKeys.has(`${row.itemCode}:${row.predictedDate}`),
   );
-  const rows = [...statutoryRows, ...section99AcpRows, ...firstNewBrandRows, ...filteredDisclosureRows, ...publishedRows]
-    .map((row) => ({ ...row, authorityRunId: authorityRun.id }));
+  const rows = [...statutoryRows, ...section99AcpRows, ...firstNewBrandRows, ...filteredDisclosureRows, ...publishedRows];
 
   if (rows.length > 0) {
-    await db.insert(predictedReductionsTable).values(rows);
+    await db
+      .insert(predictedReductionsTable)
+      .values(rows.map((row) => withDerivedAuthority(authorityRun.id, row)));
   }
   return rows.length;
 }

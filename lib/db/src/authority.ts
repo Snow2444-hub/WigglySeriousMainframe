@@ -26,6 +26,23 @@ export function runtimeAuthorityScope(): string {
   return `${TEST_AUTHORITY_SCOPE_PREFIX}${token}`;
 }
 
+export function withGlobalAuthority<T extends object>(
+  row: T,
+  authorityScope = runtimeAuthorityScope(),
+): T & { authorityScope: string } {
+  return { ...row, authorityScope };
+}
+
+export function withDerivedAuthority<T extends object>(
+  authorityRunId: number,
+  row: T,
+): T & { authorityRunId: number } {
+  if (!Number.isInteger(authorityRunId) || authorityRunId <= 0) {
+    throw new Error("Derived persistence requires a positive authority run ID.");
+  }
+  return { ...row, authorityRunId };
+}
+
 export function assertTestAuthorityScope(scope: string): void {
   if (!scope.startsWith(TEST_AUTHORITY_SCOPE_PREFIX) || scope.length === TEST_AUTHORITY_SCOPE_PREFIX.length) {
     throw new Error("Test authority scope must use a non-empty test: token.");
