@@ -8,6 +8,7 @@ import {
   db,
   ingestionRunsTable,
   pbsWatchlistTable,
+  runtimeAuthorityScope,
   usersTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -154,6 +155,20 @@ before(async () => {
     .update(usersTable)
     .set({ role: "admin" })
     .where(eq(usersTable.id, adminUserId));
+  await db.insert(ingestionRunsTable).values({
+    startedAt: new Date("2026-08-31T00:00:00.000Z"),
+    lastProgressAt: new Date("2026-08-31T00:00:01.000Z"),
+    finishedAt: new Date("2026-08-31T00:00:02.000Z"),
+    status: "completed",
+    recordsProcessed: 2,
+    pagesFetched: 0,
+    requestUrls: [],
+    errorMessage: "admin-access-fixture",
+    mode: "tga_shortages",
+    scheduleDate: "2026-08-31",
+    authorityScope: runtimeAuthorityScope(),
+    snapshotComplete: true,
+  });
 
   const app = express();
   app.use(pinoHttp({ logger }));

@@ -1,0 +1,38 @@
+Two fixes from the diagnosis. #2 is clean — fix it. #1 needs one more check
+before the fix.
+
+=== FIX NOW: #2 — Recent Ingestion Runs schema ===
+The endpoint's response schema only permits run modes 'current' and 'backfill',
+but the ingestion table now contains 'tga_shortages' and 'legacy_backfill' runs
+(added by recent work), which fail validation and 500 the endpoint. Widen the
+response schema to accept ALL run modes that actually exist in the table
+(current, backfill, tga_shortages, legacy_backfill, and any others). Confirm by
+listing every distinct mode currently in the ingestion table and ensuring the
+schema accepts each. Verify the Recent Ingestion Runs panel loads without the
+"reference data could not be loaded" error. Add a test that a tga_shortages run
+in the latest rows doesn't break the endpoint.
+
+=== CHECK BEFORE FIXING: #1 — delisted items with active predictions ===
+Diagnosis found 50 items with a historical 'delisted' event that are ALSO present
+in current pbs_items with recent prices and future predictions — a missing
+supersession rule, not event conflation. Before building the fix, resolve which
+case these are (read-only, report first):
+
+For a representative sample of the 50 (including the Eliquis and Abrilada cases):
+- Was each item GENUINELY delisted and later RELISTED (it legitimately left the
+  PBS and came back)? Trace the schedule history: delisted at schedule X, absent
+  for a period, then reappeared at schedule Y.
+- OR is the historical 'delisting' event SPURIOUS (the item never actually left —
+  the delisting was recorded in error, e.g. residue from earlier snapshot-
+  comparison issues)?
+Report the split: how many are legitimate relistings vs how many look like
+spurious delistings. This determines the fix:
+- Legitimate relisting -> add a supersession rule: when an item is present in the
+  current authoritative PBS snapshot, a prior delisting is no longer its current
+  state (mark superseded / exclude from "currently delisted" display), and
+  predictions on currently-present items are valid.
+- Spurious delistings -> those specific events need correcting, separate from the
+  lifecycle rule.
+
+Report the relisting-vs-spurious split before proposing the #1 fix. Don't build
+#1 yet.

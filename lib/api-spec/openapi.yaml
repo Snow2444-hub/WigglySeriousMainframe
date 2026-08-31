@@ -2271,7 +2271,7 @@ components:
           type: ["string", "null"]
         mode:
           type: string
-          enum: [current, backfill]
+          description: Ingestion mode recorded for the run. This may include PBS modes and other source-specific modes.
         totalSchedules:
           type: ["integer", "null"]
         schedulesProcessed:
