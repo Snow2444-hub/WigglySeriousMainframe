@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PharmacyStockCatalogueStatus } from './pharmacyStockCatalogueStatus';
 
 export interface PharmacyStock {
   id: number;
@@ -28,4 +29,5 @@ export interface PharmacyStock {
   purchaseDate: Date;
   /** @nullable */
   invoiceReference: string | null;
+  catalogueStatus: PharmacyStockCatalogueStatus;
 }

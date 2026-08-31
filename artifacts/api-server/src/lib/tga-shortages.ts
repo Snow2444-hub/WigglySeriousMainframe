@@ -16,6 +16,7 @@ import {
   withGlobalAuthority,
 } from "@workspace/db";
 import { ingredientContainsWholeWord, normaliseIngredientForMatch, normaliseProductForMatch } from "./ingredient-normalisation";
+import { activePbsItemScope } from "./pbs-item-lifecycle";
 import { ensurePbsSourceRegistry, listPbsSourceStatuses, type PbsSourceStatus } from "./pbs-source-status";
 
 export const TGA_ACTIVE_SOURCE_KEY = "tga_shortages_active" as const;
@@ -298,7 +299,7 @@ async function loadMatchContext(): Promise<MatchContext> {
       .from(drugsTable).where(eq(drugsTable.authorityScope, runtimeAuthorityScope())).orderBy(asc(drugsTable.id)),
     db.select().from(pbsWatchlistTable).where(eq(pbsWatchlistTable.enabled, true)).orderBy(asc(pbsWatchlistTable.id)),
     db.select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName, itemCode: pbsItemsTable.itemCode })
-      .from(pbsItemsTable).where(eq(pbsItemsTable.authorityScope, runtimeAuthorityScope())),
+      .from(pbsItemsTable).where(and(activePbsItemScope(), eq(pbsItemsTable.authorityScope, runtimeAuthorityScope()))),
     db.select({ artgId: artgEntriesTable.artgId, matchedDrugId: artgEntriesTable.matchedDrugId })
       .from(artgEntriesTable).where(sql`${artgEntriesTable.matchedDrugId} IS NOT NULL`),
   ]);

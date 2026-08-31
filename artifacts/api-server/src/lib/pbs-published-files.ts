@@ -19,6 +19,7 @@ import {
   withDerivedAuthority,
 } from "@workspace/db";
 import { recalculatePredictedReductionsForAllDrugs } from "./predicted-reductions";
+import { activePbsItemScope } from "./pbs-item-lifecycle";
 import {
   CANONICAL_PUBLISHED_SOURCE_KEYS,
   ensurePbsSourceRegistry,
@@ -550,7 +551,7 @@ async function loadContext(): Promise<DrugContext> {
         formulary: pbsItemsTable.formulary,
       })
       .from(pbsItemsTable)
-      .where(eq(pbsItemsTable.authorityScope, authorityScope))
+       .where(and(activePbsItemScope(), eq(pbsItemsTable.authorityScope, authorityScope)))
       .orderBy(asc(pbsItemsTable.itemCode)),
     db
       .select({

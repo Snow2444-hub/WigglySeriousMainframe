@@ -23,6 +23,7 @@ import {
   normalizeBrandName,
 } from "../lib/brand-preferences";
 import { requireAuth } from "../middlewares/requireAuth";
+import { activePbsItemScope } from "../lib/pbs-item-lifecycle";
 
 type PreferenceCatalogueBrand = {
   drugId: number;
@@ -74,7 +75,7 @@ async function getPreferenceCatalogue(): Promise<PreferenceCatalogueBrand[]> {
       })
       .from(pbsItemsTable)
       .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-      .where(and(productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
+      .where(and(activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
   ]);
   const brands = new Map<string, PreferenceCatalogueBrand>();
   for (const item of items) {

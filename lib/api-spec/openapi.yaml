@@ -1503,6 +1503,9 @@ components:
         formulary:
           type: string
           enum: [F1, F2]
+        catalogueStatus:
+          type: string
+          enum: [active, delisted]
         currentAemp:
           type: number
         currentDpmq:
@@ -1535,7 +1538,7 @@ components:
           type: ["string", "null"]
         innovatorIndicator:
           type: ["string", "null"]
-      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, originatorBrandName, activeIngredient, sponsor, formulary, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
+      required: [itemCode, pbsCode, liItemId, scheduleCode, drugId, brandName, strength, form, packSize, pricingQuantity, benefitTypeCode, maximumQuantityUnits, liForm, programCode, drugName, originatorBrandName, activeIngredient, sponsor, formulary, catalogueStatus, currentAemp, currentDpmq, lastUpdated, firstListedDate, weightedAvgDisclosedPrice, originatorBrandIndicator, brandSubstitutionGroupId, advancedNoticeDate, nonEffectiveDate, determinedPrice, claimedPrice, proportionalPrice, therapeuticGroupId, innovatorIndicator]
     MedicineBrandItemSummary:
       allOf:
         - $ref: "#/components/schemas/PbsItem"
@@ -2054,7 +2057,10 @@ components:
           format: date
         invoiceReference:
           type: ["string", "null"]
-      required: [id, userId, itemCode, pbsCode, brandName, strength, form, packSize, benefitTypeCode, maximumQuantityUnits, quantity, purchasePrice, purchaseDate, invoiceReference]
+        catalogueStatus:
+          type: string
+          enum: [active, delisted]
+      required: [id, userId, itemCode, pbsCode, brandName, strength, form, packSize, benefitTypeCode, maximumQuantityUnits, quantity, purchasePrice, purchaseDate, invoiceReference, catalogueStatus]
     StockPrediction:
       type: object
       properties:

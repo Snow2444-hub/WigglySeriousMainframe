@@ -65,7 +65,8 @@ export const GetDashboardResponse = zod.object({
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
   "purchaseDate": zod.coerce.date(),
-  "invoiceReference": zod.string().nullable()
+  "invoiceReference": zod.string().nullable(),
+  "catalogueStatus": zod.enum(['active', 'delisted'])
 }))
 })
 
@@ -412,6 +413,7 @@ export const ListMedicineBrandItemsResponseItem = zod.object({
   "activeIngredient": zod.string(),
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
+  "catalogueStatus": zod.enum(['active', 'delisted']),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
@@ -590,6 +592,7 @@ export const ListPbsItemsResponseItem = zod.object({
   "activeIngredient": zod.string(),
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
+  "catalogueStatus": zod.enum(['active', 'delisted']),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
@@ -635,6 +638,7 @@ export const GetPbsItemResponse = zod.object({
   "activeIngredient": zod.string(),
   "sponsor": zod.string(),
   "formulary": zod.enum(['F1', 'F2']),
+  "catalogueStatus": zod.enum(['active', 'delisted']),
   "currentAemp": zod.number(),
   "currentDpmq": zod.number().nullable(),
   "lastUpdated": zod.coerce.date(),
@@ -908,7 +912,8 @@ export const ListStockResponse = zod.object({
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
   "purchaseDate": zod.coerce.date(),
-  "invoiceReference": zod.string().nullable()
+  "invoiceReference": zod.string().nullable(),
+  "catalogueStatus": zod.enum(['active', 'delisted'])
 }).and(zod.object({
   "drugName": zod.string(),
   "activeIngredient": zod.string(),
@@ -969,7 +974,8 @@ export const CreateStockResponse = zod.object({
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
   "purchaseDate": zod.coerce.date(),
-  "invoiceReference": zod.string().nullable()
+  "invoiceReference": zod.string().nullable(),
+  "catalogueStatus": zod.enum(['active', 'delisted'])
 })
 
 
@@ -1011,7 +1017,8 @@ export const UpdateStockResponse = zod.object({
   "quantity": zod.int(),
   "purchasePrice": zod.number(),
   "purchaseDate": zod.coerce.date(),
-  "invoiceReference": zod.string().nullable()
+  "invoiceReference": zod.string().nullable(),
+  "catalogueStatus": zod.enum(['active', 'delisted'])
 })
 
 

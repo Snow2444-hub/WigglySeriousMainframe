@@ -78,6 +78,7 @@ import {
 } from "../lib/artg-import";
 import { requireAdmin } from "../middlewares/requireAuth";
 import type { PbsIngestionExecutorDependencies } from "../lib/pbs-ingestion-executor-dependencies";
+import { activePbsItemScope } from "../lib/pbs-item-lifecycle";
 
 const router: IRouter = Router();
 const ARTG_UPLOAD_LIMIT_BYTES = 15 * 1024 * 1024;
@@ -316,7 +317,9 @@ export async function executeBackfillIngestionRun(
                     schedule.effectiveDate,
                     {
                       scheduleCode: schedule.scheduleCode,
-                      updateCurrentItem: schedule.effectiveDate === latestEffectiveDate,
+                      // Historical observations must never change current catalogue
+                      // lifecycle state, even for the newest schedule in the backfill.
+                      updateCurrentItem: false,
                       authorityRunId: runId,
                     },
                   );
@@ -546,7 +549,7 @@ router.post(
         ? await db
           .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
           .from(pbsItemsTable)
-            .where(and(inArray(pbsItemsTable.drugId, drugIds), productionMasterScope(pbsItemsTable.authorityScope)))
+            .where(and(inArray(pbsItemsTable.drugId, drugIds), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)))
         : [];
       const brandsByDrug = new Map<number, string[]>();
       for (const row of pbsBrands) {

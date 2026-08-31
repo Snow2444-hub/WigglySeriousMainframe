@@ -26,6 +26,7 @@ import {
 import { requireAuth } from "../middlewares/requireAuth";
 import { getHiddenBrandKeys, isBrandHidden } from "../lib/brand-preferences";
 import { pbsBrandMatchesArtgProduct } from "../lib/artg-import";
+import { activePbsItemScope } from "../lib/pbs-item-lifecycle";
 
 export function dashboardPriceReduction(oldValue: unknown, newValue: unknown): boolean {
   const readPrice = (value: unknown) => {
@@ -60,6 +61,7 @@ const stockSelect = {
   benefitTypeCode: pbsItemsTable.benefitTypeCode,
   maximumQuantityUnits: pbsItemsTable.maximumQuantityUnits,
   formulary: pbsItemsTable.formulary,
+  catalogueStatus: pbsItemsTable.catalogueStatus,
   quantity: pharmacyStockTable.quantity,
   purchasePrice: pharmacyStockTable.purchasePrice,
   purchaseDate: pharmacyStockTable.purchaseDate,
@@ -78,7 +80,7 @@ async function getUserStock(userId: string) {
 
 async function getUserExposure(userId: string) {
   const rows = await getUserStock(userId);
-  const itemCodes = [...new Set(rows.map((row) => row.itemCode))];
+  const itemCodes = [...new Set(rows.filter((row) => row.catalogueStatus === "active").map((row) => row.itemCode))];
   const today = new Date().toISOString().slice(0, 10);
   const predictions = itemCodes.length
     ? await database
@@ -91,10 +93,13 @@ async function getUserExposure(userId: string) {
           confidence: predictedReductionsTable.confidence,
         })
         .from(predictedReductionsTable)
+        .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
         .where(
           and(
             inArray(predictedReductionsTable.itemCode, itemCodes),
             productionAuthorityRun(predictedReductionsTable.authorityRunId),
+            activePbsItemScope(),
+            productionMasterScope(pbsItemsTable.authorityScope),
             gte(predictedReductionsTable.predictedDate, today),
             or(
               and(
@@ -284,6 +289,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
       .where(
         and(
           productionAuthorityRun(predictedReductionsTable.authorityRunId),
+          activePbsItemScope(),
           productionMasterScope(pbsItemsTable.authorityScope),
           gte(predictedReductionsTable.predictedDate, today),
           lte(predictedReductionsTable.predictedDate, dateMonthsAgo(today, -12)),
@@ -313,7 +319,7 @@ async function getDashboardSummary(database: typeof db, userId: string) {
     database
       .select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName })
       .from(pbsItemsTable)
-      .where(productionMasterScope(pbsItemsTable.authorityScope)),
+      .where(and(activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope))),
   ]);
   const hiddenBrandKeys = await getHiddenBrandKeys(userId);
   const visibleChanges = (changeRows as DashboardChange[]).filter((change) =>
@@ -387,7 +393,7 @@ router.get("/dashboard", authMiddleware, async (req, res): Promise<void> => {
     ? await database
         .select({ itemCode: pbsItemsTable.itemCode, formulary: pbsItemsTable.formulary })
         .from(pbsItemsTable)
-        .where(and(sql`${pbsItemsTable.itemCode} in (${sql.join([...itemCodes].map((code) => sql`${code}`), sql`, `)})`, productionMasterScope(pbsItemsTable.authorityScope)))
+        .where(and(sql`${pbsItemsTable.itemCode} in (${sql.join([...itemCodes].map((code) => sql`${code}`), sql`, `)})`, activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)))
     : [];
   const formularyBreakdown = itemDetails.reduce(
     (breakdown, item) => {
@@ -422,7 +428,7 @@ router.post("/stock", authMiddleware, async (req, res): Promise<void> => {
   const [item] = await database
     .select({ itemCode: pbsItemsTable.itemCode })
     .from(pbsItemsTable)
-    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), productionMasterScope(pbsItemsTable.authorityScope)));
+      .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)));
   if (!item) {
     res.status(400).json({ error: "PBS item code not found" });
     return;
@@ -460,7 +466,7 @@ router.patch("/stock/:id", authMiddleware, async (req, res): Promise<void> => {
     const [item] = await database
       .select({ itemCode: pbsItemsTable.itemCode })
       .from(pbsItemsTable)
-    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), productionMasterScope(pbsItemsTable.authorityScope)));
+    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)));
     if (!item) {
       res.status(400).json({ error: "PBS item code not found" });
       return;

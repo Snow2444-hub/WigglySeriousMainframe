@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PbsItemCatalogueStatus } from './pbsItemCatalogueStatus';
 import type { PbsItemFormulary } from './pbsItemFormulary';
 
 export interface PbsItem {
@@ -42,6 +43,7 @@ export interface PbsItem {
   activeIngredient: string;
   sponsor: string;
   formulary: PbsItemFormulary;
+  catalogueStatus: PbsItemCatalogueStatus;
   currentAemp: number;
   /** @nullable */
   currentDpmq: number | null;

@@ -39,6 +39,7 @@ const approvedModules = new Set([
   "src/lib/ingestion-run-control.ts",
   "src/lib/pbs-current-ingestion.ts",
   "src/lib/pbs-item-mapping.ts",
+  "src/lib/pbs-item-lifecycle.ts",
   "src/lib/pbs-published-files.ts",
   "src/lib/predicted-reductions.ts",
   "src/lib/schedule-changes.ts",
@@ -49,6 +50,7 @@ const approvedModules = new Set([
   "src/routes/brand-preferences.ts",
   "src/routes/reference.ts",
   "src/routes/stock.ts",
+  "src/scripts/repair-pbs-catalogue-status.ts",
 ]);
 
 function listTypeScriptFiles(directory) {

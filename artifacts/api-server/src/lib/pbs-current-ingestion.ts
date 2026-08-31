@@ -31,6 +31,11 @@ import {
   throwIfIngestionRunCancelled,
 } from "./ingestion-run-control";
 import { syncScheduleChangesFromStagedData } from "./schedule-changes";
+import {
+  isCanonicalCurrentSnapshot,
+  reconcilePbsItemCatalogueStatus,
+} from "./pbs-item-lifecycle";
+import { recalculatePredictedReductionsForDrug } from "./predicted-reductions";
 import type { PbsIngestionExecutorDependencies } from "./pbs-ingestion-executor-dependencies";
 
 function scheduleMetadataFromPayload(payload: unknown): { scheduleCode?: number; effectiveDate?: string } | undefined {
@@ -114,6 +119,7 @@ export async function executeCurrentIngestionRun(
     let pagesFetched = 0;
     const requestUrls = new Set<string>();
     const atcItemIds = new Set<string>();
+    const snapshotItemCodes = new Set<string>();
     const itemMetadata: PbsItemScheduleMetadata = new Map();
     const persistProgress = async () => {
       await db
@@ -203,6 +209,10 @@ export async function executeCurrentIngestionRun(
               if (!scheduleEffectiveDate) {
                 throw new Error("Latest PBS schedule metadata did not include an effective_date");
               }
+               for (const record of recordsFromPayload(page.payload)) {
+                 const itemCode = stringField(record, "li_item_id");
+                 if (itemCode) snapshotItemCodes.add(itemCode);
+               }
               const matched = recordsFromPayload(page.payload).filter((record) =>
                 recordMatchesWatchlist(record, directMatchers, atcItemIds),
               );
@@ -275,6 +285,37 @@ export async function executeCurrentIngestionRun(
     const pageCapReached = maxPages !== undefined && pages.length >= maxPages;
     let changesRecorded = 0;
     if (!pageCapReached) {
+      if (
+        scheduleCode !== undefined
+        && scheduleEffectiveDate !== undefined
+        && isCanonicalCurrentSnapshot({ scheduleCode, effectiveDate: scheduleEffectiveDate, snapshotItemCodes })
+      ) {
+        const reconciliation = await reconcilePbsItemCatalogueStatus({
+          scheduleCode,
+          effectiveDate: scheduleEffectiveDate,
+          snapshotItemCodes,
+        });
+        await Promise.all(
+          reconciliation.affectedDrugIds.map((drugId) =>
+            recalculatePredictedReductionsForDrug(drugId, undefined, runId),
+          ),
+        );
+        logger.info(
+          {
+            runId,
+            scheduleCode,
+            effectiveDate: scheduleEffectiveDate,
+            delistedCount: reconciliation.delistedItemCodes.length,
+            reactivatedCount: reconciliation.reactivatedItemCodes.length,
+          },
+          "PBS catalogue lifecycle reconciled from complete current snapshot",
+        );
+      } else {
+        logger.warn(
+          { runId, scheduleCode, effectiveDate: scheduleEffectiveDate, snapshotItemCount: snapshotItemCodes.size },
+          "Skipped PBS catalogue lifecycle reconciliation because the current snapshot was not canonical",
+        );
+      }
       await beginIngestionChangeDetection(runId);
       changesRecorded = await syncScheduleChangesImpl({ authorityRunId: runId });
     }

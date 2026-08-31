@@ -64,6 +64,7 @@ import {
 } from "../lib/anniversary-verification";
 import { isPublishedReportFresh } from "../lib/pbs-published-files";
 import { requireAuth } from "../middlewares/requireAuth";
+import { activePbsItemScope } from "../lib/pbs-item-lifecycle";
 
 export function createReferenceRouter(
   database: typeof db = db,
@@ -145,6 +146,7 @@ const pbsSelect = {
   proportionalPrice: pbsItemsTable.proportionalPrice,
   therapeuticGroupId: pbsItemsTable.therapeuticGroupId,
   innovatorIndicator: pbsItemsTable.innovatorIndicator,
+  catalogueStatus: pbsItemsTable.catalogueStatus,
   drugName: drugsTable.name,
   activeIngredient: drugsTable.activeIngredient,
   sponsor: drugsTable.sponsor,
@@ -160,7 +162,7 @@ async function enrichPbsItemRows<T extends { drugId: number }>(rows: T[]): Promi
       innovatorIndicator: pbsItemsTable.innovatorIndicator,
     })
     .from(pbsItemsTable)
-    .where(and(inArray(pbsItemsTable.drugId, drugIds), productionMasterScope(pbsItemsTable.authorityScope)));
+    .where(and(inArray(pbsItemsTable.drugId, drugIds), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)));
   const originatorBrandByDrug = new Map<number, string>();
   for (const item of originatorItems) {
     if (indicatorIsTrue(item.innovatorIndicator) && !originatorBrandByDrug.has(item.drugId)) {
@@ -282,7 +284,7 @@ router.get("/medicine-directory", async (req, res): Promise<void> => {
   recentDate.setUTCDate(recentDate.getUTCDate() - 90);
   const recentDateString = recentDate.toISOString().slice(0, 10);
   const [items, predictions, highChanges, disclosureCycles, fnbReductions, thresholds] = await Promise.all([
-    db.select(pbsSelect).from(pbsItemsTable).innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)).where(and(productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
+    db.select(pbsSelect).from(pbsItemsTable).innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id)).where(and(activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
     db
       .select({
         drugId: predictedReductionsTable.drugId,
@@ -412,7 +414,7 @@ router.get("/medicine-drugs/:id/brands", async (req, res): Promise<void> => {
       .select(pbsSelect)
       .from(pbsItemsTable)
       .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-      .where(and(eq(pbsItemsTable.drugId, parsed.data.id), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
+       .where(and(eq(pbsItemsTable.drugId, parsed.data.id), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
     db
       .select({
         brandName: scheduleChangesTable.brandName,
@@ -517,7 +519,8 @@ router.get("/medicine-drugs/:id/brands/:brandName/items", async (req, res): Prom
       .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
       .where(
         and(
-          eq(pbsItemsTable.drugId, parsed.data.id),
+           eq(pbsItemsTable.drugId, parsed.data.id),
+           activePbsItemScope(),
           productionMasterScope(pbsItemsTable.authorityScope),
           productionMasterScope(drugsTable.authorityScope),
           parsed.data.brandName.trim().toLocaleLowerCase() === "crosuva"
@@ -627,7 +630,7 @@ router.get("/anniversary-verification", async (_req, res): Promise<void> => {
       })
       .from(pbsItemsTable)
       .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-      .where(and(productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
+       .where(and(activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope))),
     db
       .select({
         id: predictedReductionsTable.id,
@@ -647,6 +650,7 @@ router.get("/anniversary-verification", async (_req, res): Promise<void> => {
       .innerJoin(drugsTable, eq(predictedReductionsTable.drugId, drugsTable.id))
       .where(
         and(
+          activePbsItemScope(),
           gte(predictedReductionsTable.predictedDate, today),
           productionAuthorityRun(predictedReductionsTable.authorityRunId),
           productionMasterScope(pbsItemsTable.authorityScope),
@@ -733,6 +737,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
     .where(
       and(
         productionAuthorityRun(predictedReductionsTable.authorityRunId),
+        activePbsItemScope(),
         productionMasterScope(pbsItemsTable.authorityScope),
         productionMasterScope(drugsTable.authorityScope),
         gte(predictedReductionsTable.predictedDate, from),
@@ -754,7 +759,7 @@ router.get("/upcoming-predicted-reductions", async (req, res): Promise<void> => 
           innovatorIndicator: pbsItemsTable.innovatorIndicator,
         })
         .from(pbsItemsTable)
-        .where(and(inArray(pbsItemsTable.drugId, visibleDrugIds), productionMasterScope(pbsItemsTable.authorityScope)))
+       .where(and(inArray(pbsItemsTable.drugId, visibleDrugIds), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope)))
     : [];
   const originatorBrandByDrug = new Map<number, string>();
   for (const item of originatorItems) {
@@ -893,7 +898,8 @@ router.get("/pbs-items", async (req, res): Promise<void> => {
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
     .where(
       and(
-        productionMasterScope(pbsItemsTable.authorityScope),
+         activePbsItemScope(),
+         productionMasterScope(pbsItemsTable.authorityScope),
         productionMasterScope(drugsTable.authorityScope),
         formulary ? eq(pbsItemsTable.formulary, formulary) : undefined,
         ...searchTokens.map((token) =>
@@ -923,7 +929,7 @@ router.get("/pbs-items/:itemCode", async (req, res): Promise<void> => {
     .select(pbsSelect)
     .from(pbsItemsTable)
     .innerJoin(drugsTable, eq(pbsItemsTable.drugId, drugsTable.id))
-    .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)));
+     .where(and(eq(pbsItemsTable.itemCode, parsed.data.itemCode), activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope), productionMasterScope(drugsTable.authorityScope)));
   if (!row) {
     res.status(404).json({ error: "PBS item not found" });
     return;
@@ -973,10 +979,13 @@ router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promis
     db
     .select()
     .from(predictedReductionsTable)
+    .innerJoin(pbsItemsTable, eq(predictedReductionsTable.itemCode, pbsItemsTable.itemCode))
     .where(
       and(
         eq(predictedReductionsTable.itemCode, parsed.data.itemCode),
+        activePbsItemScope(),
         productionAuthorityRun(predictedReductionsTable.authorityRunId),
+        productionMasterScope(pbsItemsTable.authorityScope),
         gte(predictedReductionsTable.predictedDate, today),
         freshPredictionCondition(today),
       ),
@@ -987,8 +996,8 @@ router.get("/pbs-items/:itemCode/predicted-reductions", async (req, res): Promis
   res.json(
     ListItemPredictedReductionsResponse.parse(
       rows.map((row) => ({
-        ...row,
-        significance: predictedReductionSignificance(row.predictedPercentage, thresholds),
+        ...row.predicted_reductions,
+        significance: predictedReductionSignificance(row.predicted_reductions.predictedPercentage, thresholds),
       })),
     ),
   );
@@ -1037,7 +1046,11 @@ async function enrichScheduleChangeRows<T extends {
             formulary: pbsItemsTable.formulary,
           })
           .from(pbsItemsTable)
-           .where(and(or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)), productionMasterScope(pbsItemsTable.authorityScope)))
+            .where(and(
+              or(inArray(pbsItemsTable.itemCode, itemIdentifiers), inArray(pbsItemsTable.liItemId, itemIdentifiers)),
+              activePbsItemScope(),
+              productionMasterScope(pbsItemsTable.authorityScope),
+            ))
       : [],
     drugIds.length
       ? db
@@ -1047,7 +1060,11 @@ async function enrichScheduleChangeRows<T extends {
             innovatorIndicator: pbsItemsTable.innovatorIndicator,
           })
           .from(pbsItemsTable)
-           .where(and(inArray(pbsItemsTable.drugId, drugIds), productionMasterScope(pbsItemsTable.authorityScope)))
+            .where(and(
+              inArray(pbsItemsTable.drugId, drugIds),
+              activePbsItemScope(),
+              productionMasterScope(pbsItemsTable.authorityScope),
+            ))
       : [],
   ]);
   const itemsByIdentifier = new Map(
@@ -1210,7 +1227,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
         ),
       )
       .orderBy(desc(artgEntriesTable.registrationDate), asc(artgEntriesTable.productName), asc(artgEntriesTable.artgId)),
-    db.select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName }).from(pbsItemsTable).where(productionMasterScope(pbsItemsTable.authorityScope)),
+    db.select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName }).from(pbsItemsTable).where(and(activePbsItemScope(), productionMasterScope(pbsItemsTable.authorityScope))),
   ]);
   const brandsByDrug = new Map<number, string[]>();
   for (const item of pbsItems) {

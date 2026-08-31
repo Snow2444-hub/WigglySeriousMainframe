@@ -321,13 +321,22 @@ export async function upsertPbsItemsFromPayload(
     if (updateCurrentItem) {
       await db
         .insert(pbsItemsTable)
-        .values(withGlobalAuthority(itemValues))
+        .values(withGlobalAuthority({
+          ...itemValues,
+          catalogueStatus: "active" as const,
+        }))
         .onConflictDoUpdate({
           target: pbsItemsTable.itemCode,
-          set: withGlobalAuthority(itemValues),
+          set: withGlobalAuthority({
+            ...itemValues,
+            catalogueStatus: "active" as const,
+          }),
         });
     } else {
-      await db.insert(pbsItemsTable).values(withGlobalAuthority(itemValues)).onConflictDoNothing();
+      await db.insert(pbsItemsTable).values(withGlobalAuthority({
+        ...itemValues,
+        catalogueStatus: "delisted" as const,
+      })).onConflictDoNothing();
     }
 
     await appendPriceHistoryIfChanged({

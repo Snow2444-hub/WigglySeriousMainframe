@@ -196,6 +196,14 @@ export const PbsItemFormulary = {
   F2: 'F2',
 } as const;
 
+export type PbsItemCatalogueStatus = typeof PbsItemCatalogueStatus[keyof typeof PbsItemCatalogueStatus];
+
+
+export const PbsItemCatalogueStatus = {
+  active: 'active',
+  delisted: 'delisted',
+} as const;
+
 export interface PbsItem {
   itemCode: string;
   /** @nullable */
@@ -231,6 +239,7 @@ export interface PbsItem {
   activeIngredient: string;
   sponsor: string;
   formulary: PbsItemFormulary;
+  catalogueStatus: PbsItemCatalogueStatus;
   currentAemp: number;
   /** @nullable */
   currentDpmq: number | null;
@@ -694,6 +703,14 @@ export interface ArtgImportRun {
   errorMessage: string | null;
 }
 
+export type PharmacyStockCatalogueStatus = typeof PharmacyStockCatalogueStatus[keyof typeof PharmacyStockCatalogueStatus];
+
+
+export const PharmacyStockCatalogueStatus = {
+  active: 'active',
+  delisted: 'delisted',
+} as const;
+
 export interface PharmacyStock {
   id: number;
   userId: string;
@@ -716,6 +733,7 @@ export interface PharmacyStock {
   purchaseDate: string;
   /** @nullable */
   invoiceReference: string | null;
+  catalogueStatus: PharmacyStockCatalogueStatus;
 }
 
 export interface StockPrediction {

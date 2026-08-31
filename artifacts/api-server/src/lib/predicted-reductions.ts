@@ -16,6 +16,7 @@ import {
 } from "@workspace/db";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import { CANONICAL_PUBLISHED_SOURCE_KEYS } from "./pbs-source-status";
+import { activePbsItemScope } from "./pbs-item-lifecycle";
 
 const DEFAULT_ANNIVERSARY_SETTINGS = [
   { anniversaryYears: 5, reductionType: "5-year statutory reduction", percentage: 5 },
@@ -191,7 +192,7 @@ export async function recalculatePredictedReductionsForDrug(
       formulary: pbsItemsTable.formulary,
     })
     .from(pbsItemsTable)
-    .where(and(eq(pbsItemsTable.drugId, drugId), eq(pbsItemsTable.authorityScope, authorityScope)));
+    .where(and(eq(pbsItemsTable.drugId, drugId), activePbsItemScope(), eq(pbsItemsTable.authorityScope, authorityScope)));
   const settings = await db
     .select()
     .from(reductionSettingsTable)

@@ -5,6 +5,7 @@ import { z } from "zod/v4";
 import { drugsTable } from "./drugs";
 
 export const formularyEnum = pgEnum("formulary", ["F1", "F2"]);
+export const pbsItemCatalogueStatusEnum = pgEnum("pbs_item_catalogue_status", ["active", "delisted"]);
 
 export const pbsItemsTable = pgTable(
   "pbs_items",
@@ -24,6 +25,7 @@ export const pbsItemsTable = pgTable(
     liForm: text("li_form"),
     programCode: text("program_code"),
     formulary: formularyEnum("formulary").notNull(),
+    catalogueStatus: pbsItemCatalogueStatusEnum("catalogue_status").notNull().default("active"),
     currentAemp: numeric("current_aemp", { precision: 10, scale: 2, mode: "number" }).notNull(),
     currentDpmq: numeric("current_dpmq", { precision: 10, scale: 2, mode: "number" }),
     lastUpdated: date("last_updated", { mode: "string" }).notNull(),
@@ -46,6 +48,7 @@ export const pbsItemsTable = pgTable(
   },
   (table) => [
     index("pbs_items_authority_scope_idx").on(table.authorityScope),
+    index("pbs_items_authority_catalogue_status_idx").on(table.authorityScope, table.catalogueStatus),
     check(
       "pbs_items_authority_scope_check",
       sql`${table.authorityScope} = 'production' OR ${table.authorityScope} LIKE 'test:%'`,
