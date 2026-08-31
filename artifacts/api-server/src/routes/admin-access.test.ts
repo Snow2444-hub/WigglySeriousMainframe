@@ -8,7 +8,7 @@ import {
   db,
   ingestionRunsTable,
   pbsWatchlistTable,
-  runtimeAuthorityScope,
+  PRODUCTION_AUTHORITY_SCOPE,
   usersTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -156,9 +156,9 @@ before(async () => {
     .set({ role: "admin" })
     .where(eq(usersTable.id, adminUserId));
   await db.insert(ingestionRunsTable).values({
-    startedAt: new Date("2026-08-31T00:00:00.000Z"),
-    lastProgressAt: new Date("2026-08-31T00:00:01.000Z"),
-    finishedAt: new Date("2026-08-31T00:00:02.000Z"),
+    startedAt: new Date("2099-08-31T00:00:00.000Z"),
+    lastProgressAt: new Date("2099-08-31T00:00:01.000Z"),
+    finishedAt: new Date("2099-08-31T00:00:02.000Z"),
     status: "completed",
     recordsProcessed: 2,
     pagesFetched: 0,
@@ -166,7 +166,7 @@ before(async () => {
     errorMessage: "admin-access-fixture",
     mode: "tga_shortages",
     scheduleDate: "2026-08-31",
-    authorityScope: runtimeAuthorityScope(),
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
     snapshotComplete: true,
   });
 
@@ -226,6 +226,16 @@ test("every Data updates endpoint allows admins through to its handler", async (
     );
     assert.notEqual(response.status, 403, `${endpoint.label} must not reject admins`);
   }
+});
+
+test("recent ingestion runs accepts source-specific ingestion modes", async () => {
+  const response = await request(adminUserId, "/api/admin/ingestion-runs");
+  assert.equal(response.status, 200);
+  const runs = (await response.json()) as Array<{ errorMessage: string | null; mode: string }>;
+  assert.ok(
+    runs.some((run) => run.errorMessage === "admin-access-fixture" && run.mode === "tga_shortages"),
+    "the latest ingestion rows should include the TGA shortages run",
+  );
 });
 
 test("/api/me is available to authenticated users and reports their local role", async () => {

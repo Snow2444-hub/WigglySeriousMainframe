@@ -26,3 +26,9 @@ A page that consumes the cap can still complete its endpoint snapshot when the P
 **Why:** A capped live run exposed that returning before inspecting pagination incorrectly labeled a naturally terminal dispensing-rule snapshot as incomplete.
 
 **How to apply:** Inspect pagination before enforcing the global cap; only leave coverage incomplete when the response actually advertises another page.
+
+Current master-item presence is not evidence that a PBS benefit remains listed; lifecycle checks must use complete schedule snapshots.
+
+**Why:** Items can remain in the additive master table after disappearing from every later authoritative schedule, allowing predictions to coexist with genuine historical delistings.
+
+**How to apply:** Before classifying a delisting as spurious or relisted, reconstruct item presence across complete, canonically identified snapshots. Prediction eligibility must not rely on the master table alone.
