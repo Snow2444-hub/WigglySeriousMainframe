@@ -30,3 +30,4 @@
 - [PBS source relevance](pbs-source-relevance.md) — Local catalogue absence is benign only for untracked rows; tracked unmatched rows are a coverage gap, not source failure.
 - [Test database isolation](test-database-isolation.md) — API integration tests must use a dedicated database or verified per-run schema, never the shared development schema.
 - [Authority RLS execution role](authority-rls-execution-role.md) — App sessions assume a non-bypass table-owning role so FORCE RLS works despite the managed superuser login.
+- [Repair-run authority ownership](repair-run-authority-ownership.md) — Operational repair scripts must use the approved ingestion-run authority API for production-scoped derived writes.

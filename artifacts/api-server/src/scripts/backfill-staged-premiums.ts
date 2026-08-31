@@ -2,13 +2,17 @@ import { asc, eq } from "drizzle-orm";
 import { db, rawScheduleStagingTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { fetchSchedule } from "../lib/pbs-ingestion";
-import { buildPbsItemDispensingRuleRequestFilters } from "../lib/pbs-filtering";
 import {
   itemScheduleMetadataFromPayload,
   upsertPbsItemPremiumsFromPayload,
   type PbsItemScheduleMetadata,
 } from "../lib/pbs-item-mapping";
 import { syncScheduleChangesFromStagedData } from "../lib/schedule-changes";
+import {
+  completeProductionRepairRun,
+  createProductionRepairRun,
+  failProductionRepairRun,
+} from "../lib/ingestion-run-control";
 
 // This is a legacy operational script. Running it against duplicated staged
 // data without canonical run selection can pool runs and manufacture bad
@@ -174,58 +178,58 @@ async function main(): Promise<void> {
   const cutoff = oneYearBefore(latestEffectiveDate);
   const schedules = allSchedules.filter((schedule) => schedule.effectiveDate >= cutoff);
   const requestedScheduleLimit = Number(process.env.PBS_PREMIUM_BACKFILL_MAX_SCHEDULES);
-  const requestedBatchLimit = Number(process.env.PBS_PREMIUM_BACKFILL_MAX_BATCHES);
   const schedulesToFetch =
     Number.isInteger(requestedScheduleLimit) && requestedScheduleLimit > 0
       ? schedules.slice(0, requestedScheduleLimit)
       : schedules;
   let recordsProcessed = 0;
+  const authorityRunId = await createProductionRepairRun(latestEffectiveDate, schedulesToFetch.length);
 
-  if (process.env.PBS_PREMIUM_SYNC_ONLY !== "true") {
-    for (const schedule of schedulesToFetch) {
-      const filters = buildPbsItemDispensingRuleRequestFilters(schedule.itemMetadata.keys())
-      .map((filter) => ({
-        ...filter,
-        requestKey: `premium-backfill:${filter.requestKey}:schedule-${schedule.scheduleCode}`,
-        params: { ...filter.params, schedule_code: String(schedule.scheduleCode) },
-      }))
-      .slice(
-        0,
-        Number.isInteger(requestedBatchLimit) && requestedBatchLimit > 0
-          ? requestedBatchLimit
-          : undefined,
-      );
-      if (filters.length === 0) continue;
-      logger.info(
-        {
-          scheduleCode: schedule.scheduleCode,
-          effectiveDate: schedule.effectiveDate,
-          items: schedule.itemMetadata.size,
-          requestBatches: filters.length,
-        },
-        "Backfilling PBS item premium relationships from staged schedule",
-      );
-      await fetchSchedule({
-        scheduleDate: latestEffectiveDate,
-        latestScheduleOnly: false,
-        filters,
-        onPayload: async (page) => {
-          recordsProcessed += await upsertPbsItemPremiumsFromPayload(
-            page.payload,
-            schedule.effectiveDate,
-            schedule.itemMetadata,
-            schedule.scheduleCode,
-          );
-        },
-      });
+  try {
+    if (process.env.PBS_PREMIUM_SYNC_ONLY !== "true") {
+      for (const schedule of schedulesToFetch) {
+        if (schedule.itemMetadata.size === 0) continue;
+        logger.info(
+          {
+            scheduleCode: schedule.scheduleCode,
+            effectiveDate: schedule.effectiveDate,
+            items: schedule.itemMetadata.size,
+          },
+          "Backfilling PBS item premium relationships from full staged schedule snapshot",
+        );
+        await fetchSchedule({
+          scheduleDate: latestEffectiveDate,
+          latestScheduleOnly: false,
+          filters: [{
+            requestKey: `premium-backfill:snapshot:schedule-${schedule.scheduleCode}`,
+            endpoint: "item-dispensing-rule-relationships",
+            params: { schedule_code: String(schedule.scheduleCode) },
+          }],
+          coverageScope: "schedule",
+          stagingRunId: authorityRunId,
+          resumeFromStaging: true,
+          onPayload: async (page) => {
+            recordsProcessed += await upsertPbsItemPremiumsFromPayload(
+              page.payload,
+              schedule.effectiveDate,
+              schedule.itemMetadata,
+              schedule.scheduleCode,
+            );
+          },
+        });
+      }
     }
-  }
 
-  const scheduleChangeSummary = await syncScheduleChangesFromStagedData();
-  logger.info(
-    { schedules: schedulesToFetch.length, recordsProcessed, scheduleChangeSummary },
-    "Completed staged PBS premium history backfill and schedule-change sync",
-  );
+    const scheduleChangeSummary = await syncScheduleChangesFromStagedData({ authorityRunId });
+    await completeProductionRepairRun(authorityRunId, schedulesToFetch.length);
+    logger.info(
+      { authorityRunId, schedules: schedulesToFetch.length, recordsProcessed, scheduleChangeSummary },
+      "Completed staged PBS premium history backfill and schedule-change sync",
+    );
+  } catch (error) {
+    await failProductionRepairRun(authorityRunId, error);
+    throw error;
+  }
 }
 
 main().catch((error) => {

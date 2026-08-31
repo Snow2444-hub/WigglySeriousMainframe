@@ -7,7 +7,7 @@ import {
   isAuthoritativeStagedSnapshot,
   stagedRunIdFromRequestKey,
 } from "./staged-snapshot-validity";
-import { runtimeAuthorityScope } from "@workspace/db";
+import { PRODUCTION_AUTHORITY_SCOPE, runtimeAuthorityScope } from "@workspace/db";
 
 export const ACTIVE_INGESTION_STATUSES = ["queued", "running"] as const;
 export const INGESTION_RUN_LOCK_KEY = 502_668_451;
@@ -152,6 +152,68 @@ export async function acquireIngestionRun(options: IngestionRunOptions = {}): Pr
     if (!run) throw new Error("Unable to create an ingestion run");
     return { run, recoveredRunIds };
   });
+}
+
+export async function createProductionRepairRun(
+  scheduleDate: string,
+  totalSchedules: number,
+): Promise<number> {
+  const [run] = await db
+    .insert(ingestionRunsTable)
+    .values({
+      status: "running",
+      mode: "backfill",
+      scheduleDate,
+      totalSchedules,
+      authorityScope: PRODUCTION_AUTHORITY_SCOPE,
+    })
+    .returning({ id: ingestionRunsTable.id });
+  if (!run) throw new Error("Unable to create the PBS premium repair authority run");
+  return run.id;
+}
+
+export async function completeProductionRepairRun(
+  runId: number,
+  schedulesProcessed: number,
+): Promise<void> {
+  const [completedRun] = await db
+    .update(ingestionRunsTable)
+    .set({
+      status: "completed",
+      finishedAt: new Date(),
+      lastProgressAt: new Date(),
+      schedulesProcessed,
+      snapshotComplete: true,
+    })
+    .where(
+      and(
+        eq(ingestionRunsTable.id, runId),
+        eq(ingestionRunsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE),
+        eq(ingestionRunsTable.status, "running"),
+      ),
+    )
+    .returning({ id: ingestionRunsTable.id });
+  if (!completedRun) throw new Error(`PBS premium repair authority run ${runId} could not be completed`);
+}
+
+export async function failProductionRepairRun(runId: number, error: unknown): Promise<void> {
+  const errorMessage = error instanceof Error ? error.message : "Unknown PBS premium repair error";
+  await db
+    .update(ingestionRunsTable)
+    .set({
+      status: "failed",
+      finishedAt: new Date(),
+      lastProgressAt: new Date(),
+      errorMessage: errorMessage.slice(0, 2_000),
+      snapshotComplete: false,
+    })
+    .where(
+      and(
+        eq(ingestionRunsTable.id, runId),
+        eq(ingestionRunsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE),
+        eq(ingestionRunsTable.status, "running"),
+      ),
+    );
 }
 
 export async function recoverInterruptedIngestionRuns(runIds?: number[]): Promise<IngestionRun[]> {

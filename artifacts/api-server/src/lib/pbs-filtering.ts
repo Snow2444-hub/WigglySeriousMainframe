@@ -107,23 +107,6 @@ export function buildPbsItemIdRequestFilters(itemIds: Iterable<string>): PbsRequ
   return buildPbsItemRelationshipFilters(itemIds, "items", "atc-items");
 }
 
-export function buildPbsItemDispensingRuleRequestFilters(itemIds: Iterable<string>): PbsRequestFilter[] {
-  const validIds = [...new Set(itemIds)].filter((itemId) => /^[A-Za-z0-9_-]{1,214}$/.test(itemId));
-  const filters: PbsRequestFilter[] = [];
-
-  // The PBS endpoint accepts a comma-separated item list, while long OData
-  // "or" expressions produce a 404 for historical schedule lookups.
-  for (let start = 0; start < validIds.length; start += 25) {
-    const ids = validIds.slice(start, start + 25);
-    filters.push({
-      requestKey: `item-dispensing-rules:${start / 25 + 1}`,
-      endpoint: "item-dispensing-rule-relationships",
-      params: { li_item_id: ids.join(",") },
-    });
-  }
-  return filters;
-}
-
 function buildPbsItemRelationshipFilters(
   itemIds: Iterable<string>,
   endpoint: "items" | "item-dispensing-rule-relationships",
