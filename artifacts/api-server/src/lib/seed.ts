@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import {
+  PRODUCTION_AUTHORITY_SCOPE,
   drugsTable,
   pbsItemsTable,
   priceHistoryTable,
@@ -15,6 +16,7 @@ export async function seedReferenceData(): Promise<void> {
         activeIngredient: "Rosuvastatin calcium",
         sponsor: "AstraZeneca Australia",
         firstPbsListingDate: "2007-06-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
       {
         id: 2,
@@ -22,6 +24,7 @@ export async function seedReferenceData(): Promise<void> {
         activeIngredient: "Apixaban",
         sponsor: "Bristol-Myers Squibb Australia",
         firstPbsListingDate: "2013-08-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
       {
         id: 3,
@@ -29,6 +32,7 @@ export async function seedReferenceData(): Promise<void> {
         activeIngredient: "Empagliflozin",
         sponsor: "Boehringer Ingelheim",
         firstPbsListingDate: "2014-09-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
     ])
     .onConflictDoNothing();
@@ -45,6 +49,7 @@ export async function seedReferenceData(): Promise<void> {
         currentAemp: 18.42,
         currentDpmq: 22.31,
         lastUpdated: "2026-07-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
       {
         itemCode: "5678R",
@@ -55,6 +60,7 @@ export async function seedReferenceData(): Promise<void> {
         currentAemp: 34.8,
         currentDpmq: 39.95,
         lastUpdated: "2026-07-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
       {
         itemCode: "9012W",
@@ -65,6 +71,7 @@ export async function seedReferenceData(): Promise<void> {
         currentAemp: 26.15,
         currentDpmq: 30.2,
         lastUpdated: "2026-07-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
       {
         itemCode: "3456B",
@@ -75,6 +82,7 @@ export async function seedReferenceData(): Promise<void> {
         currentAemp: 9.1,
         currentDpmq: 12.75,
         lastUpdated: "2026-07-01",
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       },
     ])
     .onConflictDoNothing();
