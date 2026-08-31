@@ -15,15 +15,16 @@ Both TGA export URLs are directly fetchable server-to-server:
 
 Each returned `HTTP 200` to a plain server-side GET without a prior browser session, authentication token, Referer, or special request headers. Both downloads completed cleanly. The responses set an affinity cookie, but the cookie was not required to initiate either request. Two direct requests did not trigger rate limiting; that is not proof of a published rate-limit policy, but a single daily pull per source is operationally conservative.
 
-### Important source quirks
+### Important source quirks and parser guarantees
 
-1. Despite `exportType=Excel`, the active endpoint currently returns a UTF-8 CSV with a BOM, not an XLSX workbook.
-2. Both responses advertise `Content-Type: text/plain`; format detection must use content, not that header.
-3. The server supplies a dated `.csv` filename through `Content-Disposition`.
-4. Each file begins with explanatory prose and blank records before its real header.
-5. The files use CRLF line endings and may contain quoted, multiline management text.
-6. The archive currently has a 12-column header but data records contain a harmless thirteenth trailing empty field. The parser must explicitly tolerate only trailing empty surplus cells rather than silently accepting arbitrary width changes.
-7. No `ETag` or `Last-Modified` header was observed. Freshness therefore comes from the retrieval time and report-generation preamble, with hashes used for change detection.
+The build must explicitly handle all four documented format quirks:
+
+1. **Parse as CSV regardless of content type.** Despite `exportType=Excel`, the active endpoint currently returns a UTF-8 CSV with a BOM, not an XLSX workbook. Both responses advertise `Content-Type: text/plain`; format detection must use the content and/or the `Content-Disposition` filename, never the MIME type alone.
+2. **Skip the explanatory preamble.** Each file begins with prose and blank records before the real header. The parser must scan normalized records for the required header columns and must not assume the header is record 1.
+3. **Tolerate the archive phantom column.** The archive currently has a 12-column header but data records contain a harmless thirteenth trailing empty field. The parser may discard that one trailing empty cell, but must reject non-empty surplus columns or other width changes.
+4. **Handle the source's CSV encoding/record shape.** Decode the optional UTF-8 BOM, support CRLF line endings, and use a quoted/multiline-safe CSV parser for management text. It must not split physical lines or commas manually.
+
+The server supplies a dated `.csv` filename through `Content-Disposition`. No `ETag` or `Last-Modified` header was observed. Freshness therefore comes from retrieval time and the report-generation preamble, with hashes used for change detection.
 
 ### Actual active-file structure
 
@@ -104,7 +105,14 @@ Add a machine-token endpoint shaped like the existing PBS scheduled-ingestion ro
 - Add a daily trigger to the same external cron service that invokes the monthly PBS job.
 - Recommended schedule: **06:30 Australia/Sydney every day**.
 
-The endpoint fetches both sources. Active and archive are recorded as separate source observations and have independent health. A failed archive pull must not invalidate a successful active snapshot, because the active snapshot drives the operational view.
+The daily trigger fetches **active only**. It does not pull the full 9,150-row archive every morning. Active and archive are recorded as separate source observations and have independent health.
+
+The archive cadence is intentionally slower:
+
+- **Active:** daily at 06:30 Australia/Sydney; this is the operational feed and is only 983 rows in the observed export.
+- **Archive:** weekly, proposed Sunday at 07:00 Australia/Sydney, plus an authenticated on-demand archive refresh for an administrator or recovery run. This avoids downloading all 9,150 rows each morning.
+
+The endpoint should accept an explicit source scope (`active`, `archive`, or `both`) so the daily cron cannot accidentally become an archive download. A failed archive pull must not invalidate a successful active snapshot, because the active snapshot drives the operational view.
 
 ### Fetch behavior
 
@@ -146,7 +154,7 @@ Use two new source keys:
 - `tga_shortages_active`
 - `tga_shortages_archive`
 
-Group them under source family `TGA medicine shortages` and add a `daily` cadence to the source-registry evaluator.
+Group them under source family `TGA medicine shortages`. Add daily cadence for the active source and weekly cadence for the archive source to the source-registry evaluator.
 
 The existing tables are PBS-named. Implementation should reuse their lifecycle implementation, but should not overload PBS-specific typed row columns for shortage fields. Introduce shortage-specific typed observations while linking them to the existing file-attempt record. If this feature is the trigger for generic naming, perform only additive generic extraction; do not rename existing tables as part of this feature.
 
@@ -247,6 +255,17 @@ This makes matching explainable, re-runnable, and reviewable without rewriting t
 
 No edit-distance-only match should reach the followed view. Maintain explicit, testable aliases for known naming differences rather than progressively relaxing fuzzy thresholds.
 
+### Display treatment by confidence
+
+All safely matched rows remain visible in the followed view; lower confidence does not silently discard a shortage. The UI distinguishes the evidence:
+
+- **High confidence — dual corroboration:** ingredient and brand identify the same watched drug. Show a prominent `High confidence match` indicator and allow the row to lead its watched-drug group.
+- **Medium confidence — ingredient-only:** show an `Ingredient match` / `Medium confidence` indicator and place it after dual-corroborated rows for the same watched drug.
+- **Review confidence — unique brand-only:** show a `Brand-only match` / `Review` indicator, keep the row searchable and browseable, and place it below ingredient-backed matches.
+- **Ambiguous or fuzzy-only candidates:** retain them in the full TGA list with `Unmatched` or `Needs review`; do not present them as followed-medicine matches.
+
+The match badge, evidence paths, matcher version, and confidence must be available in the detail view. The initial notification design excludes medium, review, ambiguous, and fuzzy-only rows; the 22 dual-corroborated rows are the first candidates for a later notification reliability trial, not an immediate alerting guarantee.
+
 ### Current watchlist estimate
 
 The development watchlist currently has nine enabled drug-name entries. Against the active export fetched on 31 August 2026, a conservative ingredient/brand/ARTG simulation produced:
@@ -289,6 +308,8 @@ Create independent health entries for active and archive exports.
 
 Two days fits the current date-based source-health model and tolerates one missed morning while still surfacing a time-sensitive failure quickly. A future timestamp-based health model could tighten this to 36 hours.
 
+The archive uses its own slower health expectation: mark it stale after **14 days** without a successful weekly or on-demand refresh. Archive staleness never blocks current active shortages; it only qualifies the resolved-history view and archive source indicator.
+
 ## 7. API and view structure
 
 ### Read API
@@ -326,7 +347,8 @@ Top-to-bottom structure:
    - Anticipated
    - Discontinued
 5. Results grouped by watched drug
-6. Secondary action: `Browse all TGA shortages`
+6. A `Recently resolved` context panel for followed medicines
+7. Secondary action: `Browse all TGA shortages`
 
 Within each result, visual priority is:
 
@@ -352,6 +374,8 @@ Resolved is excluded from the default sections but remains:
 - linkable by URL
 
 Archive records belong in resolved/discontinued history. Where archive fields are absent, show `Not supplied in archive` rather than inventing availability or management information.
+
+For a followed drug, a resolved shortage is not silently dropped. Show a compact **Recently resolved** panel on the Following view for the last **90 days**, outside the three active section counts. Each entry shows the medicine/brand, ARTG ID, resolved date or supply-impact end date, impact rating, and source-health/as-of context. If the active export supplies `Availability: Available`, show that as resolved context; if the record comes only from the archive, show unavailable fields as `Not supplied in archive`. Resolved records older than 90 days remain queryable through the Resolved filter and search.
 
 ### Default ordering
 
