@@ -1,0 +1,34 @@
+Bug #1 root cause confirmed: the 50 items were genuinely delisted and stayed
+absent (not relisted, not spurious). The real bug is that pbs_items is ADDITIVE —
+delisted items are never removed/marked from it, so they remain "current," keep
+getting price updates, and feed prediction generation (and potentially the
+directory, stock exposure, shortage matching) as if they're on the PBS.
+
+Investigate scope, then propose the fix (don't build yet):
+
+1. FULL SCOPE. The 50 are the visible tip (they had both a delisting and a
+   prediction). Find ALL items in pbs_items that have an active delisting event
+   but are still present as "current." Report the total count — is it ~50, or
+   many more? This tells us how long the additive-without-removal gap has been
+   accumulating.
+
+2. WHICH READERS ARE AFFECTED. pbs_items is read by predictions, the PBS
+   directory, stock exposure, shortage matching, and others. Report which of
+   these would currently include a delisted-but-present item as if it were
+   current PBS data — i.e. how far the contamination spreads beyond just
+   predictions.
+
+3. PROPOSE THE FIX — prefer the structural version. Recommend marking delisted
+   items inactive in pbs_items (a status field so "current catalogue" queries
+   exclude them) OVER making each reader check delisting status separately —
+   because per-reader checks are the same "a reader forgets the filter"
+   fragility the authority boundary had. Show how ingestion would set this status
+   when it detects a delisting, and how existing "current items" readers would
+   respect it with minimal per-reader changes.
+   Also address: what about the reverse — if a delisted item genuinely relists
+   later (none of these 50 did, but it can happen), the status should flip back.
+   So it's "delisted = inactive, present-again = active," driven by the schedule
+   snapshots.
+
+Report scope (1), spread (2), and the proposed structural fix (3). Don't build
+until I review — this touches the catalogue's core lifecycle and several readers.
