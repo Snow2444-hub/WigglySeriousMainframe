@@ -2334,6 +2334,165 @@ components:
           items:
             $ref: "#/components/schemas/PublishedFileMatchFailure"
       required: [id, sourceKey, pageUrl, fileUrl, fileName, contentType, fileSha256, retrievedAt, reportPublicationDate, effectiveDate, parserVersion, status, parseHealth, totalRows, matchedRows, rejectedRows, watchlistUnmatchedRows, errorMessage, watchlistFailures]
+    TgaShortageIngestionInput:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [active, archive, both]
+          default: active
+    TgaShortageIngestionAcceptedResult:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [accepted, skipped]
+        runId:
+          type: integer
+      required: [status, runId]
+    TgaShortageSourceStatus:
+      type: object
+      properties:
+        sourceKey:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [OK, NO_RELEVANT_ROWS, COVERAGE_GAP, STALE, FAILED]
+        cadenceLabel:
+          type: string
+        lastSuccessfulPullAt:
+          type: ["string", "null"]
+          format: date-time
+        staleAfterDate:
+          type: ["string", "null"]
+          format: date
+        latestFailureStage:
+          type: ["string", "null"]
+        latestFailureMessage:
+          type: ["string", "null"]
+      required: [sourceKey, label, status, cadenceLabel, lastSuccessfulPullAt, staleAfterDate, latestFailureStage, latestFailureMessage]
+    TgaShortageSourceHealth:
+      type: object
+      properties:
+        active:
+          oneOf:
+            - $ref: "#/components/schemas/TgaShortageSourceStatus"
+            - type: "null"
+        archive:
+          oneOf:
+            - $ref: "#/components/schemas/TgaShortageSourceStatus"
+            - type: "null"
+        asOf:
+          type: string
+          format: date-time
+      required: [active, archive, asOf]
+    TgaShortageCounts:
+      type: object
+      properties:
+        current:
+          type: integer
+        anticipated:
+          type: integer
+        discontinued:
+          type: integer
+        resolved:
+          type: integer
+      required: [current, anticipated, discontinued, resolved]
+    TgaShortage:
+      type: object
+      properties:
+        id:
+          type: integer
+        sourceKind:
+          type: string
+          enum: [active, archive]
+        artgId:
+          type: string
+        artgName:
+          type: string
+        activeIngredients:
+          type: string
+        dosageForm:
+          type: string
+        sponsor:
+          type: string
+        shortageStatus:
+          type: ["string", "null"]
+        section:
+          type: string
+          enum: [current, anticipated, discontinued, resolved]
+        supplyImpactStartDate:
+          type: ["string", "null"]
+          format: date
+        supplyImpactEndDate:
+          type: ["string", "null"]
+          format: date
+        deletionFromMarket:
+          type: ["string", "null"]
+          format: date
+        shortageImpactRating:
+          type: ["string", "null"]
+        availability:
+          type: ["string", "null"]
+        reason:
+          type: ["string", "null"]
+        managementAction:
+          type: ["string", "null"]
+        lastUpdated:
+          type: ["string", "null"]
+          format: date
+        sourceAsOf:
+          type: string
+          format: date-time
+        followed:
+          type: boolean
+        watchedDrugId:
+          type: ["integer", "null"]
+        watchedDrugName:
+          type: ["string", "null"]
+        watchedActiveIngredient:
+          type: ["string", "null"]
+        matchConfidence:
+          type: ["string", "null"]
+          enum: [exact, high, review, null]
+        matchPaths:
+          type: array
+          items:
+            type: string
+            enum: [artg, ingredient, brand]
+        matchDiagnosticReason:
+          type: ["string", "null"]
+      required: [id, sourceKind, artgId, artgName, activeIngredients, dosageForm, sponsor, shortageStatus, section, supplyImpactStartDate, supplyImpactEndDate, deletionFromMarket, shortageImpactRating, availability, reason, managementAction, lastUpdated, sourceAsOf, followed, watchedDrugId, watchedDrugName, watchedActiveIngredient, matchConfidence, matchPaths, matchDiagnosticReason]
+    TgaShortageListResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [followed, all]
+        section:
+          type: ["string", "null"]
+          enum: [current, anticipated, discontinued, resolved, null]
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/TgaShortage"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        counts:
+          $ref: "#/components/schemas/TgaShortageCounts"
+        recentlyResolved:
+          type: array
+          items:
+            $ref: "#/components/schemas/TgaShortage"
+        sourceHealth:
+          $ref: "#/components/schemas/TgaShortageSourceHealth"
+      required: [mode, section, rows, total, page, limit, counts, recentlyResolved, sourceHealth]
     AdminPbsSourceStatus:
       type: object
       properties:
@@ -2348,7 +2507,7 @@ components:
           format: uri
         cadenceType:
           type: string
-          enum: [annual_august, price_disclosure_cycle, unconfigured]
+          enum: [daily, weekly, annual_august, price_disclosure_cycle, unconfigured]
         cadenceLabel:
           type: string
         status:

@@ -18,7 +18,8 @@ import {
   X,
   SlidersHorizontal,
   EyeOff,
-  Info
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { useCurrentRole } from '@/components/admin-guard';
 import { adminAccessForRole } from '@/lib/admin-access';
@@ -37,6 +38,7 @@ const navItems = [
   { href: '/changes', label: 'PBS updates', icon: Bell },
   { href: '/pbs', label: 'PBS directory', icon: BookOpen },
   { href: '/artg', label: 'ARTG register', icon: Database },
+  { href: '/shortages', label: 'TGA shortages', icon: AlertTriangle },
   { href: '/stock', label: 'Private stock', icon: Boxes },
   { href: '/brand-preferences', label: 'Brand visibility', icon: SlidersHorizontal },
   { href: '/reduction-info', label: 'Reduction guide', icon: Info },

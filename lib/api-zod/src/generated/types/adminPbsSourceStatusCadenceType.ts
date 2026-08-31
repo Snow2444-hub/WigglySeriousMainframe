@@ -10,6 +10,8 @@ export type AdminPbsSourceStatusCadenceType = typeof AdminPbsSourceStatusCadence
 
 
 export const AdminPbsSourceStatusCadenceType = {
+  daily: 'daily',
+  weekly: 'weekly',
   annual_august: 'annual_august',
   price_disclosure_cycle: 'price_disclosure_cycle',
   unconfigured: 'unconfigured',

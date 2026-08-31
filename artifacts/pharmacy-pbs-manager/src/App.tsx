@@ -25,6 +25,7 @@ import { PbsItemEvidence } from "@/pages/pbs/PbsItemEvidence";
 import { UpcomingChangesPage } from "@/pages/UpcomingChanges";
 import { BrandPreferencesPage } from "@/pages/brand-preferences";
 import { ReductionInfoPage } from "@/pages/reduction-info";
+import { ShortagesPage } from "@/pages/shortages";
 
 const queryClient = new QueryClient();
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -183,6 +184,7 @@ function Router() {
     <Route path="/pbs" component={() => <Protected><PbsDirectory /></Protected>} />
     <Route path="/pbs/:itemCode" component={() => <Protected><PbsItemEvidence /></Protected>} />
     <Route path="/artg" component={() => <Protected><ArtgDirectory /></Protected>} />
+    <Route path="/shortages" component={() => <Protected><ShortagesPage /></Protected>} />
     <Route path="/stock" component={() => <Protected><StockPage /></Protected>} />
     <Route path="/brand-preferences" component={() => <Protected><BrandPreferencesPage /></Protected>} />
     <Route path="/reduction-info" component={() => <Protected><ReductionInfoPage /></Protected>} />

@@ -38,6 +38,7 @@ import type {
   ListMedicineDirectoryParams,
   ListPbsItemsParams,
   ListScheduleChangesParams,
+  ListTgaShortagesParams,
   ListUpcomingPredictedReductionsParams,
   MedicineBrandItemSummary,
   MedicineBrandSummary,
@@ -59,6 +60,9 @@ import type {
   ScheduleChangeSettings,
   ScheduledIngestionAcceptedResult,
   StockExposureResponse,
+  TgaShortageIngestionAcceptedResult,
+  TgaShortageIngestionInput,
+  TgaShortageListResponse,
   UpcomingPredictedReductionGroup,
   UpdateScheduleChangeSettings
 } from './api.schemas';
@@ -233,6 +237,90 @@ export function useGetDashboard<TData = Awaited<ReturnType<typeof getDashboard>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDashboardQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTgaShortagesUrl = (params?: ListTgaShortagesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/tga-shortages?${stringifiedParams}` : `/api/tga-shortages`
+}
+
+/**
+ * @summary List TGA medicine shortages
+ */
+export const listTgaShortages = async (params?: ListTgaShortagesParams, options?: Parameters<typeof customFetch>[1]): Promise<TgaShortageListResponse> => {
+
+  return customFetch<TgaShortageListResponse>(getListTgaShortagesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTgaShortagesQueryKey = (params?: ListTgaShortagesParams,) => {
+    return [
+    `/api/tga-shortages`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListTgaShortagesQueryOptions = <TData = Awaited<ReturnType<typeof listTgaShortages>>, TError = ErrorType<Error>>(params?: ListTgaShortagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTgaShortages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTgaShortagesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTgaShortages>>> = ({ signal }) => listTgaShortages(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTgaShortages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTgaShortagesQueryResult = NonNullable<Awaited<ReturnType<typeof listTgaShortages>>>
+export type ListTgaShortagesQueryError = ErrorType<Error>
+
+
+/**
+ * @summary List TGA medicine shortages
+ */
+
+export function useListTgaShortages<TData = Awaited<ReturnType<typeof listTgaShortages>>, TError = ErrorType<Error>>(
+ params?: ListTgaShortagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTgaShortages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTgaShortagesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -2773,6 +2861,77 @@ export function useListAdminPublishedFiles<TData = Awaited<ReturnType<typeof lis
 
 
 
+
+export const getRunTgaShortagesIngestionUrl = () => {
+
+
+
+
+  return `/api/admin/run-tga-shortages-ingestion`
+}
+
+/**
+ * @summary Start an authenticated TGA shortage ingestion
+ */
+export const runTgaShortagesIngestion = async (tgaShortageIngestionInput?: TgaShortageIngestionInput, options?: Parameters<typeof customFetch>[1]): Promise<TgaShortageIngestionAcceptedResult> => {
+
+  return customFetch<TgaShortageIngestionAcceptedResult>(getRunTgaShortagesIngestionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tgaShortageIngestionInput)
+  }
+);}
+
+
+
+
+
+export const getRunTgaShortagesIngestionMutationOptions = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runTgaShortagesIngestion>>, TError,{data?: BodyType<TgaShortageIngestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runTgaShortagesIngestion>>, TError,{data?: BodyType<TgaShortageIngestionInput>}, TContext> => {
+
+const mutationKey = ['runTgaShortagesIngestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runTgaShortagesIngestion>>, {data?: BodyType<TgaShortageIngestionInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  runTgaShortagesIngestion(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunTgaShortagesIngestionMutationResult = NonNullable<Awaited<ReturnType<typeof runTgaShortagesIngestion>>>
+    export type RunTgaShortagesIngestionMutationBody = BodyType<TgaShortageIngestionInput> | undefined
+    export type RunTgaShortagesIngestionMutationError = ErrorType<Error>
+
+    /**
+ * @summary Start an authenticated TGA shortage ingestion
+ */
+export const useRunTgaShortagesIngestion = <TError = ErrorType<Error>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runTgaShortagesIngestion>>, TError,{data?: BodyType<TgaShortageIngestionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runTgaShortagesIngestion>>,
+        TError,
+        {data?: BodyType<TgaShortageIngestionInput>},
+        TContext
+      > => {
+      return useMutation(getRunTgaShortagesIngestionMutationOptions(options));
+    }
 
 export const getListAdminPbsSourceStatusUrl = () => {
 

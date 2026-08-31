@@ -71,6 +71,120 @@ export const GetDashboardResponse = zod.object({
 
 
 /**
+ * @summary List TGA medicine shortages
+ */
+export const listTgaShortagesQueryModeDefault = `followed`;
+export const listTgaShortagesQueryPageDefault = 1;
+
+export const listTgaShortagesQueryLimitDefault = 50;
+export const listTgaShortagesQueryLimitMax = 100;
+
+
+
+export const ListTgaShortagesQueryParams = zod.object({
+  "mode": zod.enum(['followed', 'all']).default(listTgaShortagesQueryModeDefault),
+  "section": zod.enum(['current', 'anticipated', 'discontinued', 'resolved']).optional(),
+  "availability": zod.coerce.string().optional(),
+  "impactRating": zod.coerce.string().optional(),
+  "watchedDrugId": zod.coerce.number().int().min(1).optional(),
+  "search": zod.coerce.string().optional(),
+  "page": zod.coerce.number().int().min(1).default(listTgaShortagesQueryPageDefault),
+  "limit": zod.coerce.number().int().min(1).max(listTgaShortagesQueryLimitMax).default(listTgaShortagesQueryLimitDefault)
+})
+
+export const ListTgaShortagesResponse = zod.object({
+  "mode": zod.enum(['followed', 'all']),
+  "section": zod.union([zod.literal('current'),zod.literal('anticipated'),zod.literal('discontinued'),zod.literal('resolved'),zod.literal(null)]).nullable(),
+  "rows": zod.array(zod.object({
+  "id": zod.int(),
+  "sourceKind": zod.enum(['active', 'archive']),
+  "artgId": zod.string(),
+  "artgName": zod.string(),
+  "activeIngredients": zod.string(),
+  "dosageForm": zod.string(),
+  "sponsor": zod.string(),
+  "shortageStatus": zod.string().nullable(),
+  "section": zod.enum(['current', 'anticipated', 'discontinued', 'resolved']),
+  "supplyImpactStartDate": zod.coerce.date().nullable(),
+  "supplyImpactEndDate": zod.coerce.date().nullable(),
+  "deletionFromMarket": zod.coerce.date().nullable(),
+  "shortageImpactRating": zod.string().nullable(),
+  "availability": zod.string().nullable(),
+  "reason": zod.string().nullable(),
+  "managementAction": zod.string().nullable(),
+  "lastUpdated": zod.coerce.date().nullable(),
+  "sourceAsOf": zod.coerce.date(),
+  "followed": zod.boolean(),
+  "watchedDrugId": zod.int().nullable(),
+  "watchedDrugName": zod.string().nullable(),
+  "watchedActiveIngredient": zod.string().nullable(),
+  "matchConfidence": zod.union([zod.literal('exact'),zod.literal('high'),zod.literal('review'),zod.literal(null)]).nullable(),
+  "matchPaths": zod.array(zod.enum(['artg', 'ingredient', 'brand'])),
+  "matchDiagnosticReason": zod.string().nullable()
+})),
+  "total": zod.int(),
+  "page": zod.int(),
+  "limit": zod.int(),
+  "counts": zod.object({
+  "current": zod.int(),
+  "anticipated": zod.int(),
+  "discontinued": zod.int(),
+  "resolved": zod.int()
+}),
+  "recentlyResolved": zod.array(zod.object({
+  "id": zod.int(),
+  "sourceKind": zod.enum(['active', 'archive']),
+  "artgId": zod.string(),
+  "artgName": zod.string(),
+  "activeIngredients": zod.string(),
+  "dosageForm": zod.string(),
+  "sponsor": zod.string(),
+  "shortageStatus": zod.string().nullable(),
+  "section": zod.enum(['current', 'anticipated', 'discontinued', 'resolved']),
+  "supplyImpactStartDate": zod.coerce.date().nullable(),
+  "supplyImpactEndDate": zod.coerce.date().nullable(),
+  "deletionFromMarket": zod.coerce.date().nullable(),
+  "shortageImpactRating": zod.string().nullable(),
+  "availability": zod.string().nullable(),
+  "reason": zod.string().nullable(),
+  "managementAction": zod.string().nullable(),
+  "lastUpdated": zod.coerce.date().nullable(),
+  "sourceAsOf": zod.coerce.date(),
+  "followed": zod.boolean(),
+  "watchedDrugId": zod.int().nullable(),
+  "watchedDrugName": zod.string().nullable(),
+  "watchedActiveIngredient": zod.string().nullable(),
+  "matchConfidence": zod.union([zod.literal('exact'),zod.literal('high'),zod.literal('review'),zod.literal(null)]).nullable(),
+  "matchPaths": zod.array(zod.enum(['artg', 'ingredient', 'brand'])),
+  "matchDiagnosticReason": zod.string().nullable()
+})),
+  "sourceHealth": zod.object({
+  "active": zod.union([zod.object({
+  "sourceKey": zod.string(),
+  "label": zod.string(),
+  "status": zod.enum(['OK', 'NO_RELEVANT_ROWS', 'COVERAGE_GAP', 'STALE', 'FAILED']),
+  "cadenceLabel": zod.string(),
+  "lastSuccessfulPullAt": zod.coerce.date().nullable(),
+  "staleAfterDate": zod.coerce.date().nullable(),
+  "latestFailureStage": zod.string().nullable(),
+  "latestFailureMessage": zod.string().nullable()
+}),zod.null()]),
+  "archive": zod.union([zod.object({
+  "sourceKey": zod.string(),
+  "label": zod.string(),
+  "status": zod.enum(['OK', 'NO_RELEVANT_ROWS', 'COVERAGE_GAP', 'STALE', 'FAILED']),
+  "cadenceLabel": zod.string(),
+  "lastSuccessfulPullAt": zod.coerce.date().nullable(),
+  "staleAfterDate": zod.coerce.date().nullable(),
+  "latestFailureStage": zod.string().nullable(),
+  "latestFailureMessage": zod.string().nullable()
+}),zod.null()]),
+  "asOf": zod.coerce.date()
+})
+})
+
+
+/**
  * @summary List the signed-in pharmacy's brand display preferences
  */
 export const GetPharmacyBrandPreferencesResponse = zod.object({
@@ -1101,6 +1215,21 @@ export const ListAdminPublishedFilesResponse = zod.array(ListAdminPublishedFiles
 
 
 /**
+ * @summary Start an authenticated TGA shortage ingestion
+ */
+export const runTgaShortagesIngestionBodySourceDefault = `active`;
+
+export const RunTgaShortagesIngestionBody = zod.object({
+  "source": zod.enum(['active', 'archive', 'both']).default(runTgaShortagesIngestionBodySourceDefault)
+})
+
+export const RunTgaShortagesIngestionResponse = zod.object({
+  "status": zod.enum(['accepted', 'skipped']),
+  "runId": zod.int()
+})
+
+
+/**
  * @summary List freshness and failure status for every published PBS source
  */
 export const ListAdminPbsSourceStatusResponseItem = zod.object({
@@ -1108,7 +1237,7 @@ export const ListAdminPbsSourceStatusResponseItem = zod.object({
   "label": zod.string(),
   "sourceFamily": zod.string(),
   "pageUrl": zod.url(),
-  "cadenceType": zod.enum(['annual_august', 'price_disclosure_cycle', 'unconfigured']),
+  "cadenceType": zod.enum(['daily', 'weekly', 'annual_august', 'price_disclosure_cycle', 'unconfigured']),
   "cadenceLabel": zod.string(),
   "status": zod.enum(['OK', 'NO_RELEVANT_ROWS', 'COVERAGE_GAP', 'STALE', 'FAILED']),
   "lastSuccessfulPullAt": zod.coerce.date().nullable(),

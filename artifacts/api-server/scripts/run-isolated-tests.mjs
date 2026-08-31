@@ -148,6 +148,8 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
         `ALTER TABLE ${quotedSchema}.pbs_items OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.predicted_reductions OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.schedule_changes OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.tga_shortage_observations OWNER TO pbs_app`,
+        `ALTER TABLE ${quotedSchema}.tga_shortage_matches OWNER TO pbs_app`,
         `GRANT USAGE ON SCHEMA ${quotedSchema} TO pbs_app`,
         `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quotedSchema} TO pbs_app`,
         `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${quotedSchema} TO pbs_app`,
@@ -169,6 +171,14 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
           WITH CHECK (${authorityRunPredicate})`,
         `DROP POLICY IF EXISTS schedule_changes_authority_policy ON ${quotedSchema}.schedule_changes`,
         `CREATE POLICY schedule_changes_authority_policy ON ${quotedSchema}.schedule_changes
+          USING (${authorityRunPredicate})
+          WITH CHECK (${authorityRunPredicate})`,
+        `DROP POLICY IF EXISTS tga_shortage_observations_authority_policy ON ${quotedSchema}.tga_shortage_observations`,
+        `CREATE POLICY tga_shortage_observations_authority_policy ON ${quotedSchema}.tga_shortage_observations
+          USING (${authorityRunPredicate})
+          WITH CHECK (${authorityRunPredicate})`,
+        `DROP POLICY IF EXISTS tga_shortage_matches_authority_policy ON ${quotedSchema}.tga_shortage_matches`,
+        `CREATE POLICY tga_shortage_matches_authority_policy ON ${quotedSchema}.tga_shortage_matches
           USING (${authorityRunPredicate})
           WITH CHECK (${authorityRunPredicate})`,
       ].join("; "),

@@ -141,6 +141,17 @@ function parseAustralianDate(value: string | null | undefined): string | null {
     : null;
 }
 
+function parseReportDate(text: string): string | null {
+  const named = text.match(/\bReport generated\s+(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i);
+  if (named) {
+    const month = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+      .indexOf(named[2].toLocaleLowerCase()) + 1;
+    return `${named[3]}-${String(month).padStart(2, "0")}-${String(Number(named[1])).padStart(2, "0")}`;
+  }
+  const numeric = text.match(/\bReport generated\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4})\b/i);
+  return numeric ? parseAustralianDate(numeric[1]) : null;
+}
+
 function headerIndex(headers: string[], names: string[]): number | undefined {
   const normalized = headers.map(headerKey);
   return names.map(headerKey).map((name) => normalized.indexOf(name)).find((index) => index >= 0);
@@ -263,14 +274,13 @@ export function parseTgaCsv(input: Buffer | string, kind: TgaSourceKind): TgaPar
       canonicalHash: sourceRowHash({ ...values, shortageStatus: status }),
     });
   }
-  const reportDateMatch = text.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{4})\b/);
   return {
     headerRecordNumber: headerRecord.recordNumber,
     headers,
     rows,
     rejectedRows,
     warnings,
-    reportPublicationDate: parseAustralianDate(reportDateMatch?.[1]),
+    reportPublicationDate: parseReportDate(text),
   };
 }
 
@@ -492,28 +502,29 @@ export type TgaIngestionResult = {
   failedSources: Array<{ source: TgaSourceKind; error: string }>;
 };
 
-export async function runTgaShortagesIngestion(scope: TgaIngestionScope = "active"): Promise<TgaIngestionResult> {
+async function acquireTgaRun(scope: TgaIngestionScope): Promise<{ id: number; newRun: boolean }> {
   const authorityScope = runtimeAuthorityScope();
-  const run = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${TGA_LOCK_KEY})`);
     const [activeRun] = await tx.select({ id: ingestionRunsTable.id }).from(ingestionRunsTable)
       .where(and(eq(ingestionRunsTable.mode, "tga_shortages"), inArray(ingestionRunsTable.status, ["queued", "running"]), eq(ingestionRunsTable.authorityScope, authorityScope)))
       .orderBy(desc(ingestionRunsTable.startedAt)).limit(1);
-    if (activeRun) return activeRun;
+    if (activeRun) return { ...activeRun, newRun: false };
     const [created] = await tx.insert(ingestionRunsTable).values(withGlobalAuthority({
       status: "running", mode: "tga_shortages", scheduleDate: new Date().toISOString().slice(0, 10),
       requestUrls: [scope], snapshotComplete: false,
     }, authorityScope)).returning({ id: ingestionRunsTable.id });
     if (!created) throw new Error("Unable to create TGA ingestion run");
-    return created;
+    return { ...created, newRun: true };
   });
-  const [existing] = await db.select({ status: ingestionRunsTable.status }).from(ingestionRunsTable).where(eq(ingestionRunsTable.id, run.id)).limit(1);
-  if (existing?.status === "queued") return { status: "skipped", runId: run.id, completedSources: [], failedSources: [] };
+}
+
+async function executeTgaRun(runId: number, scope: TgaIngestionScope): Promise<TgaIngestionResult> {
   const completedSources: TgaSourceKind[] = [];
   const failedSources: Array<{ source: TgaSourceKind; error: string }> = [];
   const sources: TgaSourceKind[] = scope === "both" ? ["active", "archive"] : [scope];
   for (const source of sources) {
-    try { await ingestTgaSource(source, run.id); completedSources.push(source); }
+    try { await ingestTgaSource(source, runId); completedSources.push(source); }
     catch (error) { failedSources.push({ source, error: error instanceof Error ? error.message : "TGA ingestion failed" }); }
   }
   const successful = completedSources.length > 0;
@@ -521,33 +532,23 @@ export async function runTgaShortagesIngestion(scope: TgaIngestionScope = "activ
     status: successful ? "completed" : "failed", finishedAt: new Date(), lastProgressAt: new Date(),
     recordsProcessed: completedSources.length, snapshotComplete: successful,
     errorMessage: failedSources.length ? failedSources.map((failure) => `${failure.source}: ${failure.error}`).join("; ").slice(0, 2_000) : null,
-  }).where(eq(ingestionRunsTable.id, run.id));
+  }).where(eq(ingestionRunsTable.id, runId));
   await ensurePbsSourceRegistry();
   await listPbsSourceStatuses();
-  return { status: successful ? "completed" : "failed", runId: run.id, completedSources, failedSources };
+  return { status: successful ? "completed" : "failed", runId, completedSources, failedSources };
+}
+
+export async function runTgaShortagesIngestion(scope: TgaIngestionScope = "active"): Promise<TgaIngestionResult> {
+  const run = await acquireTgaRun(scope);
+  if (!run.newRun) return { status: "skipped", runId: run.id, completedSources: [], failedSources: [] };
+  return executeTgaRun(run.id, scope);
 }
 
 export async function startTgaShortagesIngestion(scope: TgaIngestionScope = "active"): Promise<{ status: "accepted" | "skipped"; runId: number }> {
-  const authorityScope = runtimeAuthorityScope();
-  const run = await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${TGA_LOCK_KEY})`);
-    const [activeRun] = await tx.select({ id: ingestionRunsTable.id }).from(ingestionRunsTable)
-      .where(and(eq(ingestionRunsTable.mode, "tga_shortages"), inArray(ingestionRunsTable.status, ["queued", "running"]), eq(ingestionRunsTable.authorityScope, authorityScope)))
-      .orderBy(desc(ingestionRunsTable.startedAt)).limit(1);
-    if (activeRun) return { ...activeRun, newRun: false };
-    const [created] = await tx.insert(ingestionRunsTable).values(withGlobalAuthority({
-      status: "queued", mode: "tga_shortages", scheduleDate: new Date().toISOString().slice(0, 10),
-      requestUrls: [scope],
-    }, authorityScope)).returning({ id: ingestionRunsTable.id });
-    if (!created) throw new Error("Unable to create TGA ingestion run");
-    return { ...created, newRun: true };
-  });
+  const run = await acquireTgaRun(scope);
   if (!run.newRun) return { status: "skipped", runId: run.id };
   setImmediate(() => {
-    void (async () => {
-      await db.update(ingestionRunsTable).set({ status: "running", lastProgressAt: new Date() }).where(eq(ingestionRunsTable.id, run.id));
-      await runTgaShortagesIngestion(scope);
-    })().catch(async (error) => {
+    void executeTgaRun(run.id, scope).catch(async (error) => {
       await db.update(ingestionRunsTable).set({ status: "failed", finishedAt: new Date(), errorMessage: error instanceof Error ? error.message : "TGA ingestion failed" }).where(eq(ingestionRunsTable.id, run.id));
     });
   });
@@ -617,7 +618,7 @@ export async function listTgaShortages(params: TgaShortageListParams): Promise<{
     else groups.set(item.observation.id, { observation: item.observation, matches: [item], fileRetrievedAt: item.fileRetrievedAt });
   }
   const asOf = new Date().toISOString();
-  const rows = [...groups.values()].map((group) => {
+  const allRows = [...groups.values()].map((group) => {
     const matches = group.matches.filter((item) => item.match !== null);
     const match = matches[0]?.match ?? null;
     const section = sectionForStatus(group.observation.shortageStatus);
@@ -648,9 +649,9 @@ export async function listTgaShortages(params: TgaShortageListParams): Promise<{
       matchPaths: match?.matchPaths ?? [],
       matchDiagnosticReason: match?.diagnosticReason ?? null,
     };
-  }).filter((row) => {
+  });
+  const commonFilter = (row: (typeof allRows)[number]) => {
     if (params.mode === "followed" && !row.followed) return false;
-    if (params.section && row.section !== params.section) return false;
     if (params.availability && row.availability !== params.availability) return false;
     if (params.impactRating && row.shortageImpactRating !== params.impactRating) return false;
     if (params.watchedDrugId && row.watchedDrugId !== params.watchedDrugId) return false;
@@ -659,16 +660,30 @@ export async function listTgaShortages(params: TgaShortageListParams): Promise<{
       if (!haystack.includes(params.search.toLocaleLowerCase())) return false;
     }
     return true;
-  });
+  };
+  const countRows = allRows.filter((row) => row.sourceKind === "active").filter(commonFilter);
+  const rows = allRows.filter((row) => {
+    if (params.section === "resolved") return row.section === "resolved";
+    if (params.section) return row.sourceKind === "active" && row.section === params.section;
+    return row.sourceKind === "active" && row.section !== "resolved";
+  }).filter(commonFilter);
   rows.sort((left, right) => availabilityRank(Number.isNaN(availabilityRank(left.availability as string | null)) ? null : left.availability as string | null) - availabilityRank(right.availability as string | null)
     || Number(Boolean(right.followed)) - Number(Boolean(left.followed))
     || String(left.artgName).localeCompare(String(right.artgName))
     || Number(left.id) - Number(right.id));
   const counts = (["current", "anticipated", "discontinued", "resolved"] as TgaShortageSection[]).reduce((result, section) => {
-    result[section] = rows.filter((row) => row.section === section).length;
+    result[section] = countRows.filter((row) => row.section === section).length;
     return result;
   }, {} as Record<TgaShortageSection, number>);
-  const recentlyResolved = rows.filter((row) => row.followed && row.section === "resolved" && new Date(String(row.supplyImpactEndDate ?? row.lastUpdated ?? row.sourceAsOf)).getTime() >= Date.now() - 90 * 86_400_000);
+  const recentByEpisode = new Map<string, (typeof allRows)[number]>();
+  for (const row of allRows
+    .filter((candidate) => candidate.followed && candidate.section === "resolved")
+    .filter((candidate) => new Date(String(candidate.supplyImpactEndDate ?? candidate.lastUpdated ?? candidate.sourceAsOf)).getTime() >= Date.now() - 90 * 86_400_000)
+    .sort((left, right) => Number(right.sourceKind === "active") - Number(left.sourceKind === "active"))) {
+    const key = `${row.artgId}:${row.supplyImpactEndDate ?? row.lastUpdated ?? ""}`;
+    if (!recentByEpisode.has(key)) recentByEpisode.set(key, row);
+  }
+  const recentlyResolved = [...recentByEpisode.values()];
   const sourceHealth = await listPbsSourceStatuses();
   return {
     rows: rows.slice((params.page - 1) * params.limit, params.page * params.limit),

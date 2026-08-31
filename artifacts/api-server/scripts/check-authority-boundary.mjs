@@ -11,6 +11,8 @@ const protectedIdentifiers = new Set([
   "predictedReductionsTable",
   "scheduleChangesTable",
   "ingestionRunsTable",
+  "tgaShortageObservationsTable",
+  "tgaShortageMatchesTable",
 ]);
 const protectedSqlTables = [
   "drugs",
@@ -18,6 +20,8 @@ const protectedSqlTables = [
   "predicted_reductions",
   "schedule_changes",
   "ingestion_runs",
+  "tga_shortage_observations",
+  "tga_shortage_matches",
 ];
 const globalAuthorityTables = new Set([
   "drugsTable",
@@ -27,6 +31,8 @@ const globalAuthorityTables = new Set([
 const derivedAuthorityTables = new Set([
   "predictedReductionsTable",
   "scheduleChangesTable",
+  "tgaShortageObservationsTable",
+  "tgaShortageMatchesTable",
 ]);
 
 const approvedModules = new Set([
@@ -37,6 +43,7 @@ const approvedModules = new Set([
   "src/lib/predicted-reductions.ts",
   "src/lib/schedule-changes.ts",
   "src/lib/scheduled-ingestion.ts",
+  "src/lib/tga-shortages.ts",
   "src/lib/seed.ts",
   "src/routes/admin.ts",
   "src/routes/brand-preferences.ts",

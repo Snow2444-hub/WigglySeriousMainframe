@@ -950,10 +950,192 @@ export interface AdminPublishedFile {
   watchlistFailures: PublishedFileMatchFailure[];
 }
 
+export type TgaShortageIngestionInputSource = typeof TgaShortageIngestionInputSource[keyof typeof TgaShortageIngestionInputSource];
+
+
+export const TgaShortageIngestionInputSource = {
+  active: 'active',
+  archive: 'archive',
+  both: 'both',
+} as const;
+
+export interface TgaShortageIngestionInput {
+  source?: TgaShortageIngestionInputSource;
+}
+
+export type TgaShortageIngestionAcceptedResultStatus = typeof TgaShortageIngestionAcceptedResultStatus[keyof typeof TgaShortageIngestionAcceptedResultStatus];
+
+
+export const TgaShortageIngestionAcceptedResultStatus = {
+  accepted: 'accepted',
+  skipped: 'skipped',
+} as const;
+
+export interface TgaShortageIngestionAcceptedResult {
+  status: TgaShortageIngestionAcceptedResultStatus;
+  runId: number;
+}
+
+export type TgaShortageSourceStatusStatus = typeof TgaShortageSourceStatusStatus[keyof typeof TgaShortageSourceStatusStatus];
+
+
+export const TgaShortageSourceStatusStatus = {
+  OK: 'OK',
+  NO_RELEVANT_ROWS: 'NO_RELEVANT_ROWS',
+  COVERAGE_GAP: 'COVERAGE_GAP',
+  STALE: 'STALE',
+  FAILED: 'FAILED',
+} as const;
+
+export interface TgaShortageSourceStatus {
+  sourceKey: string;
+  label: string;
+  status: TgaShortageSourceStatusStatus;
+  cadenceLabel: string;
+  /** @nullable */
+  lastSuccessfulPullAt: string | null;
+  /** @nullable */
+  staleAfterDate: string | null;
+  /** @nullable */
+  latestFailureStage: string | null;
+  /** @nullable */
+  latestFailureMessage: string | null;
+}
+
+export interface TgaShortageSourceHealth {
+  active: TgaShortageSourceStatus | null;
+  archive: TgaShortageSourceStatus | null;
+  asOf: string;
+}
+
+export interface TgaShortageCounts {
+  current: number;
+  anticipated: number;
+  discontinued: number;
+  resolved: number;
+}
+
+export type TgaShortageSourceKind = typeof TgaShortageSourceKind[keyof typeof TgaShortageSourceKind];
+
+
+export const TgaShortageSourceKind = {
+  active: 'active',
+  archive: 'archive',
+} as const;
+
+export type TgaShortageSection = typeof TgaShortageSection[keyof typeof TgaShortageSection];
+
+
+export const TgaShortageSection = {
+  current: 'current',
+  anticipated: 'anticipated',
+  discontinued: 'discontinued',
+  resolved: 'resolved',
+} as const;
+
+/**
+ * @nullable
+ */
+export type TgaShortageMatchConfidence = typeof TgaShortageMatchConfidence[keyof typeof TgaShortageMatchConfidence] | null;
+
+
+export const TgaShortageMatchConfidence = {
+  exact: 'exact',
+  high: 'high',
+  review: 'review',
+} as const;
+
+export type TgaShortageMatchPathsItem = typeof TgaShortageMatchPathsItem[keyof typeof TgaShortageMatchPathsItem];
+
+
+export const TgaShortageMatchPathsItem = {
+  artg: 'artg',
+  ingredient: 'ingredient',
+  brand: 'brand',
+} as const;
+
+export interface TgaShortage {
+  id: number;
+  sourceKind: TgaShortageSourceKind;
+  artgId: string;
+  artgName: string;
+  activeIngredients: string;
+  dosageForm: string;
+  sponsor: string;
+  /** @nullable */
+  shortageStatus: string | null;
+  section: TgaShortageSection;
+  /** @nullable */
+  supplyImpactStartDate: string | null;
+  /** @nullable */
+  supplyImpactEndDate: string | null;
+  /** @nullable */
+  deletionFromMarket: string | null;
+  /** @nullable */
+  shortageImpactRating: string | null;
+  /** @nullable */
+  availability: string | null;
+  /** @nullable */
+  reason: string | null;
+  /** @nullable */
+  managementAction: string | null;
+  /** @nullable */
+  lastUpdated: string | null;
+  sourceAsOf: string;
+  followed: boolean;
+  /** @nullable */
+  watchedDrugId: number | null;
+  /** @nullable */
+  watchedDrugName: string | null;
+  /** @nullable */
+  watchedActiveIngredient: string | null;
+  /** @nullable */
+  matchConfidence: TgaShortageMatchConfidence;
+  matchPaths: TgaShortageMatchPathsItem[];
+  /** @nullable */
+  matchDiagnosticReason: string | null;
+}
+
+export type TgaShortageListResponseMode = typeof TgaShortageListResponseMode[keyof typeof TgaShortageListResponseMode];
+
+
+export const TgaShortageListResponseMode = {
+  followed: 'followed',
+  all: 'all',
+} as const;
+
+/**
+ * @nullable
+ */
+export type TgaShortageListResponseSection = typeof TgaShortageListResponseSection[keyof typeof TgaShortageListResponseSection] | null;
+
+
+export const TgaShortageListResponseSection = {
+  current: 'current',
+  anticipated: 'anticipated',
+  discontinued: 'discontinued',
+  resolved: 'resolved',
+} as const;
+
+export interface TgaShortageListResponse {
+  mode: TgaShortageListResponseMode;
+  /** @nullable */
+  section: TgaShortageListResponseSection;
+  rows: TgaShortage[];
+  total: number;
+  page: number;
+  limit: number;
+  counts: TgaShortageCounts;
+  recentlyResolved: TgaShortage[];
+  sourceHealth: TgaShortageSourceHealth;
+}
+
 export type AdminPbsSourceStatusCadenceType = typeof AdminPbsSourceStatusCadenceType[keyof typeof AdminPbsSourceStatusCadenceType];
 
 
 export const AdminPbsSourceStatusCadenceType = {
+  daily: 'daily',
+  weekly: 'weekly',
   annual_august: 'annual_august',
   price_disclosure_cycle: 'price_disclosure_cycle',
   unconfigured: 'unconfigured',
@@ -1115,6 +1297,45 @@ export interface PbsWatchlistEntryUpdate {
   filterValue?: string;
   enabled?: boolean;
 }
+
+export type ListTgaShortagesParams = {
+mode?: ListTgaShortagesMode;
+section?: ListTgaShortagesSection;
+availability?: string;
+impactRating?: string;
+/**
+ * @minimum 1
+ */
+watchedDrugId?: number;
+search?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export type ListTgaShortagesMode = typeof ListTgaShortagesMode[keyof typeof ListTgaShortagesMode];
+
+
+export const ListTgaShortagesMode = {
+  followed: 'followed',
+  all: 'all',
+} as const;
+
+export type ListTgaShortagesSection = typeof ListTgaShortagesSection[keyof typeof ListTgaShortagesSection];
+
+
+export const ListTgaShortagesSection = {
+  current: 'current',
+  anticipated: 'anticipated',
+  discontinued: 'discontinued',
+  resolved: 'resolved',
+} as const;
 
 export type ListDrugsParams = {
 /**

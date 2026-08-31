@@ -23,6 +23,8 @@ ALTER TABLE public.drugs OWNER TO pbs_app;
 ALTER TABLE public.pbs_items OWNER TO pbs_app;
 ALTER TABLE public.predicted_reductions OWNER TO pbs_app;
 ALTER TABLE public.schedule_changes OWNER TO pbs_app;
+ALTER TABLE public.tga_shortage_observations OWNER TO pbs_app;
+ALTER TABLE public.tga_shortage_matches OWNER TO pbs_app;
 
 DROP POLICY IF EXISTS ingestion_runs_authority_policy ON public.ingestion_runs;
 CREATE POLICY ingestion_runs_authority_policy ON public.ingestion_runs
@@ -77,6 +79,44 @@ CREATE POLICY schedule_changes_authority_policy ON public.schedule_changes
     )
   );
 
+DROP POLICY IF EXISTS tga_shortage_observations_authority_policy ON public.tga_shortage_observations;
+CREATE POLICY tga_shortage_observations_authority_policy ON public.tga_shortage_observations
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.ingestion_runs authority_run
+      WHERE authority_run.id = tga_shortage_observations.authority_run_id
+        AND authority_run.authority_scope = 'production'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.ingestion_runs authority_run
+      WHERE authority_run.id = tga_shortage_observations.authority_run_id
+        AND authority_run.authority_scope = 'production'
+    )
+  );
+
+DROP POLICY IF EXISTS tga_shortage_matches_authority_policy ON public.tga_shortage_matches;
+CREATE POLICY tga_shortage_matches_authority_policy ON public.tga_shortage_matches
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM public.ingestion_runs authority_run
+      WHERE authority_run.id = tga_shortage_matches.authority_run_id
+        AND authority_run.authority_scope = 'production'
+    )
+  )
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM public.ingestion_runs authority_run
+      WHERE authority_run.id = tga_shortage_matches.authority_run_id
+        AND authority_run.authority_scope = 'production'
+    )
+  );
+
 ALTER TABLE public.ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ingestion_runs FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.drugs ENABLE ROW LEVEL SECURITY;
@@ -87,5 +127,9 @@ ALTER TABLE public.predicted_reductions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.predicted_reductions FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.schedule_changes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schedule_changes FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.tga_shortage_observations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tga_shortage_observations FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.tga_shortage_matches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tga_shortage_matches FORCE ROW LEVEL SECURITY;
 
 COMMIT;
