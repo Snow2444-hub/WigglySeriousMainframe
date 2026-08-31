@@ -98,3 +98,17 @@ mtime_ms = 1788059218289
 storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/5d7c3f3c-c2d5-4184-a2df-7a2f967b7b8d/317b7594-7f44-45ee-9799-d9f06ef14523"
 storage_version_token = "1788059286566781"
 content_type = "text/csv"
+
+[[outputs]]
+id = "-Fr3ysx7CUXzGuxeTwhWe"
+uri = "file://docs/tga-medicine-shortages-design.md"
+type = "text"
+title = "TGA Medicine Shortages Design"
+description = "Server-fetch findings and the proposed daily ingestion, authority, matching, source-health, view, and deferred-notification design."
+logical_id = "ed218177-f750-47b8-a662-22ff5bd56fc8"
+content_hash = "sha256:9749ada0578120555b8c5654870efef3424769596ce1f4ac0f7ac3018229e2ed"
+size = 20016
+mtime_ms = 1788167236580
+storage_uri = "gcs://replit-rams-assets-reed/rams/assets/repl:238873b9-a8d4-45b7-ac67-40f1d7bdadba/ed218177-f750-47b8-a662-22ff5bd56fc8/df197bc9-c0a0-4445-b47c-7840e09e1f37"
+storage_version_token = "1788167247187224"
+content_type = "text/markdown"
