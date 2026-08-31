@@ -1,0 +1,67 @@
+Design a TGA medicine shortages feature — watchlist-matched, display-first,
+daily-automated, notifications deferred. Produce a design document (NO code yet)
+covering the decisions below. This is new ingested reference data, so it must fit
+the existing published-file lifecycle AND the authority boundary just built, and
+it must be fully automated daily (not manual export/upload like ARTG).
+
+DATA SOURCE (confirmed):
+The TGA MSI page exposes a direct, structured export URL, so this is automated
+INGESTION, not scraping and not manual upload:
+- Active shortages: https://apps.tga.gov.au/Prod/msi/search?shortagetype=All&exportType=Excel
+- Archived: https://apps.tga.gov.au/Prod/msi/search?shortagetype=All&exportType=CSVExportArchive
+Each row has: active ingredient, trade/brand name, ARTG (AUST R) number, expected
+supply date, availability status, management action, last-updated date.
+
+=== CRITICAL FIRST CHECK — do this before designing anything else ===
+Confirm the export URL is fetchable SERVER-TO-SERVER, not just in a browser.
+Fetch it from the server and report: does it return the file cleanly, what's the
+actual file/column structure, or does it need a session/token/specific headers,
+or does it rate-limit automated requests? The entire daily-automation approach
+depends on this URL being directly fetchable. If it isn't, report what it needs
+before designing around it.
+
+Then design and report:
+
+1. AUTOMATED DAILY INGESTION. Reuse the existing PBS automation pattern — do NOT
+   build a manual export/upload flow (that's ARTG's model, needed only because
+   the ARTG Power BI tool has no clean URL; shortages have a real export URL).
+   - A token-protected shortages-ingestion endpoint that fetches the TGA export
+     URL directly, parses, and upserts — same shape as the PBS ingestion
+     endpoint.
+   - A DAILY job on the existing external cron service (the same one hitting the
+     monthly PBS endpoint), hitting this endpoint each morning.
+   - Slots into the existing published-file lifecycle (fetch, parse, immutable
+     observation, source-health).
+   - Source-health monitors it, so a failed/stale daily pull surfaces as FAILED/
+     STALE rather than silently serving old data — more important for time-
+     sensitive shortages than for annual PBS files. Propose the stale-after
+     window (short, given daily cadence).
+
+2. AUTHORITY SCOPE. Shortage rows are reference data and must be authority-scoped
+   consistent with the boundary just enforced. Report how they get production
+   authority (new table? which authority root — a shortages ingestion run?).
+
+3. WATCHLIST MATCHING (the crux). How a shortage row matches a watchlist entry —
+   active ingredient → watched drug, brand → watched brand, ARTG → tracked ARTG.
+   This is fuzzy text matching (TGA ingredient names may differ from our
+   catalogue), same shape as the ARTG-import and anniversary-join work. Report
+   expected match quality against the current watchlist, and how unmatched
+   shortages are handled (full list stays browseable; matched ones lead).
+
+4. SECTIONS + AVAILABILITY. TGA categories are current / anticipated / resolved /
+   discontinued. Design current / anticipated / discontinued as the three
+   sections; resolved excluded from default but queryable. Surface the granular
+   availability status (Unavailable / Limited Availability / Reduction in supply /
+   Emergency Supply Only) prominently — it matters more than the section label.
+
+5. VIEW STRUCTURE. Primary view = shortages affecting followed drugs; secondary =
+   full browseable list by section. Include TGA attribution (Commonwealth
+   copyright).
+
+6. NOTIFICATIONS — DESIGN ONLY, DO NOT BUILD. Sketch how per-watchlist shortage
+   notification WOULD work as a follow-up, but note it's deferred until the
+   matched display proves the matching is reliable — alerting on a bad match is
+   worse than no alert.
+
+Report the server-fetch check FIRST, then the full design. Don't build until I
+review.
