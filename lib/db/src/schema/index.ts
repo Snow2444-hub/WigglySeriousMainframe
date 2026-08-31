@@ -40,3 +40,4 @@ export * from "./pbs-disclosure-cycles";
 export * from "./pbs-fnb-reductions";
 export * from "./pbs-published-prices";
 export * from "./pbs-source-registry";
+export * from "./tga-shortages";

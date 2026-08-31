@@ -24,6 +24,8 @@ tags:
     description: Private pharmacy stock records
   - name: admin
     description: Administrator ingestion controls
+  - name: shortages
+    description: TGA medicine shortage reports
 paths:
   /healthz:
     get:
@@ -50,6 +52,66 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /tga-shortages:
+    get:
+      operationId: listTgaShortages
+      tags: [shortages]
+      summary: List TGA medicine shortages
+      parameters:
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [followed, all]
+            default: followed
+        - name: section
+          in: query
+          schema:
+            type: string
+            enum: [current, anticipated, discontinued, resolved]
+        - name: availability
+          in: query
+          schema:
+            type: string
+        - name: impactRating
+          in: query
+          schema:
+            type: string
+        - name: watchedDrugId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: TGA shortage observations and source health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TgaShortageListResponse"
         "401":
           description: Unauthorized
           content:
@@ -894,6 +956,36 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /admin/run-tga-shortages-ingestion:
+    post:
+      operationId: runTgaShortagesIngestion
+      tags: [admin]
+      summary: Start an authenticated TGA shortage ingestion
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TgaShortageIngestionInput"
+      responses:
+        "202":
+          description: TGA ingestion accepted or an existing run is active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TgaShortageIngestionAcceptedResult"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: TGA ingestion endpoint is not configured
           content:
             application/json:
               schema:

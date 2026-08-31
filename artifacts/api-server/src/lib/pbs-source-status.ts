@@ -15,9 +15,11 @@ export type PublishedSourceKey =
   | "indicative_efc"
   | "confirmed_non_efc"
   | "confirmed_efc"
-  | "combination_flow_on";
+  | "combination_flow_on"
+  | "tga_shortages_active"
+  | "tga_shortages_archive";
 
-type SourceCadence = "annual_august" | "price_disclosure_cycle" | "unconfigured";
+type SourceCadence = "annual_august" | "price_disclosure_cycle" | "daily" | "weekly" | "unconfigured";
 
 export const PBS_SOURCE_DEFINITIONS = [
   {
@@ -119,6 +121,28 @@ export const PBS_SOURCE_DEFINITIONS = [
     cadenceConfig: { expectedMonth: 8, expectedDay: 1 },
     staleAfterDays: 14,
   },
+  {
+    sourceKey: "tga_shortages_active",
+    label: "TGA active medicine shortages",
+    sourceFamily: "TGA medicine shortages",
+    pageUrl: "https://apps.tga.gov.au/Prod/msi/search?shortagetype=All&exportType=Excel",
+    cadenceType: "daily",
+    cadenceMonth: null,
+    cadenceDay: null,
+    cadenceConfig: { expectedHour: 6, expectedMinute: 30, timezone: "Australia/Sydney" },
+    staleAfterDays: 2,
+  },
+  {
+    sourceKey: "tga_shortages_archive",
+    label: "TGA medicine shortage archive",
+    sourceFamily: "TGA medicine shortages",
+    pageUrl: "https://apps.tga.gov.au/Prod/msi/search?shortagetype=All&exportType=CSVExportArchive",
+    cadenceType: "weekly",
+    cadenceMonth: null,
+    cadenceDay: 0,
+    cadenceConfig: { expectedDay: "Sunday", expectedHour: 7, expectedMinute: 0, timezone: "Australia/Sydney" },
+    staleAfterDays: 14,
+  },
 ] as const satisfies ReadonlyArray<{
   sourceKey: PublishedSourceKey;
   label: string;
@@ -196,6 +220,14 @@ function nextExpectedRefresh(
   today: string,
 ): string | null {
   if (definition.cadenceType === "unconfigured") return null;
+  if (definition.cadenceType === "daily") return addDays(anchor ?? today, 1);
+  if (definition.cadenceType === "weekly") {
+    const value = new Date(`${anchor ?? today}T00:00:00.000Z`);
+    const day = value.getUTCDay();
+    const daysUntilSunday = day === 0 ? 7 : 7 - day;
+    value.setUTCDate(value.getUTCDate() + daysUntilSunday);
+    return value.toISOString().slice(0, 10);
+  }
   return definition.cadenceType === "annual_august"
     ? nextAnnualAugustDate(anchor ?? today)
     : nextCycleDate(anchor ?? today);
@@ -238,6 +270,8 @@ function failureStage(file: PbsPublishedFile): string | null {
 function cadenceLabel(definition: (typeof PBS_SOURCE_DEFINITIONS)[number]): string {
   if (definition.cadenceType === "annual_august") return "Annual · expected 1 Aug";
   if (definition.cadenceType === "price_disclosure_cycle") return "Price-disclosure cycle";
+  if (definition.cadenceType === "daily") return "Daily · 06:30 Sydney";
+  if (definition.cadenceType === "weekly") return "Weekly · Sunday 07:00 Sydney";
   return "Cadence not configured";
 }
 
