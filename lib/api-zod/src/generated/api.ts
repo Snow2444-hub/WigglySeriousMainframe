@@ -856,6 +856,7 @@ export const GetDrugScheduleTimelineResponse = zod.array(GetDrugScheduleTimeline
 export const ListArtgEntriesQueryParams = zod.object({
   "search": zod.coerce.string().optional().describe('Search by ARTG ID, active ingredient, sponsor, or product name'),
   "status": zod.coerce.string().optional(),
+  "sponsor": zod.coerce.string().optional().describe('Filter by sponsor name'),
   "pbs": zod.enum(['all', 'listed', 'unlisted']).optional(),
   "from": zod.date().optional(),
   "to": zod.date().optional()

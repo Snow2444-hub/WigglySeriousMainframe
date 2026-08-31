@@ -1457,6 +1457,10 @@ export type ListArtgEntriesParams = {
  */
 search?: string;
 status?: string;
+/**
+ * Filter by sponsor name
+ */
+sponsor?: string;
 pbs?: ListArtgEntriesPbs;
 from?: string;
 to?: string;

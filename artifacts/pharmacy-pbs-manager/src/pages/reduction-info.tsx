@@ -111,10 +111,6 @@ export function ReductionInfoPage() {
                 <dt className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">FNB</dt>
                 <dd className="mt-1 text-sm leading-relaxed text-foreground/80"><span className="font-semibold text-foreground">First New Brand</span> — the first additional brand of a medicine to list, which can trigger a statutory price reduction.</dd>
               </div>
-              <div>
-                <dt className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">MoA</dt>
-                <dd className="mt-1 text-sm leading-relaxed text-foreground/80"><span className="font-semibold text-foreground">Manner of Administration</span> — how the medicine is administered, such as orally or by injection.</dd>
-              </div>
             </dl>
           </details>
         </section>

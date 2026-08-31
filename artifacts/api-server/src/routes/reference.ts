@@ -1188,7 +1188,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const { search, status, pbs, from, to } = parsed.data;
+  const { search, status, sponsor, pbs, from, to } = parsed.data;
   const [rows, pbsItems] = await Promise.all([
     db
       .select()
@@ -1196,6 +1196,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
       .where(
         and(
           status ? ilike(artgEntriesTable.status, status) : undefined,
+          sponsor ? ilike(artgEntriesTable.sponsor, `%${sponsor}%`) : undefined,
           from ? gte(artgEntriesTable.registrationDate, queryDateOnly(from)!) : undefined,
           to ? lte(artgEntriesTable.registrationDate, queryDateOnly(to)!) : undefined,
           search
@@ -1208,7 +1209,7 @@ router.get("/artg-entries", async (req, res): Promise<void> => {
             : undefined,
         ),
       )
-      .orderBy(asc(artgEntriesTable.productName)),
+      .orderBy(desc(artgEntriesTable.registrationDate), asc(artgEntriesTable.productName), asc(artgEntriesTable.artgId)),
     db.select({ drugId: pbsItemsTable.drugId, brandName: pbsItemsTable.brandName }).from(pbsItemsTable).where(productionMasterScope(pbsItemsTable.authorityScope)),
   ]);
   const brandsByDrug = new Map<number, string[]>();

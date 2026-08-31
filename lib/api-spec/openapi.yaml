@@ -556,6 +556,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: sponsor
+          in: query
+          schema:
+            type: string
+          description: Filter by sponsor name
         - name: pbs
           in: query
           schema:
