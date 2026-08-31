@@ -23,7 +23,9 @@ import {
   pbsPublishedFilesTable,
   pool,
   predictedReductionsTable,
+  runtimeAuthorityScope,
   scheduleChangesTable,
+  ingestionRunsTable,
 } from "@workspace/db";
 
 function report(overrides: Partial<{
@@ -212,15 +214,27 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
   const originalFetch = globalThis.fetch;
   const pageUrl = "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand-price-reductions";
   const fileUrl = "https://www.pbs.gov.au/industry/pricing/pbs-items/first-new-brand.xlsx";
-  const createdFileIds: number[] = [];
+  let authorityRunId: number | undefined;
 
   try {
+    const [run] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "completed",
+        mode: "current",
+        scheduleDate: "2026-01-01",
+        authorityScope: runtimeAuthorityScope(),
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(run);
+    authorityRunId = run.id;
     await db.insert(drugsTable).values({
       id: drugId,
       name: ingredient,
       activeIngredient: ingredient,
       sponsor: "Published-file regression test",
       firstPbsListingDate: "2020-01-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(pbsItemsTable).values({
       itemCode,
@@ -252,6 +266,7 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
       proportionalPrice: null,
       therapeuticGroupId: null,
       innovatorIndicator: null,
+      authorityScope: runtimeAuthorityScope(),
     });
 
     globalThis.fetch = async (input) => {
@@ -272,7 +287,7 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
       throw new Error(`Unexpected published-file fixture request: ${url}`);
     };
 
-    const firstReport = await ingestPublishedFiles(undefined, { sourceKeys: ["first_new_brand"] });
+    const firstReport = await ingestPublishedFiles(authorityRunId, { sourceKeys: ["first_new_brand"] });
     const firstFnb = firstReport.files.find((file) => file.sourceKey === "first_new_brand");
     assert.equal(firstFnb?.status, "completed");
     assert.equal(firstFnb?.matchedRows, 1);
@@ -284,9 +299,8 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
       .orderBy(desc(pbsPublishedFilesTable.id))
       .limit(1);
     assert.ok(firstFile);
-    createdFileIds.push(firstFile.id);
 
-    const secondReport = await ingestPublishedFiles(undefined, { sourceKeys: ["first_new_brand"] });
+    const secondReport = await ingestPublishedFiles(authorityRunId, { sourceKeys: ["first_new_brand"] });
     const secondFnb = secondReport.files.find((file) => file.sourceKey === "first_new_brand");
     assert.equal(secondFnb?.status, "completed");
     assert.equal(secondFnb?.matchedRows, 1);
@@ -298,7 +312,6 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
       .orderBy(desc(pbsPublishedFilesTable.id))
       .limit(1);
     assert.ok(latestFile);
-    createdFileIds.push(latestFile.id);
 
     const reductions = await db
       .select({
@@ -322,14 +335,22 @@ test("re-ingesting the same first-new-brand workbook updates its existing reduct
     await db.delete(predictedReductionsTable).where(eq(predictedReductionsTable.drugId, drugId));
     await db.delete(scheduleChangesTable).where(eq(scheduleChangesTable.drugId, drugId));
     await db.delete(pbsFnbReductionsTable).where(eq(pbsFnbReductionsTable.drugId, drugId));
-    if (createdFileIds.length > 0) {
-      await db.delete(pbsPublishedFileRowsTable).where(eq(pbsPublishedFileRowsTable.fileId, createdFileIds[0]!));
-      await db.delete(pbsPublishedFileRowsTable).where(eq(pbsPublishedFileRowsTable.fileId, createdFileIds[1]!));
-      await db.delete(pbsPublishedFilesTable).where(eq(pbsPublishedFilesTable.id, createdFileIds[0]!));
-      await db.delete(pbsPublishedFilesTable).where(eq(pbsPublishedFilesTable.id, createdFileIds[1]!));
+    if (authorityRunId !== undefined) {
+      const fileIds = (await db
+        .select({ id: pbsPublishedFilesTable.id })
+        .from(pbsPublishedFilesTable)
+        .where(eq(pbsPublishedFilesTable.ingestionRunId, authorityRunId)))
+        .map((file) => file.id);
+      if (fileIds.length > 0) {
+        await db.delete(pbsPublishedFileRowsTable).where(inArray(pbsPublishedFileRowsTable.fileId, fileIds));
+        await db.delete(pbsPublishedFilesTable).where(inArray(pbsPublishedFilesTable.id, fileIds));
+      }
     }
     await db.delete(pbsItemsTable).where(eq(pbsItemsTable.itemCode, itemCode));
     await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
+    if (authorityRunId !== undefined) {
+      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, authorityRunId));
+    }
   }
 });
 
@@ -337,8 +358,20 @@ test("an abandoned test observation is invisible to operational published-file r
   const canonicalFileName = "operational-first-new-brand.xlsx";
   const testFileName = "abandoned-test-first-new-brand.xlsx";
   const createdFileIds: number[] = [];
+  let authorityRunId: number | undefined;
 
   try {
+    const [run] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "failed",
+        mode: "current",
+        scheduleDate: "2026-01-01",
+        authorityScope: runtimeAuthorityScope(),
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(run);
+    authorityRunId = run.id;
     const inserted = await db
       .insert(pbsPublishedFilesTable)
       .values([
@@ -354,6 +387,7 @@ test("an abandoned test observation is invisible to operational published-file r
           parseHealth: "healthy",
           fetchStatus: "succeeded",
           parseStatus: "succeeded",
+          ingestionRunId: authorityRunId,
           totalRows: 1,
           matchedRows: 1,
           isCurrent: true,
@@ -372,6 +406,7 @@ test("an abandoned test observation is invisible to operational published-file r
           parseStatus: "failed",
           failureStage: "parse",
           errorMessage: "Intentional failure before teardown",
+          ingestionRunId: authorityRunId,
           isCurrent: true,
         },
       ])
@@ -389,6 +424,9 @@ test("an abandoned test observation is invisible to operational published-file r
     if (createdFileIds.length > 0) {
       await db.delete(pbsPublishedFilesTable).where(inArray(pbsPublishedFilesTable.id, createdFileIds));
       await listPbsSourceStatuses();
+    }
+    if (authorityRunId !== undefined) {
+      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, authorityRunId));
     }
   }
 });

@@ -13,6 +13,7 @@ import {
   pbsItemsTable,
   pool,
   predictedReductionsTable,
+  PRODUCTION_AUTHORITY_SCOPE,
   scheduleChangesTable,
 } from "@workspace/db";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -58,6 +59,7 @@ test("dashboard tolerates a complete run with no finished timestamp", async () =
         scheduleEffectiveDate,
         snapshotComplete: true,
         finishedAt: null,
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       })
       .returning({ id: ingestionRunsTable.id });
     assert.ok(run);
@@ -71,7 +73,9 @@ test("dashboard tolerates a complete run with no finished timestamp", async () =
     assert.ok("lastSuccessfulIngestionAt" in dashboard.currentSchedule);
   } finally {
     if (runId !== undefined) {
-      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, runId));
+      await db
+        .delete(ingestionRunsTable)
+        .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE)));
     }
   }
 });
@@ -92,6 +96,7 @@ async function seedItem(itemCode: string, drugId: number) {
     activeIngredient: "test ingredient",
     sponsor: "Task 21 tests",
     firstPbsListingDate: "2025-01-01",
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
   });
   await db.insert(pbsItemsTable).values({
     itemCode,
@@ -121,6 +126,7 @@ async function seedItem(itemCode: string, drugId: number) {
     proportionalPrice: null,
     therapeuticGroupId: null,
     innovatorIndicator: null,
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
   });
 }
 
@@ -170,6 +176,7 @@ async function seedDashboardItem(
     proportionalPrice: null,
     therapeuticGroupId: null,
     innovatorIndicator: null,
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
   });
 }
 
@@ -182,6 +189,7 @@ async function seedDashboardChange(input: {
   liItemId: string;
   oldValue?: unknown;
   newValue?: unknown;
+  authorityRunId: number;
 }) {
   await db.insert(scheduleChangesTable).values({
     scheduleCode: input.scheduleCode,
@@ -196,6 +204,7 @@ async function seedDashboardChange(input: {
     affectedItems: null,
     significance: "normal",
     notes: "Dashboard boundary fixture",
+    authorityRunId: input.authorityRunId,
   });
 }
 
@@ -221,6 +230,7 @@ async function seedPrediction(
   predictedDate: string,
   predictedNewPrice: number,
   confidence: string,
+  authorityRunId: number,
 ) {
   await db.insert(predictedReductionsTable).values({
     itemCode,
@@ -232,6 +242,7 @@ async function seedPrediction(
     confidence,
     subjectToMinisterialDiscretion: false,
     sourceNote: "Task 21 test fixture",
+    authorityRunId,
   });
 }
 
@@ -241,14 +252,25 @@ async function cleanupFixture(
   artgIds: string[] = [],
   runIds: number[] = [],
 ) {
-  await db.delete(predictedReductionsTable).where(inArray(predictedReductionsTable.itemCode, itemCodes));
-  await db.delete(scheduleChangesTable).where(inArray(scheduleChangesTable.drugId, drugIds));
+  const authorityScope = PRODUCTION_AUTHORITY_SCOPE;
+  if (runIds.length) {
+    await db
+      .delete(predictedReductionsTable)
+      .where(and(inArray(predictedReductionsTable.itemCode, itemCodes), inArray(predictedReductionsTable.authorityRunId, runIds)));
+    await db
+      .delete(scheduleChangesTable)
+      .where(and(inArray(scheduleChangesTable.drugId, drugIds), inArray(scheduleChangesTable.authorityRunId, runIds)));
+  }
   if (artgIds.length) await db.delete(artgEntriesTable).where(inArray(artgEntriesTable.artgId, artgIds));
   await db.delete(pharmacyBrandPreferencesTable).where(inArray(pharmacyBrandPreferencesTable.drugId, drugIds));
   await db.delete(pharmacyStockTable).where(inArray(pharmacyStockTable.itemCode, itemCodes));
-  await db.delete(pbsItemsTable).where(inArray(pbsItemsTable.itemCode, itemCodes));
-  await db.delete(drugsTable).where(inArray(drugsTable.id, drugIds));
-  if (runIds.length) await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+  await db.delete(pbsItemsTable).where(and(inArray(pbsItemsTable.itemCode, itemCodes), eq(pbsItemsTable.authorityScope, authorityScope)));
+  await db.delete(drugsTable).where(and(inArray(drugsTable.id, drugIds), eq(drugsTable.authorityScope, authorityScope)));
+  if (runIds.length) {
+    await db
+      .delete(ingestionRunsTable)
+      .where(and(inArray(ingestionRunsTable.id, runIds), eq(ingestionRunsTable.authorityScope, authorityScope)));
+  }
 }
 
 async function request(userId: string, path: string, init: RequestInit = {}) {
@@ -313,6 +335,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
       activeIngredient: `${token} ingredient`,
       sponsor: "Dashboard boundary fixture",
       firstPbsListingDate: twelveMonthsAgo,
+      authorityScope: PRODUCTION_AUTHORITY_SCOPE,
     });
     await seedDashboardItem(visibleItem, drugId, visibleBrand, `${token}_LI_VISIBLE`);
     await seedDashboardItem(hiddenItem, drugId, hiddenBrand, `${token}_LI_HIDDEN`);
@@ -331,6 +354,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
         and(
           eq(ingestionRunsTable.status, "completed"),
           eq(ingestionRunsTable.snapshotComplete, true),
+          eq(ingestionRunsTable.authorityScope, PRODUCTION_AUTHORITY_SCOPE),
         ),
       )
       .orderBy(desc(ingestionRunsTable.finishedAt))
@@ -350,6 +374,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
         snapshotComplete: true,
         startedAt: new Date("2026-01-01T00:00:00Z"),
         finishedAt: completedAt,
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
       })
       .returning({ id: ingestionRunsTable.id });
     assert.ok(completedRun);
@@ -363,6 +388,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
 
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "new_brand",
       drugId,
@@ -371,6 +397,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "new_brand",
       drugId,
@@ -379,6 +406,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "price_change",
       drugId,
@@ -389,6 +417,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "price_change",
       drugId,
@@ -399,6 +428,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "delisted",
       drugId,
@@ -407,6 +437,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "delisted",
       drugId,
@@ -415,6 +446,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "formulary_change",
       drugId,
@@ -423,6 +455,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode,
+      authorityRunId: completedRun.id,
       effectiveDate: scheduleDate,
       changeType: "listing_amendment",
       drugId,
@@ -431,6 +464,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode: 899,
+      authorityRunId: completedRun.id,
       effectiveDate: threeMonthsAgo,
       changeType: "new_brand",
       drugId,
@@ -439,6 +473,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode: 898,
+      authorityRunId: completedRun.id,
       effectiveDate: twelveMonthsAgo,
       changeType: "new_brand",
       drugId,
@@ -447,6 +482,7 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
     });
     await seedDashboardChange({
       scheduleCode: 897,
+      authorityRunId: completedRun.id,
       effectiveDate: daysFromDate(threeMonthsAgo, -1),
       changeType: "delisted",
       drugId,
@@ -454,10 +490,10 @@ test("authenticated dashboard counts stay correct across schedule boundaries and
       liItemId: `${token}_LI_OUTSIDE_THREE_MONTHS`,
     });
 
-    await seedPrediction(visibleItem, drugId, today, 90, "confirmed");
-    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 3), 80, "confirmed");
-    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 12), 70, "confirmed");
-    await seedPrediction(hiddenItem, drugId, today, 60, "confirmed");
+    await seedPrediction(visibleItem, drugId, today, 90, "confirmed", completedRun.id);
+    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 3), 80, "confirmed", completedRun.id);
+    await seedPrediction(visibleItem, drugId, monthsFromDate(today, 12), 70, "confirmed", completedRun.id);
+    await seedPrediction(hiddenItem, drugId, today, 60, "confirmed", completedRun.id);
 
     await db.insert(artgEntriesTable).values([
       {
@@ -663,8 +699,22 @@ test("exposure reports only positive losses and selects the earliest confirmed p
   const itemCodes = ["none", "zero", "negative", "multiple", "precedence"].map((suffix) => `${token}_${suffix}`);
   const drugIds = itemCodes.map((_itemCode, index) => 2_000_000_000 + (process.pid % 100_000) * 10 + fixtureNumber + index + 1);
   const [noPredictionItem, zeroLossItem, negativeLossItem, multiplePredictionItem, precedenceItem] = itemCodes;
+  const runIds: number[] = [];
 
   try {
+    const [authorityRun] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "completed",
+        recordsProcessed: 0,
+        pagesFetched: 0,
+        requestUrls: [],
+        snapshotComplete: true,
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(authorityRun);
+    runIds.push(authorityRun.id);
     for (let index = 0; index < itemCodes.length; index += 1) {
       await seedItem(itemCodes[index], drugIds[index]);
     }
@@ -679,12 +729,12 @@ test("exposure reports only positive losses and selects the earliest confirmed p
     const multipleEarlyDate = futureDate(5);
     const multipleLateDate = futureDate(10);
     const precedenceDate = futureDate(6);
-    await seedPrediction(zeroLossItem, drugIds[1], zeroDate, 100, "indicative");
-    await seedPrediction(negativeLossItem, drugIds[2], negativeDate, 120, "indicative");
-    await seedPrediction(multiplePredictionItem, drugIds[3], multipleEarlyDate, 90, "indicative");
-    await seedPrediction(multiplePredictionItem, drugIds[3], multipleLateDate, 50, "confirmed");
-    await seedPrediction(precedenceItem, drugIds[4], precedenceDate, 70, "indicative");
-    await seedPrediction(precedenceItem, drugIds[4], precedenceDate, 80, "confirmed");
+    await seedPrediction(zeroLossItem, drugIds[1], zeroDate, 100, "indicative", authorityRun.id);
+    await seedPrediction(negativeLossItem, drugIds[2], negativeDate, 120, "indicative", authorityRun.id);
+    await seedPrediction(multiplePredictionItem, drugIds[3], multipleEarlyDate, 90, "indicative", authorityRun.id);
+    await seedPrediction(multiplePredictionItem, drugIds[3], multipleLateDate, 50, "confirmed", authorityRun.id);
+    await seedPrediction(precedenceItem, drugIds[4], precedenceDate, 70, "indicative", authorityRun.id);
+    await seedPrediction(precedenceItem, drugIds[4], precedenceDate, 80, "confirmed", authorityRun.id);
 
     const response = await request(userA, "/stock");
     assert.equal(response.status, 200);
@@ -746,6 +796,6 @@ test("exposure reports only positive losses and selects the earliest confirmed p
       ],
     );
   } finally {
-    await cleanupFixture(itemCodes, drugIds);
+    await cleanupFixture(itemCodes, drugIds, [], runIds);
   }
 });

@@ -3,6 +3,7 @@ import { after, test } from "node:test";
 import {
   db,
   drugsTable,
+  ingestionRunsTable,
   pbsItemsTable,
   pbsPublishedFilesTable,
   pbsPublishedPricesTable,
@@ -10,6 +11,7 @@ import {
   predictedReductionsTable,
   priceHistoryTable,
   scheduleChangesTable,
+  runtimeAuthorityScope,
 } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { upsertPbsItemsFromPayload } from "./pbs-item-mapping";
@@ -63,7 +65,22 @@ function pbsItemValues(input: {
     proportionalPrice: null,
     therapeuticGroupId: null,
     innovatorIndicator: null,
+    authorityScope: runtimeAuthorityScope(),
   };
+}
+
+async function createAuthorityRun(): Promise<number> {
+  const [run] = await db
+    .insert(ingestionRunsTable)
+    .values({
+      status: "completed",
+      mode: "current",
+      scheduleDate: "2026-01-01",
+      authorityScope: runtimeAuthorityScope(),
+    })
+    .returning({ id: ingestionRunsTable.id });
+  if (!run) throw new Error("Could not create regression fixture authority run");
+  return run.id;
 }
 
 function pbsItemPayload(itemCode: string, scheduleCode: number, determinedPrice = 100) {
@@ -89,8 +106,9 @@ async function cleanupFixture(input: {
   drugIds: number[];
   fileIds?: number[];
   scheduleChangeIds?: number[];
+  authorityRunId: number;
 }) {
-  const { itemCodes, drugIds, fileIds = [], scheduleChangeIds = [] } = input;
+  const { itemCodes, drugIds, fileIds = [], scheduleChangeIds = [], authorityRunId } = input;
   if (drugIds.length > 0) {
     await db.delete(predictedReductionsTable).where(inArray(predictedReductionsTable.drugId, drugIds));
     await db.delete(scheduleChangesTable).where(inArray(scheduleChangesTable.drugId, drugIds));
@@ -109,6 +127,7 @@ async function cleanupFixture(input: {
   if (scheduleChangeIds.length > 0) {
     await db.delete(scheduleChangesTable).where(inArray(scheduleChangesTable.id, scheduleChangeIds));
   }
+  await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, authorityRunId));
 }
 
 test("re-ingesting the same schedule does not add duplicate price history", async () => {
@@ -117,6 +136,7 @@ test("re-ingesting the same schedule does not add duplicate price history", asyn
   const scheduleCode = 900_101;
   const scheduleDate = "2026-02-01";
   const scheduleEffectiveDate = "2026-02-01";
+  const authorityRunId = await createAuthorityRun();
 
   try {
     await upsertPbsItemsFromPayload(
@@ -130,6 +150,7 @@ test("re-ingesting the same schedule does not add duplicate price history", asyn
       },
       scheduleDate,
       scheduleEffectiveDate,
+      { authorityRunId },
     );
     const afterFirstIngest = await db
       .select({ id: priceHistoryTable.id })
@@ -147,6 +168,7 @@ test("re-ingesting the same schedule does not add duplicate price history", asyn
       },
       scheduleDate,
       scheduleEffectiveDate,
+      { authorityRunId },
     );
     const afterSecondIngest = await db
       .select({ id: priceHistoryTable.id })
@@ -161,7 +183,7 @@ test("re-ingesting the same schedule does not add duplicate price history", asyn
       .from(drugsTable)
       .where(eq(drugsTable.activeIngredient, `Regression ingredient ${itemCode}`))
       .limit(1);
-    await cleanupFixture({ itemCodes: [itemCode], drugIds: drug ? [drug.id] : [] });
+    await cleanupFixture({ itemCodes: [itemCode], drugIds: drug ? [drug.id] : [], authorityRunId });
   }
 });
 
@@ -175,6 +197,7 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
     currentAemp: 100,
   });
   let scheduleChangeId: number | undefined;
+  const authorityRunId = await createAuthorityRun();
 
   try {
     await db.insert(drugsTable).values({
@@ -183,6 +206,7 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
       activeIngredient: `Regression ingredient ${fixture.token}`,
       sponsor: "Regression tests",
       firstPbsListingDate: "2020-01-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(pbsItemsTable).values(item);
     const [scheduleChange] = await db
@@ -203,11 +227,12 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
         affectedItems: null,
         significance: "high",
         notes: "Regression fixture",
+        authorityRunId,
       })
       .returning({ id: scheduleChangesTable.id });
     scheduleChangeId = scheduleChange?.id;
 
-    await recalculatePredictedReductionsForDrug(fixture.drugId, "2026-01-01");
+    await recalculatePredictedReductionsForDrug(fixture.drugId, "2026-01-01", authorityRunId);
     const predictions = await db
       .select({
         itemCode: predictedReductionsTable.itemCode,
@@ -236,6 +261,7 @@ test("a single-brand first-new-brand event predicts the configured 25 percent re
       itemCodes: [itemCode],
       drugIds: [fixture.drugId],
       scheduleChangeIds: scheduleChangeId ? [scheduleChangeId] : [],
+      authorityRunId,
     });
   }
 });
@@ -245,6 +271,7 @@ test("indicative prices produce one prediction per item and date without fanning
   const itemCodes = [`${fixture.token}_ITEM_A`, `${fixture.token}_ITEM_B`];
   const fileIds: number[] = [];
   const predictedDate = "2027-04-01";
+  const authorityRunId = await createAuthorityRun();
 
   try {
     await db.insert(drugsTable).values({
@@ -253,6 +280,7 @@ test("indicative prices produce one prediction per item and date without fanning
       activeIngredient: `Regression ingredient ${fixture.token}`,
       sponsor: "Regression tests",
       firstPbsListingDate: "2020-01-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(pbsItemsTable).values(
       itemCodes.map((itemCode) =>
@@ -275,6 +303,7 @@ test("indicative prices produce one prediction per item and date without fanning
           reportPublicationDate: "2026-01-01",
           effectiveDate: predictedDate,
           parserVersion: "regression-test",
+          ingestionRunId: authorityRunId,
           status: "completed",
           parseHealth: "healthy",
           totalRows: 2,
@@ -309,7 +338,7 @@ test("indicative prices produce one prediction per item and date without fanning
       ),
     );
 
-    await recalculatePredictedReductionsForDrug(fixture.drugId, "2026-01-01");
+    await recalculatePredictedReductionsForDrug(fixture.drugId, "2026-01-01", authorityRunId);
     const predictions = await db
       .select({
         itemCode: predictedReductionsTable.itemCode,
@@ -345,7 +374,7 @@ test("indicative prices produce one prediction per item and date without fanning
     );
     assert.equal(new Set(predictions.map((prediction) => `${prediction.itemCode}:${prediction.predictedDate}`)).size, 2);
   } finally {
-    await cleanupFixture({ itemCodes, drugIds: [fixture.drugId], fileIds });
+    await cleanupFixture({ itemCodes, drugIds: [fixture.drugId], fileIds, authorityRunId });
   }
 });
 
@@ -353,6 +382,7 @@ test("backfilling an existing item leaves the PBS item count unchanged", async (
   const fixture = newFixture();
   const itemCode = `${fixture.token}_ITEM`;
   const scheduleCode = 900_104;
+  const authorityRunId = await createAuthorityRun();
 
   try {
     await db.insert(drugsTable).values({
@@ -361,6 +391,7 @@ test("backfilling an existing item leaves the PBS item count unchanged", async (
       activeIngredient: `Regression ingredient ${fixture.token}`,
       sponsor: "Regression tests",
       firstPbsListingDate: "2020-01-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(pbsItemsTable).values(pbsItemValues({ itemCode, drugId: fixture.drugId }));
     const before = await db
@@ -372,7 +403,7 @@ test("backfilling an existing item leaves the PBS item count unchanged", async (
       pbsItemPayload(itemCode, scheduleCode, 95),
       "2026-01-01",
       "2025-01-01",
-      { scheduleCode, updateCurrentItem: false },
+      { scheduleCode, updateCurrentItem: false, authorityRunId },
     );
     const after = await db
       .select({ itemCode: pbsItemsTable.itemCode })
@@ -383,7 +414,7 @@ test("backfilling an existing item leaves the PBS item count unchanged", async (
     assert.equal(after.length, before.length);
     assert.deepEqual(after.map((row) => row.itemCode), before.map((row) => row.itemCode));
   } finally {
-    await cleanupFixture({ itemCodes: [itemCode], drugIds: [fixture.drugId] });
+    await cleanupFixture({ itemCodes: [itemCode], drugIds: [fixture.drugId], authorityRunId });
   }
 });
 

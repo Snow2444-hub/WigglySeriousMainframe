@@ -7,6 +7,7 @@ import {
   ingestionRunsTable,
   pbsItemsTable,
   rawScheduleStagingTable,
+  runtimeAuthorityScope,
   scheduleChangesTable,
 } from "@workspace/db";
 import { fetchSchedule } from "./pbs-ingestion";
@@ -151,7 +152,12 @@ const fixtureItems = [
 async function createFixtureIngestionRun(status: string): Promise<number> {
   const [run] = await db
     .insert(ingestionRunsTable)
-    .values({ status, mode: "current", scheduleDate: "2026-08-30" })
+    .values({
+      status,
+      mode: "current",
+      scheduleDate: "2026-08-30",
+      authorityScope: runtimeAuthorityScope(),
+    })
     .returning({ id: ingestionRunsTable.id });
   if (!run) throw new Error("Could not create schedule-change fixture ingestion run");
   return run.id;
@@ -170,7 +176,12 @@ test("snapshot provenance rejects missing suffixes and allows every real run sta
   try {
     const runs = await db
       .insert(ingestionRunsTable)
-      .values(statuses.map((status) => ({ ...status, mode: "current", scheduleDate: "2026-08-30" })))
+      .values(statuses.map((status) => ({
+        ...status,
+        mode: "current",
+        scheduleDate: "2026-08-30",
+        authorityScope: runtimeAuthorityScope(),
+      })))
       .returning({ id: ingestionRunsTable.id });
     runIds.push(...runs.map((run) => run.id));
     const ingestionRunIds = new Set(runIds);
@@ -292,6 +303,7 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
         activeIngredient: "Task 32 fixture ingredient",
         sponsor: "Task 32 fixture",
         firstPbsListingDate: "2090-01-01",
+        authorityScope: runtimeAuthorityScope(),
       });
       await stageFixtureSchedule({
         scheduleCode: previousScheduleCode,
@@ -312,6 +324,7 @@ test("only complete unfiltered staged snapshots produce delisted events", async 
 
       await syncScheduleChangesFromStagedData({
         scheduleCodes: [previousScheduleCode, currentScheduleCode],
+        authorityRunId: runIds[1]!,
       });
       const changes = await db
         .select({
@@ -368,6 +381,7 @@ test("interrupted schedule-wide staging stays incomplete when a later run uses t
       activeIngredient: "Task 32 fixture ingredient",
       sponsor: "Task 33 fixture",
       firstPbsListingDate: "2090-01-01",
+        authorityScope: runtimeAuthorityScope(),
     });
     await stageFixtureSchedule({
       scheduleCode: previousScheduleCode,
@@ -426,6 +440,7 @@ test("interrupted schedule-wide staging stays incomplete when a later run uses t
     assert.equal(
       await syncScheduleChangesFromStagedData({
         scheduleCodes: [previousScheduleCode, currentScheduleCode],
+        authorityRunId: laterRunId,
       }),
       0,
     );
@@ -464,6 +479,7 @@ test("ignores complete staged snapshots whose run does not exist", async () => {
       activeIngredient: "Task 32 fixture ingredient",
       sponsor: "Schedule change tests",
       firstPbsListingDate: "2020-01-01",
+        authorityScope: runtimeAuthorityScope(),
     });
     await stageFixtureSchedule({
       scheduleCode: previousScheduleCode,
@@ -485,6 +501,7 @@ test("ignores complete staged snapshots whose run does not exist", async () => {
     assert.equal(
       await syncScheduleChangesFromStagedData({
         scheduleCodes: [previousScheduleCode, currentScheduleCode],
+        authorityRunId: previousRunId,
       }),
       0,
     );
@@ -523,6 +540,7 @@ test("ignores implausibly future complete snapshots even when their run exists",
       activeIngredient: "Task 32 fixture ingredient",
       sponsor: "Schedule change tests",
       firstPbsListingDate: "2020-01-01",
+        authorityScope: runtimeAuthorityScope(),
     });
     await stageFixtureSchedule({
       scheduleCode: previousScheduleCode,
@@ -544,6 +562,7 @@ test("ignores implausibly future complete snapshots even when their run exists",
     assert.equal(
       await syncScheduleChangesFromStagedData({
         scheduleCodes: [previousScheduleCode, currentScheduleCode],
+        authorityRunId: runIds[1]!,
       }),
       0,
     );
@@ -577,6 +596,7 @@ test("accepts complete staged snapshots from a currently running ingestion run",
       activeIngredient: "Task 32 fixture ingredient",
       sponsor: "Schedule change tests",
       firstPbsListingDate: "2020-01-01",
+        authorityScope: runtimeAuthorityScope(),
     });
     await stageFixtureSchedule({
       scheduleCode: previousScheduleCode,
@@ -598,6 +618,7 @@ test("accepts complete staged snapshots from a currently running ingestion run",
     assert.equal(
       await syncScheduleChangesFromStagedData({
         scheduleCodes: [previousScheduleCode, currentScheduleCode],
+        authorityRunId: runIds[1]!,
       }),
       1,
     );

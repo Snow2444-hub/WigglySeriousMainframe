@@ -8,6 +8,7 @@ import {
   pbsItemsTable,
   pbsWatchlistTable,
   rawScheduleStagingTable,
+  runtimeAuthorityScope,
   scheduleChangesTable,
 } from "@workspace/db";
 import { executeCurrentIngestionRun } from "./pbs-current-ingestion";
@@ -32,7 +33,7 @@ function token(): string {
 async function createRun(status: "queued" | "running" | "completed" | "cancelled"): Promise<number> {
   const [run] = await db
     .insert(ingestionRunsTable)
-    .values({ status, mode: "current", scheduleDate: "2026-08-30" })
+    .values({ status, mode: "current", scheduleDate: "2026-08-30", authorityScope: runtimeAuthorityScope() })
     .returning({ id: ingestionRunsTable.id });
   if (!run) throw new Error("Could not create cancellation fixture run");
   return run.id;
@@ -216,6 +217,7 @@ test("cancelled staged snapshots cannot become authoritative or drive delisting 
       activeIngredient: `Cancellation ingredient ${fixture}`,
       sponsor: "Cancellation fixture",
       firstPbsListingDate: "2020-01-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(pbsItemsTable).values({
       itemCode: `cancelled-item-${fixture}`,
@@ -228,6 +230,7 @@ test("cancelled staged snapshots cannot become authoritative or drive delisting 
       formulary: "F1",
       currentAemp: 10,
       lastUpdated: "2026-08-01",
+      authorityScope: runtimeAuthorityScope(),
     });
     await db.insert(rawScheduleStagingTable).values([
       {
@@ -265,7 +268,10 @@ test("cancelled staged snapshots cannot become authoritative or drive delisting 
     ]);
 
     assert.equal(
-      await syncScheduleChangesFromStagedData({ scheduleCodes: [previousScheduleCode, cancelledScheduleCode] }),
+      await syncScheduleChangesFromStagedData({
+        scheduleCodes: [previousScheduleCode, cancelledScheduleCode],
+        authorityRunId: previousRunId,
+      }),
       0,
     );
     const changes = await db
@@ -277,7 +283,17 @@ test("cancelled staged snapshots cannot become authoritative or drive delisting 
     await db
       .delete(scheduleChangesTable)
       .where(inArray(scheduleChangesTable.scheduleCode, [previousScheduleCode, cancelledScheduleCode]));
-    await db.delete(rawScheduleStagingTable).where(eq(rawScheduleStagingTable.scheduleDate, scheduleDate));
+    await db.delete(rawScheduleStagingTable).where(
+      and(
+        eq(rawScheduleStagingTable.scheduleDate, scheduleDate),
+        inArray(rawScheduleStagingTable.requestKey, [
+          `schedule-metadata:${previousScheduleCode}`,
+          `schedule-metadata:${cancelledScheduleCode}`,
+          `items-snapshot:schedule-${previousScheduleCode}:run-${previousRunId}`,
+          `items-snapshot:schedule-${cancelledScheduleCode}:run-${cancelledRunId}`,
+        ]),
+      ),
+    );
     await db.delete(pbsItemsTable).where(eq(pbsItemsTable.itemCode, `cancelled-item-${fixture}`));
     await db.delete(drugsTable).where(eq(drugsTable.id, drugId));
     await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, [previousRunId, cancelledRunId]));

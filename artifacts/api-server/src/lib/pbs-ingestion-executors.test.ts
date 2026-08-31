@@ -10,8 +10,10 @@ import {
   pool,
   predictedReductionsTable,
   priceHistoryTable,
+  rawScheduleStagingTable,
+  runtimeAuthorityScope,
 } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import {
   executeBackfillIngestionRun,
 } from "../routes/admin";
@@ -134,7 +136,7 @@ function fakeFetcher(
 async function createRun(mode: "current" | "backfill", scheduleDate: string): Promise<number> {
   const [run] = await db
     .insert(ingestionRunsTable)
-    .values({ status: "queued", mode, scheduleDate })
+    .values({ status: "queued", mode, scheduleDate, authorityScope: runtimeAuthorityScope() })
     .returning({ id: ingestionRunsTable.id });
   if (!run) throw new Error("Could not create PBS executor test run");
   return run.id;
@@ -149,7 +151,7 @@ async function cleanupFixture(input: {
   const [drug] = await db
     .select({ id: drugsTable.id })
     .from(drugsTable)
-    .where(eq(drugsTable.activeIngredient, input.ingredient))
+    .where(and(eq(drugsTable.activeIngredient, input.ingredient), eq(drugsTable.authorityScope, runtimeAuthorityScope())))
     .limit(1);
 
   await db.delete(pbsItemPremiumHistoryTable).where(eq(pbsItemPremiumHistoryTable.itemCode, input.itemCode));
@@ -158,6 +160,7 @@ async function cleanupFixture(input: {
   await db.delete(pbsItemsTable).where(eq(pbsItemsTable.itemCode, input.itemCode));
   if (drug) await db.delete(drugsTable).where(eq(drugsTable.id, drug.id));
   await db.delete(pbsWatchlistTable).where(inArray(pbsWatchlistTable.id, input.watchlistIds));
+  await db.delete(rawScheduleStagingTable).where(like(rawScheduleStagingTable.requestKey, `%:run-${input.runId}`));
   await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, input.runId));
 }
 

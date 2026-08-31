@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { db, ingestionRunsTable, pool } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { db, ingestionRunsTable, pool, runtimeAuthorityScope } from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   acquireIngestionRun,
   recoverInterruptedIngestionRuns,
@@ -18,7 +18,9 @@ function fixtureId(): number {
 
 async function deleteRuns(runIds: number[]): Promise<void> {
   if (runIds.length > 0) {
-    await db.delete(ingestionRunsTable).where(inArray(ingestionRunsTable.id, runIds));
+    await db
+      .delete(ingestionRunsTable)
+      .where(and(inArray(ingestionRunsTable.id, runIds), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
   }
 }
 
@@ -26,7 +28,7 @@ async function activeRunIds(): Promise<number[]> {
   const runs = await db
     .select({ id: ingestionRunsTable.id })
     .from(ingestionRunsTable)
-    .where(inArray(ingestionRunsTable.status, ["queued", "running"]));
+    .where(and(inArray(ingestionRunsTable.status, ["queued", "running"]), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
   return runs.map((run) => run.id);
 }
 
@@ -45,7 +47,7 @@ test("scheduled ingestion creates and completes an auditable run", async () => {
         await db
           .update(ingestionRunsTable)
           .set({ status: "completed", finishedAt: now, recordsProcessed: 3 })
-          .where(eq(ingestionRunsTable.id, createdRunId));
+          .where(and(eq(ingestionRunsTable.id, createdRunId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
       },
     });
 
@@ -54,7 +56,7 @@ test("scheduled ingestion creates and completes an auditable run", async () => {
     const [run] = await db
       .select({ status: ingestionRunsTable.status, recordsProcessed: ingestionRunsTable.recordsProcessed })
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, runId as number));
+      .where(and(eq(ingestionRunsTable.id, runId as number), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     assert.deepEqual(run, { status: "completed", recordsProcessed: 3 });
   } finally {
     await deleteRuns(runId ? [runId] : []);
@@ -117,7 +119,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
         await db
           .update(ingestionRunsTable)
           .set({ status: "completed", finishedAt: new Date(), recordsProcessed: 1 })
-          .where(eq(ingestionRunsTable.id, runId));
+          .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
         executionFinished();
       },
     });
@@ -146,7 +148,7 @@ test("background scheduled ingestion preserves the active-run guard", async () =
     const [run] = await db
       .select({ status: ingestionRunsTable.status })
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, firstResult.runId));
+      .where(and(eq(ingestionRunsTable.id, firstResult.runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     assert.deepEqual(run, { status: "completed" });
   } finally {
     if (firstRunId) await deleteRuns([firstRunId]);
@@ -163,6 +165,7 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
     startedAt: now,
     lastProgressAt: staleStartedAt,
     status: "running",
+    authorityScope: runtimeAuthorityScope(),
   });
   let failedRunId: number | undefined;
 
@@ -189,7 +192,7 @@ test("scheduled ingestion recovers stale work and marks uncaught failures", asyn
         errorMessage: ingestionRunsTable.errorMessage,
       })
       .from(ingestionRunsTable)
-      .where(inArray(ingestionRunsTable.id, [staleRunId, failedRunId]));
+      .where(and(inArray(ingestionRunsTable.id, [staleRunId, failedRunId]), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     assert.deepEqual(
       runs.sort((left, right) => left.id - right.id),
       [
@@ -224,12 +227,14 @@ test("stalled ingestion runs are retired using last page progress, not start tim
         startedAt: now,
         lastProgressAt: staleProgressAt,
         status: "running",
+        authorityScope: runtimeAuthorityScope(),
       },
       {
         id: activeRunId,
         startedAt: now,
         lastProgressAt: recentProgressAt,
         status: "running",
+        authorityScope: runtimeAuthorityScope(),
       },
     ]);
 
@@ -243,7 +248,7 @@ test("stalled ingestion runs are retired using last page progress, not start tim
         errorMessage: ingestionRunsTable.errorMessage,
       })
       .from(ingestionRunsTable)
-      .where(inArray(ingestionRunsTable.id, [staleRunId, activeRunId]));
+      .where(and(inArray(ingestionRunsTable.id, [staleRunId, activeRunId]), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     assert.deepEqual(
       runs.sort((left, right) => left.id - right.id),
       [
@@ -270,6 +275,7 @@ test("API restart requeues and resumes an interrupted run with its original conf
       maxPages: 17,
       recordsProcessed: 42,
       pagesFetched: 5,
+        authorityScope: runtimeAuthorityScope(),
     });
 
     const recoveredRuns = await recoverInterruptedIngestionRuns([runId]);
@@ -284,14 +290,14 @@ test("API restart requeues and resumes an interrupted run with its original conf
       await db
         .update(ingestionRunsTable)
         .set({ status: "completed", finishedAt: new Date(), scheduleDate: recoveredScheduleDate })
-        .where(eq(ingestionRunsTable.id, recoveredRunId));
+        .where(and(eq(ingestionRunsTable.id, recoveredRunId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     });
 
     assert.deepEqual(resumed, { runId, scheduleDate, maxPages: 17, mode: "backfill" });
     const [run] = await db
       .select({ status: ingestionRunsTable.status })
       .from(ingestionRunsTable)
-      .where(eq(ingestionRunsTable.id, runId));
+      .where(and(eq(ingestionRunsTable.id, runId), eq(ingestionRunsTable.authorityScope, runtimeAuthorityScope())));
     assert.deepEqual(run, { status: "completed" });
   } finally {
     await deleteRuns([runId]);
