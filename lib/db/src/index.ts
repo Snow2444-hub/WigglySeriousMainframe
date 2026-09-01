@@ -4,17 +4,11 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-const databaseUrl =
-  process.env.NODE_ENV === "production"
-    ? process.env.PBS_DATABASE_URL ?? process.env.DATABASE_URL
-    : process.env.DATABASE_URL;
-
-if (!databaseUrl) {
+if (!process.env.DATABASE_URL) {
   throw new Error(
-    "A database URL must be set. Production may use PBS_DATABASE_URL; other environments use DATABASE_URL.",
+    "DATABASE_URL must be set. Did you forget to provision a database?",
   );
 }
-const configuredDatabaseUrl: string = databaseUrl;
 
 if (
   process.env.NODE_ENV === "test" &&
@@ -37,7 +31,7 @@ function applicationRoleDatabaseUrl(databaseUrl: string): string {
 }
 
 export const pool = new Pool({
-  connectionString: applicationRoleDatabaseUrl(configuredDatabaseUrl),
+  connectionString: applicationRoleDatabaseUrl(process.env.DATABASE_URL),
   connectionTimeoutMillis: 10_000,
 });
 export const db = drizzle(pool, { schema });
