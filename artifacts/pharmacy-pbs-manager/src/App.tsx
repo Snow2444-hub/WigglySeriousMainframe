@@ -33,7 +33,11 @@ const clerkPubKey = publishableKeyFromHost(
   window.location.hostname,
   import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
 );
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+// Clerk's first-party proxy is only available on the published production
+// hostname. Development previews must use Clerk's normal frontend API.
+const clerkProxyUrl = import.meta.env.PROD
+  ? import.meta.env.VITE_CLERK_PROXY_URL
+  : undefined;
 
 const clerkAppearance = {
   theme: shadcn,
