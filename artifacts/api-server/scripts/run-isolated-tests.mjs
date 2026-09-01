@@ -143,6 +143,7 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
       "ON_ERROR_STOP=1",
       "--command",
       [
+        `GRANT USAGE, CREATE ON SCHEMA ${quotedSchema} TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.ingestion_runs OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.drugs OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.pbs_items OWNER TO pbs_app`,
@@ -150,7 +151,7 @@ async function configureIsolatedSchemaRole(databaseUrl, quotedSchema, schema) {
         `ALTER TABLE ${quotedSchema}.schedule_changes OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.tga_shortage_observations OWNER TO pbs_app`,
         `ALTER TABLE ${quotedSchema}.tga_shortage_matches OWNER TO pbs_app`,
-        `GRANT USAGE ON SCHEMA ${quotedSchema} TO pbs_app`,
+        `REVOKE CREATE ON SCHEMA ${quotedSchema} FROM pbs_app`,
         `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA ${quotedSchema} TO pbs_app`,
         `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA ${quotedSchema} TO pbs_app`,
         `DROP POLICY IF EXISTS ingestion_runs_authority_policy ON ${quotedSchema}.ingestion_runs`,
