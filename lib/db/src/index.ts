@@ -32,6 +32,7 @@ function applicationRoleDatabaseUrl(databaseUrl: string): string {
 
 export const pool = new Pool({
   connectionString: applicationRoleDatabaseUrl(process.env.DATABASE_URL),
+  connectionTimeoutMillis: 10_000,
 });
 export const db = drizzle(pool, { schema });
 

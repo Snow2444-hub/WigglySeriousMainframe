@@ -28,7 +28,9 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-async function start(): Promise<void> {
+const STARTUP_INITIALIZATION_RETRY_MS = 30_000;
+
+async function initializeApplicationData(): Promise<void> {
   const interruptedRuns = await recoverInterruptedIngestionRuns();
   await ensureDefaultReductionSettings();
   await ensureDefaultScheduleChangeSettings();
@@ -37,36 +39,47 @@ async function start(): Promise<void> {
   if (process.env.SEED_REFERENCE_DATA === "true") {
     await seedReferenceData();
   }
-  app.listen(port, (err) => {
-    if (err) {
-      logger.error({ err }, "Error listening on port");
-      process.exit(1);
+  for (const run of interruptedRuns) {
+    try {
+      await resumeIngestionRun(run, executeIngestionRun);
+    } catch (error) {
+      logger.error({ err: error, runId: run.id }, "Failed to resume interrupted PBS ingestion run");
     }
+  }
+}
 
+function runApplicationInitialization(): void {
+  void initializeApplicationData()
+    .then(() => {
+      logger.info("Application data initialization completed");
+    })
+    .catch((error) => {
+      logger.error({ err: error }, "Application data initialization failed; retrying");
+      const retryTimer = setTimeout(
+        runApplicationInitialization,
+        STARTUP_INITIALIZATION_RETRY_MS,
+      );
+      retryTimer.unref();
+    });
+}
+
+function start(): void {
+  const server = app.listen(port, () => {
     logger.info({ port }, "Server listening");
+    runApplicationInitialization();
+
     const staleRunWatchdog = setInterval(() => {
       void recoverStaleIngestionRuns().catch((error) => {
         logger.error({ err: error }, "Failed to check for stalled PBS ingestion runs");
       });
     }, 60_000);
     staleRunWatchdog.unref();
-    if (interruptedRuns.length > 0) {
-      setImmediate(() => {
-        void (async () => {
-          for (const run of interruptedRuns) {
-            try {
-              await resumeIngestionRun(run, executeIngestionRun);
-            } catch (error) {
-              logger.error({ err: error, runId: run.id }, "Failed to resume interrupted PBS ingestion run");
-            }
-          }
-        })();
-      });
-    }
+  });
+
+  server.on("error", (error) => {
+    logger.error({ err: error }, "Error listening on port");
+    process.exitCode = 1;
   });
 }
 
-start().catch((err) => {
-  logger.error({ err }, "Failed to start API server");
-  process.exit(1);
-});
+start();

@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import healthRouter from "./routes/health";
 import {
   createScheduledIngestionRouter,
   type ScheduledIngestionStarter,
@@ -44,6 +45,7 @@ export function createApp(
   app.use(cors({ credentials: true, origin: true }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
+  app.use("/api", healthRouter);
   app.use("/api", createScheduledIngestionRouter(options.scheduledIngestionStarter));
 
   app.use(
