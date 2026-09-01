@@ -4,19 +4,33 @@ DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pbs_app') THEN
     CREATE ROLE pbs_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+  ELSIF EXISTS (
+    SELECT 1
+    FROM pg_roles
+    WHERE rolname = 'pbs_app'
+      AND (
+        rolcanlogin
+        OR rolsuper
+        OR rolcreatedb
+        OR rolcreaterole
+        OR rolinherit
+        OR rolbypassrls
+      )
+  ) THEN
+    RAISE EXCEPTION 'pbs_app exists with unsafe role attributes; platform administrator action is required';
   END IF;
 END
 $$;
 
-ALTER ROLE pbs_app NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
-
-GRANT USAGE ON SCHEMA public TO pbs_app;
+GRANT USAGE, CREATE ON SCHEMA public TO pbs_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO pbs_app;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO pbs_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO pbs_app;
-ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO pbs_app;
+
+GRANT pbs_app TO CURRENT_USER;
 
 ALTER TABLE public.ingestion_runs OWNER TO pbs_app;
 ALTER TABLE public.drugs OWNER TO pbs_app;
@@ -25,6 +39,8 @@ ALTER TABLE public.predicted_reductions OWNER TO pbs_app;
 ALTER TABLE public.schedule_changes OWNER TO pbs_app;
 ALTER TABLE public.tga_shortage_observations OWNER TO pbs_app;
 ALTER TABLE public.tga_shortage_matches OWNER TO pbs_app;
+
+REVOKE CREATE ON SCHEMA public FROM pbs_app;
 
 DROP POLICY IF EXISTS ingestion_runs_authority_policy ON public.ingestion_runs;
 CREATE POLICY ingestion_runs_authority_policy ON public.ingestion_runs
