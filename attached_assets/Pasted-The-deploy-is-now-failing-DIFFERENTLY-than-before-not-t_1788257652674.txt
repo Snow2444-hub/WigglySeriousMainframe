@@ -1,0 +1,38 @@
+The deploy is now failing DIFFERENTLY than before — not the missing pbs_app role.
+The logs show the API returning 500 on the healthcheck repeatedly ("healthcheck
+failed error=healthcheck /api returned status 500"), so the port never opens and
+the deploy times out. The pbs_app role problem is fixed; this is new.
+
+The likely root cause is in the User-source log lines: SSL mode warnings from
+pg/pg-connection-string — "SSL modes 'prefer', 'require', and 'verify-ca' are
+treated as aliases for 'verify-full'" and references to sslmode=verify-full and
+libpq-ssl. Our Neon DATABASE_URL uses sslmode=require. A pg/pg-connection-string
+version now treats 'require' as 'verify-full', which demands full CA cert
+verification the connection can't satisfy against Neon — so the DB connection
+fails, and the API 500s on every request including the healthcheck.
+
+Investigate and confirm:
+1. Is the API returning 500 on the healthcheck because the DATABASE CONNECTION is
+   failing at startup/first-query? Get the ACTUAL error the API throws on the
+   healthcheck — is it an SSL/certificate verification error (something like
+   "self-signed certificate", "unable to verify", "verify-full")? That confirms
+   the SSL-mode theory.
+2. What version of pg / pg-connection-string is in the DEPLOYED build vs local?
+   Did it recently change how sslmode=require is interpreted? This explains why
+   local works but deploy fails.
+3. What's the correct fix for a Neon connection under the new SSL semantics?
+   Options to assess (report which is right, don't blindly apply):
+   - Neon supports verified SSL — the proper fix may be configuring the CA cert
+     so verify-full actually works (most correct).
+   - Or explicitly setting the SSL behavior in the pg client config (e.g. an
+     ssl object with the right rejectUnauthorized/CA setting) rather than relying
+     on the sslmode query param.
+   - Or pinning/adjusting the sslmode in DATABASE_URL to match intended behavior.
+   Recommend the SECURE option — do NOT just disable SSL verification entirely
+   (rejectUnauthorized: false) as a lazy fix, since that removes connection
+   security. If a temporary unblock is needed, flag it as temporary and note the
+   secure follow-up.
+
+Report the actual healthcheck error (point 1) and the pg version situation (point
+2) before proposing the fix. This is a DB connection/SSL config issue, not a
+database state issue — do not run authority SQL or touch the database role/RLS.
