@@ -1,0 +1,35 @@
+STOP — the Database tool shows a warning that contradicts the earlier diagnosis:
+"External DATABASE_URL detected. Production database options are not available
+when using an external database. Remove DATABASE_URL from Secrets to use Replit
+database features."
+
+This says my database is EXTERNAL (the Neon one via DATABASE_URL), NOT Replit-
+managed. That's the opposite of what you concluded. Resolve this before I run
+anything:
+
+1. Is my production database an EXTERNAL Neon database (connected via a
+   DATABASE_URL secret), or a Replit-managed database? The banner says external.
+   If external, then the "Production Database" shown in Replit's Database tool is
+   probably NOT the database my deployed app actually uses — it may be an empty/
+   unused Replit database. That would explain the "0 rows" on artg_entries.
+
+2. Where does my DEPLOYED PRODUCTION app actually connect? If my app reads a
+   DATABASE_URL secret pointing at the external Neon host (ep-morning-truth-...
+   neon.tech), then THAT Neon database is my real production data — and the
+   Replit Database tool's "Production Database" is a different, unused database.
+
+3. If production is the external Neon database, I should NOT run the authority
+   SQL in this Replit Database tool (wrong database). Instead I need to reach the
+   Neon database directly. Given it's clearly Neon-hosted, do I have a Neon
+   console / dashboard login? That would be the correct place to run the SQL
+   against real production.
+
+4. Critically: is the DEV workspace and the PRODUCTION app using the SAME external
+   DATABASE_URL secret (the same Neon database), just with different values per
+   environment? Confirm whether the production deployment has its OWN DATABASE_URL
+   secret value (pointing at a production Neon database) or shares the dev one.
+
+Do NOT run authority SQL anywhere until we know: (a) is production the external
+Neon DB or the Replit-managed one, and (b) which specific database my deployed
+app connects to. Running against the wrong database fixes nothing and wastes a
+production write.
