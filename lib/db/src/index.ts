@@ -4,11 +4,17 @@ import * as schema from "./schema";
 
 const { Client, Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
+const databaseUrl =
+  process.env.NODE_ENV === "production"
+    ? process.env.PRODUCTION_DATABASE_URL ?? process.env.DATABASE_URL
+    : process.env.DATABASE_URL;
+
+if (!databaseUrl) {
   throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+    "A database URL must be set. Production may use PRODUCTION_DATABASE_URL; other environments use DATABASE_URL.",
   );
 }
+const configuredDatabaseUrl: string = databaseUrl;
 
 if (
   process.env.NODE_ENV === "test" &&
@@ -31,7 +37,7 @@ function applicationRoleDatabaseUrl(databaseUrl: string): string {
 }
 
 export const pool = new Pool({
-  connectionString: applicationRoleDatabaseUrl(process.env.DATABASE_URL),
+  connectionString: applicationRoleDatabaseUrl(configuredDatabaseUrl),
   connectionTimeoutMillis: 10_000,
 });
 export const db = drizzle(pool, { schema });
@@ -42,12 +48,7 @@ export function getDatabaseTargetFingerprint(): {
   database: string;
   configuredUser: string;
 } {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required to inspect the database target.");
-  }
-
-  const parsedUrl = new URL(databaseUrl);
+  const parsedUrl = new URL(configuredDatabaseUrl);
   return {
     host: parsedUrl.hostname,
     port: parsedUrl.port || "5432",
@@ -62,13 +63,8 @@ export async function inspectDatabaseAuthorityTarget(): Promise<{
   pbsAppRoleCount: number;
   connectionLatencyMs: number;
 }> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required to inspect the database target.");
-  }
-
   const client = new Client({
-    connectionString: databaseUrl,
+    connectionString: configuredDatabaseUrl,
     connectionTimeoutMillis: 10_000,
   });
   const startedAt = performance.now();
