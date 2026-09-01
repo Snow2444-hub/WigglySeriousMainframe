@@ -11,6 +11,7 @@ import {
   pharmacyBrandPreferencesTable,
   pharmacyStockTable,
   pbsItemsTable,
+  pbsWatchlistTable,
   pool,
   predictedReductionsTable,
   PRODUCTION_AUTHORITY_SCOPE,
@@ -115,6 +116,61 @@ async function seedItem(itemCode: string, drugId: number) {
     currentAemp: 100,
     currentDpmq: null,
     lastUpdated: "2025-01-01",
+    firstListedDate: "2025-01-01",
+    weightedAvgDisclosedPrice: null,
+    originatorBrandIndicator: null,
+    brandSubstitutionGroupId: null,
+    advancedNoticeDate: null,
+    nonEffectiveDate: null,
+    determinedPrice: null,
+    claimedPrice: null,
+    proportionalPrice: null,
+    therapeuticGroupId: null,
+    innovatorIndicator: null,
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
+  });
+}
+
+async function seedDirectoryItem(input: {
+  itemCode: string;
+  pbsCode: string;
+  liItemId: string;
+  drugId: number;
+  drugName: string;
+  activeIngredient: string;
+  brandName: string;
+  catalogueStatus: "active" | "delisted";
+  delistedAt?: string;
+  delistedScheduleCode?: number;
+}) {
+  await db.insert(drugsTable).values({
+    id: input.drugId,
+    name: input.drugName,
+    activeIngredient: input.activeIngredient,
+    sponsor: "Directory route tests",
+    firstPbsListingDate: "2025-01-01",
+    authorityScope: PRODUCTION_AUTHORITY_SCOPE,
+  });
+  await db.insert(pbsItemsTable).values({
+    itemCode: input.itemCode,
+    pbsCode: input.pbsCode,
+    liItemId: input.liItemId,
+    scheduleCode: input.delistedScheduleCode ?? 900,
+    drugId: input.drugId,
+    brandName: input.brandName,
+    strength: "10 mg",
+    form: "tablet",
+    packSize: "30",
+    pricingQuantity: null,
+    liForm: null,
+    programCode: null,
+    formulary: "F1",
+    catalogueStatus: input.catalogueStatus,
+    delistedAt: input.delistedAt ?? null,
+    delistedScheduleCode: input.delistedScheduleCode ?? null,
+    currentAemp: 100,
+    currentDpmq: null,
+    lastUpdated: "2026-01-01",
     firstListedDate: "2025-01-01",
     weightedAvgDisclosedPrice: null,
     originatorBrandIndicator: null,
@@ -300,6 +356,161 @@ before(async () => {
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   await pool.end();
+});
+
+test("PBS directory defaults to active items and orders delisted results for reference", async () => {
+  const token = newFixtureToken();
+  const activeItem = `${token}_ACTIVE`;
+  const followedItem = `${token}_FOLLOWED`;
+  const newestItem = `${token}_NEWEST`;
+  const oldestItem = `${token}_OLDEST`;
+  const itemCodes = [activeItem, followedItem, newestItem, oldestItem];
+  const drugIds = [1_920_000_000, 1_920_000_001, 1_920_000_002, 1_920_000_003].map(
+    (id) => id + process.pid,
+  );
+  const runScheduleCode = 990_000 + fixtureNumber;
+  const runEffectiveDate = "2026-05-01";
+  let runId: number | undefined;
+  let watchlistId: number | undefined;
+
+  try {
+    await seedDirectoryItem({
+      itemCode: activeItem,
+      pbsCode: `${token}_PBS_ACTIVE`,
+      liItemId: `${token}_LI_ACTIVE`,
+      drugId: drugIds[0],
+      drugName: `${token} active medicine`,
+      activeIngredient: `${token} active ingredient`,
+      brandName: `${token} active brand`,
+      catalogueStatus: "active",
+    });
+    await seedDirectoryItem({
+      itemCode: followedItem,
+      pbsCode: `${token}_PBS_FOLLOWED`,
+      liItemId: followedItem,
+      drugId: drugIds[1],
+      drugName: `${token} followed medicine`,
+      activeIngredient: `${token} followed ingredient`,
+      brandName: `${token} followed brand`,
+      catalogueStatus: "delisted",
+      delistedAt: "2025-11-01",
+      delistedScheduleCode: 3834,
+    });
+    await seedDirectoryItem({
+      itemCode: newestItem,
+      pbsCode: `${token}_PBS_NEWEST`,
+      liItemId: `${token}_LI_NEWEST`,
+      drugId: drugIds[2],
+      drugName: `${token} newest medicine`,
+      activeIngredient: `${token} newest ingredient`,
+      brandName: `${token} newest brand`,
+      catalogueStatus: "delisted",
+      delistedAt: "2026-05-01",
+      delistedScheduleCode: 3966,
+    });
+    await seedDirectoryItem({
+      itemCode: oldestItem,
+      pbsCode: `${token}_PBS_OLDEST`,
+      liItemId: `${token}_LI_OLDEST`,
+      drugId: drugIds[3],
+      drugName: `${token} oldest medicine`,
+      activeIngredient: `${token} oldest ingredient`,
+      brandName: `${token} oldest brand`,
+      catalogueStatus: "delisted",
+      delistedAt: "2025-12-01",
+      delistedScheduleCode: 4558,
+    });
+
+    const [run] = await db
+      .insert(ingestionRunsTable)
+      .values({
+        status: "completed",
+        recordsProcessed: 1,
+        pagesFetched: 1,
+        requestUrls: [],
+        scheduleCode: runScheduleCode,
+        scheduleEffectiveDate: runEffectiveDate,
+        snapshotComplete: true,
+        finishedAt: new Date(),
+        authorityScope: PRODUCTION_AUTHORITY_SCOPE,
+      })
+      .returning({ id: ingestionRunsTable.id });
+    assert.ok(run);
+    runId = run.id;
+
+    await db.insert(scheduleChangesTable).values({
+      scheduleCode: runScheduleCode,
+      effectiveDate: runEffectiveDate,
+      changeType: "delisted",
+      liItemId: followedItem,
+      pbsCode: `${token}_PBS_FOLLOWED`,
+      drugId: drugIds[1],
+      brandName: `${token} followed brand`,
+      oldValue: null,
+      newValue: null,
+      affectedItems: null,
+      significance: "normal",
+      notes: "Directory route test history",
+      authorityRunId: run.id,
+    });
+
+    const [watchlist] = await db
+      .insert(pbsWatchlistTable)
+      .values({ filterType: "drug_name", filterValue: `${token} followed`, enabled: true })
+      .returning({ id: pbsWatchlistTable.id });
+    assert.ok(watchlist);
+    watchlistId = watchlist.id;
+
+    const activeResponse = await request(userA, `/pbs-items?search=${encodeURIComponent(token)}`);
+    assert.equal(activeResponse.status, 200);
+    const activeRows = (await activeResponse.json()) as Array<{ itemCode: string; catalogueStatus: string }>;
+    assert.deepEqual(activeRows.map((row) => row.itemCode), [activeItem]);
+    assert.equal(activeRows[0]?.catalogueStatus, "active");
+
+    const delistedResponse = await request(
+      userA,
+      `/pbs-items?search=${encodeURIComponent(token)}&catalogueStatus=delisted&limit=3`,
+    );
+    assert.equal(delistedResponse.status, 200);
+    const delistedRows = (await delistedResponse.json()) as Array<{
+      itemCode: string;
+      catalogueStatus: string;
+      delistedAt: string | null;
+      delistedScheduleCode: number | null;
+      followed?: boolean;
+    }>;
+    assert.deepEqual(delistedRows.map((row) => row.itemCode), [followedItem, newestItem, oldestItem]);
+    assert.equal(delistedRows[0]?.followed, true);
+    assert.equal(delistedRows[0]?.catalogueStatus, "delisted");
+    assert.equal(delistedRows[0]?.delistedAt?.slice(0, 10), "2025-11-01");
+    assert.equal(delistedRows[0]?.delistedScheduleCode, 3834);
+
+    const detailResponse = await request(userA, `/pbs-items/${encodeURIComponent(followedItem)}`);
+    assert.equal(detailResponse.status, 200);
+    const detail = (await detailResponse.json()) as { catalogueStatus: string; delistedAt: string | null };
+    assert.equal(detail.catalogueStatus, "delisted");
+    assert.equal(detail.delistedAt?.slice(0, 10), "2025-11-01");
+
+    const historyResponse = await request(userA, `/pbs-items/${encodeURIComponent(followedItem)}/schedule-changes`);
+    assert.equal(historyResponse.status, 200);
+    const history = (await historyResponse.json()) as Array<{ changeType: string; effectiveDate: string }>;
+    assert.deepEqual(
+      history.map((row) => [row.changeType, row.effectiveDate.slice(0, 10)]),
+      [["delisted", runEffectiveDate]],
+    );
+  } finally {
+    if (watchlistId !== undefined) {
+      await db.delete(pbsWatchlistTable).where(eq(pbsWatchlistTable.id, watchlistId));
+    }
+    if (runId !== undefined) {
+      await db.delete(scheduleChangesTable).where(eq(scheduleChangesTable.authorityRunId, runId));
+    }
+    await db.delete(pbsItemsTable).where(inArray(pbsItemsTable.itemCode, itemCodes));
+    await db.delete(drugsTable).where(inArray(drugsTable.id, drugIds));
+    if (runId !== undefined) {
+      await db.delete(ingestionRunsTable).where(eq(ingestionRunsTable.id, runId));
+    }
+  }
 });
 
 test("authenticated dashboard counts stay correct across schedule boundaries and detail filters", async () => {
