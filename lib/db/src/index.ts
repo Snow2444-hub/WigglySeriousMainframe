@@ -6,12 +6,12 @@ const { Client, Pool } = pg;
 
 const databaseUrl =
   process.env.NODE_ENV === "production"
-    ? process.env.PRODUCTION_DATABASE_URL ?? process.env.DATABASE_URL
+    ? process.env.PBS_DATABASE_URL ?? process.env.DATABASE_URL
     : process.env.DATABASE_URL;
 
 if (!databaseUrl) {
   throw new Error(
-    "A database URL must be set. Production may use PRODUCTION_DATABASE_URL; other environments use DATABASE_URL.",
+    "A database URL must be set. Production may use PBS_DATABASE_URL; other environments use DATABASE_URL.",
   );
 }
 const configuredDatabaseUrl: string = databaseUrl;
