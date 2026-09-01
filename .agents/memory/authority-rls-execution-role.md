@@ -9,4 +9,4 @@ Authority setup must not hardcode the managed login name or reassert superuser-o
 
 **Why:** Managed database migrations can replace a legacy `postgres`/superuser session with `neondb_owner`. That owner can create roles but cannot alter superuser attributes, and PostgreSQL requires role membership plus schema `CREATE` during table ownership transfer.
 
-**How to apply:** Keep application pools role-scoped, make authority setup idempotent across managed owner names, reproduce temporary schema permissions in isolated tests, and verify raw SQL as `pbs_app` cannot see test-scoped root, master, or derived rows. Never bypass `pbs_app` as a startup fallback.
+**How to apply:** Keep application pools role-scoped, make authority setup idempotent across managed owner names, reproduce temporary schema permissions in isolated tests, and verify raw SQL as `pbs_app` cannot see test-scoped root, master, or derived rows. Never bypass `pbs_app` as a startup fallback. Replit's publish schema diff does not transfer custom roles or RLS policy/ownership state; a production database missing them requires supported infrastructure recovery, not a deploy-time DDL workaround.
