@@ -32,3 +32,4 @@
 - [Authority RLS execution role](authority-rls-execution-role.md) — App sessions assume a non-bypass table-owning role so FORCE RLS works despite the managed superuser login.
 - [Repair-run authority ownership](repair-run-authority-ownership.md) — Operational repair scripts must use the approved ingestion-run authority API for production-scoped derived writes.
 - [TGA shortage export dates](tga-shortage-export-dates.md) — Parse the labelled human-readable report date before scanning shortage row dates.
+- [Runtime database fingerprints](runtime-database-fingerprints.md) — Runtime-managed database variables can differ from displayed secrets; fingerprint from inside the actual app process before repair.

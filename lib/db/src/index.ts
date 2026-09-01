@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 
-const { Client, Pool } = pg;
+const { Pool } = pg;
 
 const databaseUrl =
   process.env.NODE_ENV === "production"
@@ -41,73 +41,6 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10_000,
 });
 export const db = drizzle(pool, { schema });
-
-export function getDatabaseTargetFingerprint(): {
-  host: string;
-  port: string;
-  database: string;
-  configuredUser: string;
-} {
-  const parsedUrl = new URL(configuredDatabaseUrl);
-  return {
-    host: parsedUrl.hostname,
-    port: parsedUrl.port || "5432",
-    database: decodeURIComponent(parsedUrl.pathname.replace(/^\//, "")),
-    configuredUser: decodeURIComponent(parsedUrl.username),
-  };
-}
-
-export async function inspectDatabaseAuthorityTarget(): Promise<{
-  database: string;
-  user: string;
-  pbsAppRoleCount: number;
-  connectionLatencyMs: number;
-}> {
-  const client = new Client({
-    connectionString: configuredDatabaseUrl,
-    connectionTimeoutMillis: 10_000,
-  });
-  const startedAt = performance.now();
-  let connected = false;
-
-  try {
-    await client.connect();
-    connected = true;
-    const connectionLatencyMs = Math.round(performance.now() - startedAt);
-    const result = await client.query<{
-      database: string;
-      user: string;
-      pbs_app_role_count: string;
-    }>(`
-      SELECT
-        current_database() AS database,
-        current_user AS user,
-        (
-          SELECT count(*)::text
-          FROM pg_roles
-          WHERE rolname = 'pbs_app'
-        ) AS pbs_app_role_count
-    `);
-    const row = result.rows[0];
-    if (!row) {
-      throw new Error("Database target inspection returned no result.");
-    }
-
-    return {
-      database: row.database,
-      user: row.user,
-      pbsAppRoleCount: Number(row.pbs_app_role_count),
-      connectionLatencyMs,
-    };
-  } finally {
-    if (connected) {
-      await Promise.race([
-        client.end().catch(() => undefined),
-        new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
-      ]);
-    }
-  }
-}
 
 export * from "./authority";
 export * from "./schema";
