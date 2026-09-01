@@ -36,9 +36,27 @@ export const pool = new Pool({
 });
 export const db = drizzle(pool, { schema });
 
-export async function inspectDatabaseAuthorityTarget(): Promise<{
+export function getDatabaseTargetFingerprint(): {
   host: string;
   port: string;
+  database: string;
+  configuredUser: string;
+} {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required to inspect the database target.");
+  }
+
+  const parsedUrl = new URL(databaseUrl);
+  return {
+    host: parsedUrl.hostname,
+    port: parsedUrl.port || "5432",
+    database: decodeURIComponent(parsedUrl.pathname.replace(/^\//, "")),
+    configuredUser: decodeURIComponent(parsedUrl.username),
+  };
+}
+
+export async function inspectDatabaseAuthorityTarget(): Promise<{
   database: string;
   user: string;
   pbsAppRoleCount: number;
@@ -49,15 +67,16 @@ export async function inspectDatabaseAuthorityTarget(): Promise<{
     throw new Error("DATABASE_URL is required to inspect the database target.");
   }
 
-  const parsedUrl = new URL(databaseUrl);
   const client = new Client({
     connectionString: databaseUrl,
     connectionTimeoutMillis: 10_000,
   });
   const startedAt = performance.now();
+  let connected = false;
 
   try {
     await client.connect();
+    connected = true;
     const connectionLatencyMs = Math.round(performance.now() - startedAt);
     const result = await client.query<{
       database: string;
@@ -79,15 +98,18 @@ export async function inspectDatabaseAuthorityTarget(): Promise<{
     }
 
     return {
-      host: parsedUrl.hostname,
-      port: parsedUrl.port || "5432",
       database: row.database,
       user: row.user,
       pbsAppRoleCount: Number(row.pbs_app_role_count),
       connectionLatencyMs,
     };
   } finally {
-    await client.end().catch(() => undefined);
+    if (connected) {
+      await Promise.race([
+        client.end().catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+      ]);
+    }
   }
 }
 

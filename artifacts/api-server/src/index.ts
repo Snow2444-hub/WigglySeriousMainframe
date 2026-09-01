@@ -1,5 +1,8 @@
 import app from "./app";
-import { inspectDatabaseAuthorityTarget } from "@workspace/db";
+import {
+  getDatabaseTargetFingerprint,
+  inspectDatabaseAuthorityTarget,
+} from "@workspace/db";
 import { logger } from "./lib/logger";
 import { seedReferenceData } from "./lib/seed";
 import { ensureDefaultReductionSettings } from "./lib/predicted-reductions";
@@ -33,8 +36,18 @@ const STARTUP_INITIALIZATION_RETRY_MS = 30_000;
 
 async function logDatabaseAuthorityTarget(): Promise<void> {
   try {
+    logger.info(
+      { databaseTarget: getDatabaseTargetFingerprint() },
+      "Database target configured",
+    );
+  } catch (error) {
+    logger.error({ err: error }, "Database target fingerprint failed");
+    return;
+  }
+
+  try {
     const target = await inspectDatabaseAuthorityTarget();
-    logger.info({ databaseTarget: target }, "Database authority target inspected");
+    logger.info({ databaseConnection: target }, "Database authority target inspected");
   } catch (error) {
     logger.error({ err: error }, "Database authority target inspection failed");
   }
