@@ -1,4 +1,5 @@
 import app from "./app";
+import { inspectDatabaseAuthorityTarget } from "@workspace/db";
 import { logger } from "./lib/logger";
 import { seedReferenceData } from "./lib/seed";
 import { ensureDefaultReductionSettings } from "./lib/predicted-reductions";
@@ -29,6 +30,15 @@ if (Number.isNaN(port) || port <= 0) {
 }
 
 const STARTUP_INITIALIZATION_RETRY_MS = 30_000;
+
+async function logDatabaseAuthorityTarget(): Promise<void> {
+  try {
+    const target = await inspectDatabaseAuthorityTarget();
+    logger.info({ databaseTarget: target }, "Database authority target inspected");
+  } catch (error) {
+    logger.error({ err: error }, "Database authority target inspection failed");
+  }
+}
 
 async function initializeApplicationData(): Promise<void> {
   const interruptedRuns = await recoverInterruptedIngestionRuns();
@@ -66,6 +76,7 @@ function runApplicationInitialization(): void {
 function start(): void {
   const server = app.listen(port, () => {
     logger.info({ port }, "Server listening");
+    void logDatabaseAuthorityTarget();
     runApplicationInitialization();
 
     const staleRunWatchdog = setInterval(() => {
